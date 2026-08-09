@@ -1,0 +1,87 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import type { User } from "@supabase/supabase-js"
+
+import { supabase } from "@/lib/supabase"
+import {
+  allowsWorkspacePermission,
+  loadWorkspaceAccess,
+  type Workspace,
+  type WorkspaceMembership,
+  type WorkspacePermission,
+  type WorkspaceSubscription,
+} from "@/lib/workspace-access-service"
+
+type WorkspaceAccessState = {
+  user: User | null
+  workspace: Workspace | null
+  membership: WorkspaceMembership | null
+  subscription: WorkspaceSubscription | null
+  loading: boolean
+  error: string | null
+  can: (permission: WorkspacePermission) => boolean
+  refresh: () => Promise<void>
+}
+
+const WorkspaceAccessContext = createContext<WorkspaceAccessState | null>(null)
+
+export function WorkspaceAccessProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [workspace, setWorkspace] = useState<Workspace | null>(null)
+  const [membership, setMembership] = useState<WorkspaceMembership | null>(null)
+  const [subscription, setSubscription] = useState<WorkspaceSubscription | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const hydrate = useCallback(async (nextUser: User | null) => {
+    setUser(nextUser)
+    if (!nextUser) {
+      setWorkspace(null)
+      setMembership(null)
+      setSubscription(null)
+      setError(null)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const next = await loadWorkspaceAccess(nextUser)
+      setWorkspace(next.workspace)
+      setMembership(next.membership)
+      setSubscription(next.subscription)
+      setError(null)
+    } catch (accessError) {
+      setError(accessError instanceof Error ? accessError.message : "Workspace access could not be loaded.")
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!supabase) { setLoading(false); setError("Supabase is not configured."); return }
+    void supabase.auth.getUser().then(({ data }) => hydrate(data.user))
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      queueMicrotask(() => void hydrate(session?.user ?? null))
+    })
+    return () => data.subscription.unsubscribe()
+  }, [hydrate])
+
+  const refresh = useCallback(async () => { await hydrate(user) }, [hydrate, user])
+  const value = useMemo<WorkspaceAccessState>(() => ({
+    user,
+    workspace,
+    membership,
+    subscription,
+    loading,
+    error,
+    can: (permission) => allowsWorkspacePermission(membership, permission),
+    refresh,
+  }), [user, workspace, membership, subscription, loading, error, refresh])
+
+  return <WorkspaceAccessContext.Provider value={value}>{children}</WorkspaceAccessContext.Provider>
+}
+
+export function useWorkspaceAccess() {
+  const value = useContext(WorkspaceAccessContext)
+  if (!value) throw new Error("useWorkspaceAccess must be used inside WorkspaceAccessProvider")
+  return value
+}
