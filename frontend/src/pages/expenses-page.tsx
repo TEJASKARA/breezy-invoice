@@ -1,5 +1,5 @@
 import { Banknote, Download, FileText, IndianRupee, Paperclip, Plus, ReceiptText, Trash2, Upload, Users } from "lucide-react"
-import { type FormEvent, useMemo, useState } from "react"
+import { lazy, Suspense, type FormEvent, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 
 import { PageHeader } from "@/components/page-header"
@@ -17,6 +17,7 @@ const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "
 const commonCategories = ["Office expenses", "Rent", "Utilities", "Travel", "Professional fees", "Software", "Repairs and maintenance", "Marketing", "Insurance", "Bank charges", "Taxes", "Miscellaneous"]
 const supportedBillTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"])
 const selectClass = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+const ExpenseAnalytics = lazy(() => import("@/components/expense-analytics").then((module) => ({ default: module.ExpenseAnalytics })))
 
 function today() {
   return new Date().toISOString().slice(0, 10)
@@ -41,6 +42,8 @@ export function ExpensesPage() {
   const { companies, invoices, payslips, expenses, addExpense, deleteExpense } = useMvpStore()
   const [selectedEntityId, setSelectedEntityId] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
   const [showForm, setShowForm] = useState(false)
   const [billFile, setBillFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
@@ -63,19 +66,20 @@ export function ExpensesPage() {
   const selectedEntity = companies.find((company) => company.id === selectedEntityId)
   const companyNameById = useMemo(() => new Map(companies.map((company) => [company.id, company.companyName])), [companies])
   const categories = useMemo(() => [...new Set([...commonCategories, ...expenses.map((expense) => expense.category).filter(Boolean)])].sort(), [expenses])
-  const visibleInvoices = useMemo(
-    () => selectedEntityId === "all" ? invoices : invoices.filter((invoice) => invoice.entityName === selectedEntity?.companyName),
-    [invoices, selectedEntity?.companyName, selectedEntityId]
-  )
-  const visiblePayslips = useMemo(
-    () => selectedEntityId === "all" ? payslips : payslips.filter((payslip) => payslip.entityId === selectedEntityId),
-    [payslips, selectedEntityId]
-  )
+  const visibleInvoices = useMemo(() => invoices.filter((invoice) => {
+    const entityMatches = selectedEntityId === "all" || invoice.entityName === selectedEntity?.companyName
+    return entityMatches && (!dateFrom || invoice.date >= dateFrom) && (!dateTo || invoice.date <= dateTo)
+  }), [dateFrom, dateTo, invoices, selectedEntity?.companyName, selectedEntityId])
+  const visiblePayslips = useMemo(() => payslips.filter((payslip) => {
+    const entityMatches = selectedEntityId === "all" || payslip.entityId === selectedEntityId
+    const month = payslip.month || payslip.paymentDate.slice(0, 7)
+    return entityMatches && (!dateFrom || month >= dateFrom.slice(0, 7)) && (!dateTo || month <= dateTo.slice(0, 7))
+  }), [dateFrom, dateTo, payslips, selectedEntityId])
   const visibleExpenses = useMemo(() => expenses.filter((expense) => {
     const entityMatches = selectedEntityId === "all" || expense.entityId === selectedEntityId
     const categoryMatches = categoryFilter === "all" || expense.category === categoryFilter
-    return entityMatches && categoryMatches
-  }), [categoryFilter, expenses, selectedEntityId])
+    return entityMatches && categoryMatches && (!dateFrom || expense.date >= dateFrom) && (!dateTo || expense.date <= dateTo)
+  }), [categoryFilter, dateFrom, dateTo, expenses, selectedEntityId])
 
   const invoiceTotal = visibleInvoices.reduce((total, invoice) => total + invoice.amount, 0)
   const payrollTotal = visiblePayslips.reduce((total, payslip) => total + payslip.grossPay, 0)
@@ -201,14 +205,20 @@ export function ExpensesPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="space-y-2"><Label htmlFor="expense-entity">Company / entity</Label><select id="expense-entity" value={selectedEntityId} onChange={(event) => setSelectedEntityId(event.target.value)} className={selectClass}><option value="all">All entities</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
         <div className="space-y-2"><Label htmlFor="expense-category-filter">Other-expense category</Label><select id="expense-category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className={selectClass}><option value="all">All categories</option>{categories.filter((category) => expenses.some((expense) => expense.category === category)).map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+        <div className="space-y-2"><Label htmlFor="expense-date-from">From date</Label><Input id="expense-date-from" type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} /></div>
+        <div className="space-y-2"><Label htmlFor="expense-date-to">To date</Label><Input id="expense-date-to" type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} /></div>
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Expense summary">
         {summaries.map(({ label, value, detail, icon: Icon }) => <Card key={label}><CardContent className="p-5"><span className="mb-5 flex size-9 items-center justify-center rounded-lg bg-primary/8 text-primary"><Icon className="size-4" /></span><p className="text-2xl font-semibold tracking-tight">{currency.format(value)}</p><p className="mt-1 text-sm font-medium">{label}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></CardContent></Card>)}
       </section>
+
+      <Suspense fallback={<div className="grid h-72 place-items-center rounded-xl border text-sm text-muted-foreground">Loading expense analytics…</div>}>
+        <ExpenseAnalytics companies={companies} invoices={visibleInvoices} payslips={visiblePayslips} expenses={visibleExpenses} />
+      </Suspense>
 
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Other expenses</CardTitle><CardDescription>Custom expenses and supporting bills for the selected entity.</CardDescription></div><Button variant="outline" size="sm" onClick={openExpenseForm} disabled={!companies.length}><Plus />Add</Button></CardHeader>
