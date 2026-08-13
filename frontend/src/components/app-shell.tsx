@@ -5,6 +5,7 @@ import {
   ChevronDown,
   FileText,
   FileOutput,
+  CircleHelp,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -20,6 +21,7 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { FirstLoginTour } from "@/components/first-login-tour"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -47,6 +49,9 @@ import { getSetupProgress } from "@/lib/setup-progress"
 import { type Theme, useTheme } from "@/lib/theme"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import type { WorkspacePermission } from "@/lib/workspace-access-service"
+import { useEffect, useState } from "react"
+
+const PRODUCT_TOUR_VERSION = 1
 
 const navigation = [
   { label: "Overview", href: "/", icon: LayoutDashboard, end: true, permission: null },
@@ -90,7 +95,8 @@ export function AppShell() {
   const navigate = useNavigate()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { user } = useAuthUser()
-  const { workspace, membership } = useWorkspaceAccess()
+  const { workspace, membership, can } = useWorkspaceAccess()
+  const [tourOpen, setTourOpen] = useState(false)
   const { setup, companies, invoices, payslips, syncError } = useMvpStore()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
   const avatarUrl = String(user?.user_metadata.avatar_url || user?.user_metadata.picture || "")
@@ -98,9 +104,32 @@ export function AppShell() {
   const setupProgress = getSetupProgress({ hasLogin: Boolean(user), setup, companies, invoices, payslips })
   const showSetupProgress = setupProgress.completed < setupProgress.total
   const ThemeIcon = theme === "system" ? Monitor : resolvedTheme === "dark" ? Moon : Sun
+  useEffect(() => {
+    if (!user) return
+    const storageKey = `breezyinvoice-product-tour:${user.id}`
+    const savedVersion = Number(user.user_metadata.product_tour_version || 0)
+    const locallyCompleted = window.localStorage.getItem(storageKey) === String(PRODUCT_TOUR_VERSION)
+    if (savedVersion < PRODUCT_TOUR_VERSION && !locallyCompleted) setTourOpen(true)
+  }, [user])
+
+  async function completeProductTour() {
+    if (user) {
+      window.localStorage.setItem(`breezyinvoice-product-tour:${user.id}`, String(PRODUCT_TOUR_VERSION))
+      await supabase?.auth.updateUser({
+        data: { ...user.user_metadata, product_tour_version: PRODUCT_TOUR_VERSION },
+      })
+    }
+    setTourOpen(false)
+  }
   async function signOut() { await supabase?.auth.signOut(); navigate("/login") }
   return (
     <div className="min-h-svh bg-muted/30">
+      <FirstLoginTour
+        open={tourOpen}
+        fullName={fullName}
+        can={can}
+        onComplete={completeProductTour}
+      />
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r bg-background lg:flex lg:flex-col">
         <div className="flex h-16 items-center px-5">
           <BrandMark />
@@ -215,6 +244,10 @@ export function AppShell() {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel><span className="block">{fullName}</span><span className="mt-1 block max-w-52 truncate text-xs font-normal text-muted-foreground">{user?.email}</span></DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setTourOpen(true)}>
+                  <CircleHelp />
+                  Product tour
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/settings/workspace")}>
                   <Settings2 />
                   Workspace settings
