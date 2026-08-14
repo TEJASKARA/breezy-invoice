@@ -68,7 +68,7 @@ export function allowsWorkspacePermission(membership: WorkspaceMembership | null
 
 export async function loadWorkspaceAccess(user: User) {
   if (!supabase) throw new Error("Supabase is not configured.")
-  const membershipResult = await supabase
+  let membershipResult = await supabase
     .from("breezy_workspace_members")
     .select("id, workspace_id, user_id, role, permissions, status, joined_at")
     .eq("user_id", user.id)
@@ -77,6 +77,24 @@ export async function loadWorkspaceAccess(user: User) {
     .limit(1)
     .maybeSingle()
   if (membershipResult.error) throw new Error(membershipResult.error.message)
+  if (!membershipResult.data?.workspace_id) {
+    const ensured = await supabase.rpc("breezy_ensure_my_workspace")
+    if (ensured.error) {
+      const missingFunction = ensured.error.code === "PGRST202" || ensured.error.message.includes("breezy_ensure_my_workspace")
+      throw new Error(missingFunction
+        ? "Workspace setup is not installed in Supabase yet. Ask the administrator to run the latest BreezyInvoice workspace migration."
+        : ensured.error.message)
+    }
+    membershipResult = await supabase
+      .from("breezy_workspace_members")
+      .select("id, workspace_id, user_id, role, permissions, status, joined_at")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (membershipResult.error) throw new Error(membershipResult.error.message)
+  }
   const membership = membershipResult.data as WorkspaceMembership | null
   if (!membership) return { membership: null, workspace: null, subscription: null }
 

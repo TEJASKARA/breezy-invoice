@@ -27,8 +27,19 @@ export type WorkspaceLoadResult = Partial<MvpState> & { workspaceId: string; has
 
 export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult | null> {
   const db = client()
-  const membershipResult = await db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active").order("created_at").limit(1).maybeSingle()
+  let membershipResult = await db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active").order("created_at").limit(1).maybeSingle()
   throwIfError(membershipResult.error)
+  if (!membershipResult.data?.workspace_id) {
+    const ensured = await db.rpc("breezy_ensure_my_workspace")
+    if (ensured.error) {
+      const missingFunction = ensured.error.code === "PGRST202" || ensured.error.message.includes("breezy_ensure_my_workspace")
+      throw new Error(missingFunction
+        ? "Workspace setup is not installed in Supabase yet. Ask the administrator to run the latest BreezyInvoice workspace migration."
+        : ensured.error.message)
+    }
+    membershipResult = await db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active").order("created_at").limit(1).maybeSingle()
+    throwIfError(membershipResult.error)
+  }
   const workspaceId = String(membershipResult.data?.workspace_id || "")
   if (!workspaceId) return null
   const [settingsResult, entitiesResult, customersResult, invoicesResult, employeesResult, payslipsResult, expensesResult] = await Promise.all([
