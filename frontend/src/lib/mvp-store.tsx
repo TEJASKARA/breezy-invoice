@@ -457,15 +457,9 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     syncStatus,
     syncError,
     completeSetup: async (setup) => {
-      const previous = stateRef.current
-      const next = { ...previous, setup }
+      const next = { ...stateRef.current, setup }
+      await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
       commit(next)
-      try {
-        await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
-      } catch (error) {
-        commit(previous)
-        throw error
-      }
     },
     addCompanies: (companies) => {
       const added = companies.map((company) => {
