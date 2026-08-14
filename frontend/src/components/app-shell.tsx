@@ -265,7 +265,7 @@ export function AppShell() {
           <div className="mx-auto max-w-7xl">
             {syncError && (
               <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                <strong>We couldn't save your latest changes.</strong> Please try again.
+                <strong>We couldn't save your latest changes.</strong> {syncError}
               </div>
             )}
             <Outlet />

@@ -184,7 +184,7 @@ type MvpStore = MvpState & {
   loading: boolean
   syncStatus: "local" | "loading" | "saving" | "synced" | "error"
   syncError: string | null
-  completeSetup: (setup: Setup) => void
+  completeSetup: (setup: Setup) => Promise<void>
   addCompanies: (companies: Omit<Company, "id">[]) => void
   updateCompany: (companyId: string, changes: Partial<Omit<Company, "id">>) => void
   deleteCompany: (companyId: string) => void
@@ -364,6 +364,29 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       })
   }
 
+  const persistAndWait = async (operation: (userId: string, workspaceId: string) => Promise<void>) => {
+    const userId = userIdRef.current
+    const workspaceId = workspaceIdRef.current
+    if (!userId || !workspaceId || !supabase) {
+      throw new Error("Your workspace is still loading. Please wait a moment and try again.")
+    }
+    setSyncStatus("saving")
+    setSyncError(null)
+    const task = persistenceQueue.current
+      .catch(() => undefined)
+      .then(() => operation(userId, workspaceId))
+    persistenceQueue.current = task
+    try {
+      await task
+      setSyncStatus("synced")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Supabase could not save this change."
+      setSyncStatus("error")
+      setSyncError(message)
+      throw new Error(message)
+    }
+  }
+
   useEffect(() => {
     if (!supabase) {
       setLoading(false)
@@ -433,10 +456,16 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     loading,
     syncStatus,
     syncError,
-    completeSetup: (setup) => {
-      const next = { ...stateRef.current, setup }
+    completeSetup: async (setup) => {
+      const previous = stateRef.current
+      const next = { ...previous, setup }
       commit(next)
-      persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
+      try {
+        await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
+      } catch (error) {
+        commit(previous)
+        throw error
+      }
     },
     addCompanies: (companies) => {
       const added = companies.map((company) => {

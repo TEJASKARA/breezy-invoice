@@ -24,7 +24,7 @@ const industries = [
 ]
 
 export function OnboardingPage() {
-  const { setup, completeSetup } = useMvpStore()
+  const { setup, loading, completeSetup } = useMvpStore()
   const navigate = useNavigate()
   const [firmName, setFirmName] = useState("")
   const [industry, setIndustry] = useState("")
@@ -34,7 +34,10 @@ export function OnboardingPage() {
   const [continueExistingNumbers, setContinueExistingNumbers] = useState(false)
   const [latestInvoiceNumber, setLatestInvoiceNumber] = useState("")
   const [numberingError, setNumberingError] = useState("")
+  const [saveError, setSaveError] = useState("")
+  const [saving, setSaving] = useState(false)
 
+  if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
   if (setup) return <Navigate to="/" replace />
 
   const existingNumbering = continueExistingNumbers ? parseExistingInvoiceNumber(latestInvoiceNumber) : null
@@ -42,20 +45,28 @@ export function OnboardingPage() {
     ? `${existingNumbering.prefix}${String(existingNumbering.nextNumber).padStart(existingNumbering.padding, "0")}`
     : ""
 
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (continueExistingNumbers && !existingNumbering) {
       setNumberingError("Enter the complete latest invoice number ending in its sequence digits, for example ABC/2025-26/0047.")
       return
     }
-    completeSetup({
-      firmName,
-      industry: industry === "Other" ? otherIndustry.trim() : industry,
-      gstin: gstin.toUpperCase(),
-      mailingAddress,
-      invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
-    })
-    navigate("/entities")
+    setSaving(true)
+    setSaveError("")
+    try {
+      await completeSetup({
+        firmName,
+        industry: industry === "Other" ? otherIndustry.trim() : industry,
+        gstin: gstin.toUpperCase(),
+        mailingAddress,
+        invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
+      })
+      navigate("/entities")
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "We could not save your setup. Please try again.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -124,7 +135,8 @@ export function OnboardingPage() {
                 )}
               </section>
 
-              <Button className="w-full" type="submit">Save and add client companies <CheckCircle2 /></Button>
+              {saveError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{saveError}</p>}
+              <Button className="w-full" type="submit" disabled={saving}>{saving ? "Saving your workspace…" : "Save and add client companies"} {!saving && <CheckCircle2 />}</Button>
             </form>
           </CardContent>
         </Card>
