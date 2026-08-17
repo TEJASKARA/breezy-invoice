@@ -54,7 +54,7 @@ import { useEffect, useState } from "react"
 const PRODUCT_TOUR_VERSION = 1
 
 const navigation = [
-  { label: "Overview", href: "/", icon: LayoutDashboard, end: true, permission: null },
+  { label: "Overview", href: "/workspace", icon: LayoutDashboard, end: true, permission: null },
   { label: "Entities", href: "/entities", icon: Building2, permission: "entities.read" },
   { label: "Invoices", href: "/invoices", icon: ReceiptText, permission: "invoices.read" },
   { label: "Employees", href: "/employees", icon: Users, permission: "payslips.read" },

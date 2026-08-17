@@ -38,7 +38,7 @@ export function OnboardingPage() {
   const [saving, setSaving] = useState(false)
 
   if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
-  if (setup) return <Navigate to="/" replace />
+  if (setup) return <Navigate to="/workspace" replace />
 
   const existingNumbering = continueExistingNumbers ? parseExistingInvoiceNumber(latestInvoiceNumber) : null
   const nextNumberPreview = existingNumbering

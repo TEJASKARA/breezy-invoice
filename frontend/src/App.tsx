@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Navigate, Route, Routes } from "react-router-dom"
+import { Navigate, Outlet, Route, Routes } from "react-router-dom"
 import type { Session } from "@supabase/supabase-js"
 
 import { AppShell } from "@/components/app-shell"
@@ -8,6 +8,7 @@ import { EmployeesPage } from "@/pages/employees-page"
 import { EntitiesPage } from "@/pages/entities-page"
 import { ExpensesPage } from "@/pages/expenses-page"
 import { InvoicesPage } from "@/pages/invoices-page"
+import { LandingPage } from "@/pages/landing-page"
 import { LoginPage } from "@/pages/login-page"
 import { OnboardingPage } from "@/pages/onboarding-page"
 import { TemplatesPage } from "@/pages/templates-page"
@@ -28,25 +29,33 @@ function SetupGate({ children }: { children: React.ReactNode }) { const { setup,
 function PermissionGate({ permission, children }: { permission: WorkspacePermission; children: React.ReactNode }) {
   const { loading, can } = useWorkspaceAccess()
   if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Checking workspace access…</div>
-  return can(permission) ? <>{children}</> : <Navigate to="/" replace />
+  return can(permission) ? <>{children}</> : <Navigate to="/workspace" replace />
+}
+
+function WorkspaceProviders() {
+  return <WorkspaceAccessProvider><MvpStoreProvider><Outlet /></MvpStoreProvider></WorkspaceAccessProvider>
 }
 
 function App() {
   return (
-    <WorkspaceAccessProvider><MvpStoreProvider><Routes>
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/setup" element={<Protected><OnboardingPage /></Protected>} />
-      <Route element={<Protected><SetupGate><AppShell /></SetupGate></Protected>}>
-        <Route index element={<DashboardPage />} />
-        <Route path="/entities" element={<PermissionGate permission="entities.read"><EntitiesPage /></PermissionGate>} />
-        <Route path="/invoices" element={<PermissionGate permission="invoices.read"><InvoicesPage /></PermissionGate>} />
-        <Route path="/employees" element={<PermissionGate permission="payslips.read"><EmployeesPage /></PermissionGate>} />
-        <Route path="/expenses" element={<PermissionGate permission="expenses.read"><ExpensesPage /></PermissionGate>} />
-        <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />
-        <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />
-        <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
-      </Route><Route path="*" element={<Navigate to="/" replace />} />
-    </Routes></MvpStoreProvider></WorkspaceAccessProvider>
+      <Route element={<WorkspaceProviders />}>
+        <Route path="/setup" element={<Protected><OnboardingPage /></Protected>} />
+        <Route element={<Protected><SetupGate><AppShell /></SetupGate></Protected>}>
+          <Route path="/workspace" element={<DashboardPage />} />
+          <Route path="/entities" element={<PermissionGate permission="entities.read"><EntitiesPage /></PermissionGate>} />
+          <Route path="/invoices" element={<PermissionGate permission="invoices.read"><InvoicesPage /></PermissionGate>} />
+          <Route path="/employees" element={<PermissionGate permission="payslips.read"><EmployeesPage /></PermissionGate>} />
+          <Route path="/expenses" element={<PermissionGate permission="expenses.read"><ExpensesPage /></PermissionGate>} />
+          <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />
+          <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />
+          <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
 
