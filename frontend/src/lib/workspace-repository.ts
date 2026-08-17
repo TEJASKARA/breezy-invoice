@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { friendlyWorkspaceError } from "@/lib/workspace-errors"
 import type { Company, Customer, Employee, Expense, Invoice, MvpState, Payslip, Setup, TemplateSettings } from "@/lib/mvp-store"
 
 type PayloadRow = { id: string; payload: Record<string, unknown> }
@@ -32,10 +33,7 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult
   if (!membershipResult.data?.workspace_id) {
     const ensured = await db.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
-      const missingFunction = ensured.error.code === "PGRST202" || ensured.error.message.includes("breezy_ensure_my_workspace")
-      throw new Error(missingFunction
-        ? "Workspace setup is not installed in Supabase yet. Ask the administrator to run the latest BreezyInvoice workspace migration."
-        : ensured.error.message)
+      throw new Error(friendlyWorkspaceError(ensured.error))
     }
     membershipResult = await db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active").order("created_at").limit(1).maybeSingle()
     throwIfError(membershipResult.error)

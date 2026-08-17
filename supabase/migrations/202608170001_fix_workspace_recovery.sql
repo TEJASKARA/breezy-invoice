@@ -1,5 +1,5 @@
--- Ensure every authenticated BreezyInvoice user has an active workspace.
--- Safe to run more than once and also repairs accounts created before this migration.
+-- Fix workspace recovery when the optional team-invitation migration is absent.
+-- Paste this complete file into Supabase SQL Editor and run it once.
 
 begin;
 
@@ -19,7 +19,6 @@ begin
     raise exception 'You must be signed in to create a workspace.' using errcode = '42501';
   end if;
 
-  -- Both app providers can request this during startup, so serialize per user.
   perform pg_advisory_xact_lock(hashtextextended(current_user_id::text, 0));
 
   select
@@ -34,8 +33,6 @@ begin
   from auth.users
   where id = current_user_id;
 
-  -- An invited user joins the shared workspace when team invitations are installed.
-  -- Dynamic execution keeps onboarding working without that optional migration.
   if pg_catalog.to_regprocedure('public.breezy_accept_pending_invitations(uuid,text)') is not null then
     execute 'select public.breezy_accept_pending_invitations($1, $2)'
     using current_user_id, current_email;

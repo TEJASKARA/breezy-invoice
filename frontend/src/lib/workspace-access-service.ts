@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js"
 
 import { supabase } from "@/lib/supabase"
+import { friendlyWorkspaceError } from "@/lib/workspace-errors"
 
 export type WorkspaceRole = "owner" | "admin" | "hr" | "accountant" | "viewer" | "custom"
 export type WorkspacePermission =
@@ -80,10 +81,7 @@ export async function loadWorkspaceAccess(user: User) {
   if (!membershipResult.data?.workspace_id) {
     const ensured = await supabase.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
-      const missingFunction = ensured.error.code === "PGRST202" || ensured.error.message.includes("breezy_ensure_my_workspace")
-      throw new Error(missingFunction
-        ? "Workspace setup is not installed in Supabase yet. Ask the administrator to run the latest BreezyInvoice workspace migration."
-        : ensured.error.message)
+      throw new Error(friendlyWorkspaceError(ensured.error))
     }
     membershipResult = await supabase
       .from("breezy_workspace_members")
