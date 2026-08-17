@@ -25,7 +25,29 @@ function Protected({ children }: { children: React.ReactNode }) {
   if (session === undefined) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading BreezyInvoice…</div>
   return session ? <>{children}</> : <Navigate to="/login" replace />
 }
-function SetupGate({ children }: { children: React.ReactNode }) { const { setup, loading } = useMvpStore(); if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>; return setup ? <>{children}</> : <Navigate to="/setup" replace /> }
+function SetupGate({ children }: { children: React.ReactNode }) {
+  const { setup, loading, syncError } = useMvpStore()
+  async function signOut() {
+    await supabase?.auth.signOut()
+    window.location.assign("/login")
+  }
+  if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
+  if (!setup && syncError) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-muted/30 p-5">
+        <section className="w-full max-w-md rounded-2xl border bg-background p-6 shadow-sm">
+          <p className="text-sm font-semibold text-destructive">Your workspace could not be loaded</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{syncError}</p>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <button type="button" onClick={() => window.location.reload()} className="h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">Try again</button>
+            <button type="button" onClick={() => void signOut()} className="h-9 rounded-lg border bg-background px-4 text-sm font-medium">Log out</button>
+          </div>
+        </section>
+      </main>
+    )
+  }
+  return setup ? <>{children}</> : <Navigate to="/setup" replace />
+}
 function PermissionGate({ permission, children }: { permission: WorkspacePermission; children: React.ReactNode }) {
   const { loading, can } = useWorkspaceAccess()
   if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Checking workspace access…</div>

@@ -6,9 +6,11 @@ import {
   Users,
   WalletCards,
 } from "lucide-react"
-import { Link } from "react-router-dom"
+import { useState } from "react"
+import { Link, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { supabase } from "@/lib/supabase"
 import { useAuthUser } from "@/lib/use-auth-user"
 
 const capabilities = [
@@ -31,8 +33,17 @@ const capabilities = [
 
 export function LandingPage() {
   const { user } = useAuthUser()
+  const navigate = useNavigate()
+  const [signingOut, setSigningOut] = useState(false)
   const primaryHref = user ? "/workspace" : "/login"
   const primaryLabel = user ? "Open workspace" : "Get started"
+
+  async function signOut() {
+    setSigningOut(true)
+    await supabase?.auth.signOut()
+    navigate("/", { replace: true })
+    setSigningOut(false)
+  }
 
   return (
     <main className="min-h-svh bg-white text-black">
@@ -43,12 +54,24 @@ export function LandingPage() {
             <a href="#features" className="transition-colors hover:text-black">What we do</a>
             <a href="#how-it-helps" className="transition-colors hover:text-black">How it helps</a>
           </nav>
-          <Link
-            to={user ? "/workspace" : "/login"}
-            className="inline-flex h-9 items-center rounded-lg border border-black px-4 text-sm font-medium transition-colors hover:bg-black hover:text-white"
-          >
-            {user ? "Workspace" : "Log in"}
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to={user ? "/workspace" : "/login"}
+              className="inline-flex h-9 items-center rounded-lg border border-black px-4 text-sm font-medium transition-colors hover:bg-black hover:text-white"
+            >
+              {user ? "Workspace" : "Log in"}
+            </Link>
+            {user ? (
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                disabled={signingOut}
+                className="inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium text-black/55 transition-colors hover:bg-black/5 hover:text-black disabled:opacity-50"
+              >
+                {signingOut ? "Signing out…" : "Log out"}
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
