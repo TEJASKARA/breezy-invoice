@@ -30,7 +30,7 @@ const capabilities = [
 ]
 
 export function LandingPage() {
-  const { user, loading } = useAuthUser()
+  const { user } = useAuthUser()
   const primaryHref = user ? "/workspace" : "/login"
   const primaryLabel = user ? "Open workspace" : "Get started"
 
@@ -43,14 +43,12 @@ export function LandingPage() {
             <a href="#features" className="transition-colors hover:text-black">What we do</a>
             <a href="#how-it-helps" className="transition-colors hover:text-black">How it helps</a>
           </nav>
-          {!loading && (
-            <Link
-              to={user ? "/workspace" : "/login"}
-              className="inline-flex h-9 items-center rounded-lg border border-black px-4 text-sm font-medium transition-colors hover:bg-black hover:text-white"
-            >
-              {user ? "Workspace" : "Log in"}
-            </Link>
-          )}
+          <Link
+            to={user ? "/workspace" : "/login"}
+            className="inline-flex h-9 items-center rounded-lg border border-black px-4 text-sm font-medium transition-colors hover:bg-black hover:text-white"
+          >
+            {user ? "Workspace" : "Log in"}
+          </Link>
         </div>
       </header>
 
