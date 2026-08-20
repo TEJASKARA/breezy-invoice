@@ -185,7 +185,7 @@ type MvpStore = MvpState & {
   syncStatus: "local" | "loading" | "saving" | "synced" | "error"
   syncError: string | null
   completeSetup: (setup: Setup) => Promise<void>
-  addCompanies: (companies: Omit<Company, "id">[]) => void
+  addCompanies: (companies: Omit<Company, "id">[]) => Promise<void>
   updateCompany: (companyId: string, changes: Partial<Omit<Company, "id">>) => void
   deleteCompany: (companyId: string) => void
   addCustomers: (customers: Omit<Customer, "id">[]) => void
@@ -461,13 +461,13 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
       commit(next)
     },
-    addCompanies: (companies) => {
+    addCompanies: async (companies) => {
       const added = companies.map((company) => {
         const gstin = company.gstin.toUpperCase().trim()
         return { ...company, id: id(), gstin, pan: company.pan.trim().toUpperCase() || (gstin.length >= 12 ? gstin.slice(2, 12) : "") }
       })
+      await persistAndWait((userId, workspaceId) => upsertCompanies(userId, workspaceId, added))
       commit({ ...stateRef.current, companies: [...added, ...stateRef.current.companies] })
-      persist((userId, workspaceId) => upsertCompanies(userId, workspaceId, added))
     },
     updateCompany: (companyId, changes) => {
       const existing = stateRef.current.companies.find((company) => company.id === companyId)

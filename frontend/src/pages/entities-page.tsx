@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Building2, Plus, Trash2 } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
@@ -9,22 +9,78 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { type Company, useMvpStore } from "@/lib/mvp-store"
+import { useAuthUser } from "@/lib/use-auth-user"
 
 type EntityForm = Omit<Company, "id">
 const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", gstin: "", pan: "", premisesAddress: "", hsnSac: "" })
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
+const hasFormData = (form: EntityForm) => [
+  form.companyName,
+  form.billingAddress,
+  form.gstin,
+  form.pan,
+  form.premisesAddress,
+  form.hsnSac,
+].some((value) => value.trim())
 
 export function EntitiesPage() {
   const { companies, addCompanies, deleteCompany } = useMvpStore()
+  const { user } = useAuthUser()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyCompany)
+  const [draftReady, setDraftReady] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("")
   const [noticeIsError, setNoticeIsError] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const draftStorageKey = user ? `breezyinvoice-entity-draft:${user.id}` : null
 
-  const save = () => {
+  useEffect(() => {
+    if (!draftStorageKey) return
+    setDraftReady(false)
+    setForm(emptyCompany())
+    setShowForm(false)
+    try {
+      const saved = window.localStorage.getItem(draftStorageKey)
+      if (saved) {
+        const draft = { ...emptyCompany(), ...JSON.parse(saved) } as EntityForm
+        setForm(draft)
+        setShowForm(hasFormData(draft))
+      }
+    } catch {
+      window.localStorage.removeItem(draftStorageKey)
+    } finally {
+      setDraftReady(true)
+    }
+  }, [draftStorageKey])
+
+  useEffect(() => {
+    if (!draftStorageKey || !draftReady) return
+    if (hasFormData(form)) window.localStorage.setItem(draftStorageKey, JSON.stringify(form))
+    else window.localStorage.removeItem(draftStorageKey)
+  }, [draftReady, draftStorageKey, form])
+
+  const discardForm = () => {
+    setForm(emptyCompany())
+    if (draftStorageKey) window.localStorage.removeItem(draftStorageKey)
+    setShowForm(false)
+    setNotice("")
+  }
+
+  const useDemoIdentifiers = () => {
+    setForm((current) => ({
+      ...current,
+      gstin: "29ABCDE1234F1Z5",
+      pan: "ABCDE1234F",
+      hsnSac: current.hsnSac || "998314",
+    }))
+    setNoticeIsError(false)
+    setNotice("Demo identifiers added. Replace them with verified statutory details before using this entity for real invoices.")
+  }
+
+  const save = async () => {
     const gstin = form.gstin.toUpperCase().trim()
     const pan = form.pan.toUpperCase().trim()
     if (!form.companyName.trim()) {
@@ -52,11 +108,20 @@ export function EntitiesPage() {
       setNotice("HSN/SAC must contain exactly 4, 6, or 8 digits.")
       return
     }
-    addCompanies([{ ...form, gstin, pan }])
-    setForm(emptyCompany())
-    setShowForm(false)
-    setNoticeIsError(false)
-    setNotice("Entity saved with validated GSTIN, PAN, and HSN/SAC.")
+    setSaving(true)
+    try {
+      await addCompanies([{ ...form, gstin, pan }])
+      setForm(emptyCompany())
+      if (draftStorageKey) window.localStorage.removeItem(draftStorageKey)
+      setShowForm(false)
+      setNoticeIsError(false)
+      setNotice("Entity saved to your workspace with validated GSTIN, PAN, and HSN/SAC.")
+    } catch (error) {
+      setNoticeIsError(true)
+      setNotice(error instanceof Error ? error.message : "The entity could not be saved. Please try again.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -84,8 +149,13 @@ export function EntitiesPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle>Add a company</CardTitle>
-            <CardDescription>Enter valid statutory identifiers. GSTIN API verification can be connected later.</CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Add a company</CardTitle>
+                <CardDescription>Your unfinished form is kept when you move to another section. Enter valid statutory identifiers.</CardDescription>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={useDemoIdentifiers}>Use demo identifiers</Button>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
@@ -116,8 +186,8 @@ export function EntitiesPage() {
               <textarea id="entity-premises-address" value={form.premisesAddress} onChange={(event) => setForm({ ...form, premisesAddress: event.target.value })} className="min-h-20 w-full rounded-md border border-input bg-transparent p-2 text-sm" />
             </div>
             <div className="flex justify-end gap-2 md:col-span-2">
-              <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-              <Button onClick={save}>Save company</Button>
+              <Button variant="outline" onClick={discardForm} disabled={saving}>Discard</Button>
+              <Button onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save company"}</Button>
             </div>
           </CardContent>
         </Card>
