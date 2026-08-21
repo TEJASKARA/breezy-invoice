@@ -63,6 +63,8 @@ export function InvoicesPage() {
   const [lineItems, setLineItems] = useState<DraftLineItem[]>([newDraftLine()])
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
+  const [draftFormError, setDraftFormError] = useState("")
+  const [invoiceSaving, setInvoiceSaving] = useState(false)
   const [preview, setPreview] = useState<ImportInvoice[]>([])
   const [pdfPreview, setPdfPreview] = useState<Invoice | null>(null)
   const [customerPreview, setCustomerPreview] = useState<ImportCustomer[]>([])
@@ -170,33 +172,54 @@ export function InvoicesPage() {
     setLineItems([newDraftLine()])
     setTdsAmount("")
     setOtherDeduction("")
+    setDraftFormError("")
     setShowForm(false)
   }
 
-  const save = () => {
+  const save = async () => {
     const error = draftError()
     if (error) {
-      setNotice(error)
+      setDraftFormError(error)
       return
     }
     const { id: _id, number: _number, ...invoice } = buildDraftInvoice()
-    addInvoice(invoice)
-    resetForm()
-    setNotice("Invoice saved.")
+    setInvoiceSaving(true)
+    setDraftFormError("")
+    try {
+      await addInvoice(invoice)
+      resetForm()
+      setNotice("Invoice saved to your workspace.")
+    } catch (saveError) {
+      setDraftFormError(saveError instanceof Error ? saveError.message : "The invoice could not be saved. Please try again.")
+    } finally {
+      setInvoiceSaving(false)
+    }
   }
 
   const viewDraft = () => {
     const error = draftError()
     if (error) {
-      setNotice(error)
+      setDraftFormError(error)
       return
     }
     setPdfPreview(buildDraftInvoice())
-    setNotice("")
+    setDraftFormError("")
   }
 
   const updateLineItem = (itemId: string, field: keyof DraftLineItem, value: string) => {
-    setLineItems((items) => items.map((item) => item.id === itemId ? { ...item, [field]: value } : item))
+    setDraftFormError("")
+    setLineItems((items) => items.map((item) => {
+      if (item.id !== itemId) return item
+      const updated = { ...item, [field]: value }
+      if (field === "igstAmount" && Number(value) > 0) {
+        updated.cgstAmount = ""
+        updated.sgstAmount = ""
+      }
+      if ((field === "cgstAmount" || field === "sgstAmount") && Number(value) > 0) {
+        updated.igstAmount = ""
+      }
+      return updated
+    }))
   }
 
   const downloadPdf = async (invoice: Invoice) => {
@@ -619,20 +642,20 @@ export function InvoicesPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
-                <select id="invoice-entity" value={entityName} onChange={(event) => { setEntityName(event.target.value); setCompanyName("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <select id="invoice-entity" value={entityName} onChange={(event) => { setEntityName(event.target.value); setCompanyName(""); setDraftFormError("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">Select entity</option>
                   {companies.map((company) => <option key={company.id}>{company.companyName}</option>)}
                 </select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invoice-company">Client company</Label>
-                <select id="invoice-company" value={companyName} onChange={(event) => setCompanyName(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <select id="invoice-company" value={companyName} onChange={(event) => { setCompanyName(event.target.value); setDraftFormError("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">Select company</option>
                   {individualCustomers.map((customer) => <option key={customer.id}>{customer.companyName}</option>)}
                 </select>
                 {entityName && !individualCustomers.length && <p className="text-xs text-destructive">This entity has no saved invoice customers yet.</p>}
               </div>
-              <div className="space-y-2"><Label htmlFor="invoice-date">Invoice date</Label><Input id="invoice-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="invoice-date">Invoice date</Label><Input id="invoice-date" type="date" value={date} onChange={(event) => { setDate(event.target.value); setDraftFormError("") }} /></div>
             </div>
 
             <div className="space-y-3">
@@ -674,9 +697,11 @@ export function InvoicesPage() {
               </div>
             </div>
 
+            {draftFormError ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{draftFormError}</p> : null}
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={status === "Generated"} onChange={(event) => setStatus(event.target.checked ? "Generated" : "Draft")} /> Mark as generated</label>
-              <div className="flex gap-2"><Button variant="outline" onClick={resetForm}>Cancel</Button><Button variant="outline" onClick={viewDraft}><Eye />Preview invoice</Button><Button onClick={save}>Save invoice</Button></div>
+              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Preview invoice</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : "Save invoice"}</Button></div>
             </div>
           </CardContent>
         </Card>

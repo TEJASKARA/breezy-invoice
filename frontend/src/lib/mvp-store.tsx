@@ -191,7 +191,7 @@ type MvpStore = MvpState & {
   addCustomers: (customers: Omit<Customer, "id">[]) => void
   updateCustomer: (customerId: string, changes: Partial<Omit<Customer, "id">>) => void
   deleteCustomer: (customerId: string) => void
-  addInvoice: (invoice: Omit<Invoice, "id" | "number">) => void
+  addInvoice: (invoice: Omit<Invoice, "id" | "number">) => Promise<void>
   addInvoices: (invoices: Omit<Invoice, "id" | "number">[]) => void
   deleteInvoice: (invoiceId: string) => void
   addEmployee: (employee: Omit<Employee, "id">) => string
@@ -507,17 +507,17 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       commit({ ...stateRef.current, customers: stateRef.current.customers.filter((customer) => customer.id !== customerId) })
       persist((_userId, workspaceId) => deleteCustomerRow(workspaceId, customerId))
     },
-    addInvoice: (invoice) => {
+    addInvoice: async (invoice) => {
       const current = stateRef.current
       const added = { ...invoice, id: id(), number: nextInvoiceNumber(current.setup, current.invoices) }
       const nextSetup = current.setup?.invoiceNumbering?.mode === "continue"
         ? { ...current.setup, invoiceNumbering: { ...current.setup.invoiceNumbering, nextNumber: current.setup.invoiceNumbering.nextNumber + 1 } }
         : current.setup
-      commit({ ...current, setup: nextSetup, invoices: [added, ...current.invoices] })
-      persist(async (userId, workspaceId) => {
+      await persistAndWait(async (userId, workspaceId) => {
         await upsertInvoices(userId, workspaceId, [added])
         if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
       })
+      commit({ ...stateRef.current, setup: nextSetup, invoices: [added, ...stateRef.current.invoices] })
     },
     addInvoices: (invoices) => {
       const current = stateRef.current
