@@ -5,7 +5,7 @@ from app.core.config import get_settings
 settings = get_settings()
 
 celery_app = Celery(
-    "breezyaccounts",
+    "breezyinvoice",
     broker=settings.redis_url,
     backend=settings.redis_url,
 )
@@ -21,6 +21,6 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(name="breezyaccounts.health_check")
+@celery_app.task(name="breezyinvoice.health_check")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}

@@ -167,6 +167,13 @@ as $$
 declare
   invitation record;
 begin
+  if not exists (
+    select 1 from auth.users
+    where id = target_user_id and lower(email) = lower(target_email)
+  ) then
+    raise exception 'The invitation identity could not be verified.' using errcode = '42501';
+  end if;
+
   for invitation in
     select * from public.breezy_workspace_invitations
     where lower(email) = lower(target_email)
@@ -232,9 +239,15 @@ begin
 end;
 $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert or update of raw_user_meta_data, email on auth.users
+for each row execute function public.handle_new_auth_user();
+
 revoke all on function public.breezy_invite_workspace_user(uuid, text, text, text[]) from public;
 revoke all on function public.breezy_update_workspace_member(uuid, uuid, text, text[], text) from public;
 revoke all on function public.breezy_revoke_workspace_invitation(uuid, uuid) from public;
+revoke all on function public.breezy_accept_pending_invitations(uuid, text) from public;
 grant execute on function public.breezy_invite_workspace_user(uuid, text, text, text[]) to authenticated;
 grant execute on function public.breezy_update_workspace_member(uuid, uuid, text, text[], text) to authenticated;
 grant execute on function public.breezy_revoke_workspace_invitation(uuid, uuid) to authenticated;

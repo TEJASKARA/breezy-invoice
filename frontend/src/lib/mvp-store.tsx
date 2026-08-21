@@ -186,25 +186,25 @@ type MvpStore = MvpState & {
   syncError: string | null
   completeSetup: (setup: Setup) => Promise<void>
   addCompanies: (companies: Omit<Company, "id">[]) => Promise<void>
-  updateCompany: (companyId: string, changes: Partial<Omit<Company, "id">>) => void
-  deleteCompany: (companyId: string) => void
-  addCustomers: (customers: Omit<Customer, "id">[]) => void
-  updateCustomer: (customerId: string, changes: Partial<Omit<Customer, "id">>) => void
-  deleteCustomer: (customerId: string) => void
+  updateCompany: (companyId: string, changes: Partial<Omit<Company, "id">>) => Promise<void>
+  deleteCompany: (companyId: string) => Promise<void>
+  addCustomers: (customers: Omit<Customer, "id">[]) => Promise<void>
+  updateCustomer: (customerId: string, changes: Partial<Omit<Customer, "id">>) => Promise<void>
+  deleteCustomer: (customerId: string) => Promise<void>
   addInvoice: (invoice: Omit<Invoice, "id" | "number">) => Promise<void>
-  addInvoices: (invoices: Omit<Invoice, "id" | "number">[]) => void
-  deleteInvoice: (invoiceId: string) => void
-  addEmployee: (employee: Omit<Employee, "id">) => string
-  addEmployees: (employees: Omit<Employee, "id">[]) => void
-  updateEmployee: (employeeId: string, changes: Partial<Omit<Employee, "id">>) => void
-  deleteEmployee: (employeeId: string) => void
-  addPayslip: (payslip: Omit<Payslip, "id">) => void
-  addPayslips: (payslips: Omit<Payslip, "id">[]) => void
-  updatePayslip: (payslipId: string, changes: Partial<Omit<Payslip, "id">>) => void
-  deletePayslip: (payslipId: string) => void
-  addExpense: (expense: Omit<Expense, "id">) => string
-  updateExpense: (expenseId: string, changes: Partial<Omit<Expense, "id">>) => void
-  deleteExpense: (expenseId: string) => void
+  addInvoices: (invoices: Omit<Invoice, "id" | "number">[]) => Promise<void>
+  deleteInvoice: (invoiceId: string) => Promise<void>
+  addEmployee: (employee: Omit<Employee, "id">) => Promise<string>
+  addEmployees: (employees: Omit<Employee, "id">[]) => Promise<void>
+  updateEmployee: (employeeId: string, changes: Partial<Omit<Employee, "id">>) => Promise<void>
+  deleteEmployee: (employeeId: string) => Promise<void>
+  addPayslip: (payslip: Omit<Payslip, "id">) => Promise<void>
+  addPayslips: (payslips: Omit<Payslip, "id">[]) => Promise<void>
+  updatePayslip: (payslipId: string, changes: Partial<Omit<Payslip, "id">>) => Promise<void>
+  deletePayslip: (payslipId: string) => Promise<void>
+  addExpense: (expense: Omit<Expense, "id">) => Promise<string>
+  updateExpense: (expenseId: string, changes: Partial<Omit<Expense, "id">>) => Promise<void>
+  deleteExpense: (expenseId: string) => Promise<void>
   updateTemplate: (template: Partial<TemplateSettings>) => void
 }
 
@@ -469,14 +469,15 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       await persistAndWait((userId, workspaceId) => upsertCompanies(userId, workspaceId, added))
       commit({ ...stateRef.current, companies: [...added, ...stateRef.current.companies] })
     },
-    updateCompany: (companyId, changes) => {
+    updateCompany: async (companyId, changes) => {
       const existing = stateRef.current.companies.find((company) => company.id === companyId)
       if (!existing) return
       const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertCompanies(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, companies: stateRef.current.companies.map((company) => company.id === companyId ? updated : company) })
-      persist((userId, workspaceId) => upsertCompanies(userId, workspaceId, [updated]))
     },
-    deleteCompany: (companyId) => {
+    deleteCompany: async (companyId) => {
+      await persistAndWait((_userId, workspaceId) => deleteCompanyRow(workspaceId, companyId))
       const current = stateRef.current
       commit({
         ...current,
@@ -486,26 +487,25 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         payslips: current.payslips.filter((payslip) => payslip.entityId !== companyId),
         expenses: current.expenses.filter((expense) => expense.entityId !== companyId),
       })
-      persist((_userId, workspaceId) => deleteCompanyRow(workspaceId, companyId))
     },
-    addCustomers: (customers) => {
+    addCustomers: async (customers) => {
       const added = customers.map((customer) => {
         const gstin = customer.gstin.toUpperCase().trim()
         return { ...customer, id: id(), gstin, pan: customer.pan.trim().toUpperCase() || (gstin.length >= 12 ? gstin.slice(2, 12) : "") }
       })
+      await persistAndWait((userId, workspaceId) => upsertCustomers(userId, workspaceId, added))
       commit({ ...stateRef.current, customers: [...added, ...stateRef.current.customers] })
-      persist((userId, workspaceId) => upsertCustomers(userId, workspaceId, added))
     },
-    updateCustomer: (customerId, changes) => {
+    updateCustomer: async (customerId, changes) => {
       const existing = stateRef.current.customers.find((customer) => customer.id === customerId)
       if (!existing) return
       const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertCustomers(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, customers: stateRef.current.customers.map((customer) => customer.id === customerId ? updated : customer) })
-      persist((userId, workspaceId) => upsertCustomers(userId, workspaceId, [updated]))
     },
-    deleteCustomer: (customerId) => {
+    deleteCustomer: async (customerId) => {
+      await persistAndWait((_userId, workspaceId) => deleteCustomerRow(workspaceId, customerId))
       commit({ ...stateRef.current, customers: stateRef.current.customers.filter((customer) => customer.id !== customerId) })
-      persist((_userId, workspaceId) => deleteCustomerRow(workspaceId, customerId))
     },
     addInvoice: async (invoice) => {
       const current = stateRef.current
@@ -514,82 +514,82 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         ? { ...current.setup, invoiceNumbering: { ...current.setup.invoiceNumbering, nextNumber: current.setup.invoiceNumbering.nextNumber + 1 } }
         : current.setup
       await persistAndWait(async (userId, workspaceId) => {
-        await upsertInvoices(userId, workspaceId, [added])
         if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
+        await upsertInvoices(userId, workspaceId, [added])
       })
       commit({ ...stateRef.current, setup: nextSetup, invoices: [added, ...stateRef.current.invoices] })
     },
-    addInvoices: (invoices) => {
+    addInvoices: async (invoices) => {
       const current = stateRef.current
       const added = invoices.map((invoice, index) => ({ ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }))
-      commit({ ...current, invoices: [...added, ...current.invoices] })
-      persist((userId, workspaceId) => upsertInvoices(userId, workspaceId, added))
+      await persistAndWait((userId, workspaceId) => upsertInvoices(userId, workspaceId, added))
+      commit({ ...stateRef.current, invoices: [...added, ...stateRef.current.invoices] })
     },
-    deleteInvoice: (invoiceId) => {
+    deleteInvoice: async (invoiceId) => {
+      await persistAndWait((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))
       commit({ ...stateRef.current, invoices: stateRef.current.invoices.filter((invoice) => invoice.id !== invoiceId) })
-      persist((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))
     },
-    addEmployee: (employee) => {
+    addEmployee: async (employee) => {
       const employeeId = id()
       const added = { ...employee, id: employeeId }
+      await persistAndWait((userId, workspaceId) => upsertEmployees(userId, workspaceId, [added]))
       commit({ ...stateRef.current, employees: [added, ...stateRef.current.employees] })
-      persist((userId, workspaceId) => upsertEmployees(userId, workspaceId, [added]))
       return employeeId
     },
-    addEmployees: (employees) => {
+    addEmployees: async (employees) => {
       const added = employees.map((employee) => ({ ...employee, id: id() }))
+      await persistAndWait((userId, workspaceId) => upsertEmployees(userId, workspaceId, added))
       commit({ ...stateRef.current, employees: [...added, ...stateRef.current.employees] })
-      persist((userId, workspaceId) => upsertEmployees(userId, workspaceId, added))
     },
-    updateEmployee: (employeeId, changes) => {
+    updateEmployee: async (employeeId, changes) => {
       const existing = stateRef.current.employees.find((employee) => employee.id === employeeId)
       if (!existing) return
       const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertEmployees(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, employees: stateRef.current.employees.map((employee) => employee.id === employeeId ? updated : employee) })
-      persist((userId, workspaceId) => upsertEmployees(userId, workspaceId, [updated]))
     },
-    deleteEmployee: (employeeId) => {
+    deleteEmployee: async (employeeId) => {
+      await persistAndWait((_userId, workspaceId) => deleteEmployeeRow(workspaceId, employeeId))
       commit({ ...stateRef.current, employees: stateRef.current.employees.filter((employee) => employee.id !== employeeId) })
-      persist((_userId, workspaceId) => deleteEmployeeRow(workspaceId, employeeId))
     },
-    addPayslip: (payslip) => {
+    addPayslip: async (payslip) => {
       const added = { ...payslip, id: id() }
+      await persistAndWait((userId, workspaceId) => upsertPayslips(userId, workspaceId, [added]))
       commit({ ...stateRef.current, payslips: [added, ...stateRef.current.payslips] })
-      persist((userId, workspaceId) => upsertPayslips(userId, workspaceId, [added]))
     },
-    addPayslips: (payslips) => {
+    addPayslips: async (payslips) => {
       const added = payslips.map((payslip) => ({ ...payslip, id: id() }))
+      await persistAndWait((userId, workspaceId) => upsertPayslips(userId, workspaceId, added))
       commit({ ...stateRef.current, payslips: [...added, ...stateRef.current.payslips] })
-      persist((userId, workspaceId) => upsertPayslips(userId, workspaceId, added))
     },
-    updatePayslip: (payslipId, changes) => {
+    updatePayslip: async (payslipId, changes) => {
       const existing = stateRef.current.payslips.find((payslip) => payslip.id === payslipId)
       if (!existing) return
       const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertPayslips(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, payslips: stateRef.current.payslips.map((payslip) => payslip.id === payslipId ? updated : payslip) })
-      persist((userId, workspaceId) => upsertPayslips(userId, workspaceId, [updated]))
     },
-    deletePayslip: (payslipId) => {
+    deletePayslip: async (payslipId) => {
+      await persistAndWait((_userId, workspaceId) => deletePayslipRow(workspaceId, payslipId))
       commit({ ...stateRef.current, payslips: stateRef.current.payslips.filter((payslip) => payslip.id !== payslipId) })
-      persist((_userId, workspaceId) => deletePayslipRow(workspaceId, payslipId))
     },
-    addExpense: (expense) => {
+    addExpense: async (expense) => {
       const expenseId = id()
       const added = { ...expense, id: expenseId }
+      await persistAndWait((userId, workspaceId) => upsertExpenses(userId, workspaceId, [added]))
       commit({ ...stateRef.current, expenses: [added, ...stateRef.current.expenses] })
-      persist((userId, workspaceId) => upsertExpenses(userId, workspaceId, [added]))
       return expenseId
     },
-    updateExpense: (expenseId, changes) => {
+    updateExpense: async (expenseId, changes) => {
       const existing = stateRef.current.expenses.find((expense) => expense.id === expenseId)
       if (!existing) return
       const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertExpenses(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, expenses: stateRef.current.expenses.map((expense) => expense.id === expenseId ? updated : expense) })
-      persist((userId, workspaceId) => upsertExpenses(userId, workspaceId, [updated]))
     },
-    deleteExpense: (expenseId) => {
+    deleteExpense: async (expenseId) => {
+      await persistAndWait((_userId, workspaceId) => deleteExpenseRow(workspaceId, expenseId))
       commit({ ...stateRef.current, expenses: stateRef.current.expenses.filter((expense) => expense.id !== expenseId) })
-      persist((_userId, workspaceId) => deleteExpenseRow(workspaceId, expenseId))
     },
     updateTemplate: (template) => {
       const updatedTemplate = { ...stateRef.current.template, ...template }

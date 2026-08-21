@@ -1,23 +1,28 @@
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { Navigate, Outlet, Route, Routes } from "react-router-dom"
 import type { Session } from "@supabase/supabase-js"
 
 import { AppShell } from "@/components/app-shell"
-import { DashboardPage } from "@/pages/dashboard-page"
-import { EmployeesPage } from "@/pages/employees-page"
-import { EntitiesPage } from "@/pages/entities-page"
-import { ExpensesPage } from "@/pages/expenses-page"
-import { InvoicesPage } from "@/pages/invoices-page"
 import { LandingPage } from "@/pages/landing-page"
 import { LoginPage } from "@/pages/login-page"
-import { OnboardingPage } from "@/pages/onboarding-page"
-import { TemplatesPage } from "@/pages/templates-page"
-import { TallyExportPage } from "@/pages/tally-export-page"
-import { WorkspaceSettingsPage } from "@/pages/workspace-settings-page"
 import { MvpStoreProvider, useMvpStore } from "@/lib/mvp-store"
 import { supabase } from "@/lib/supabase"
 import { WorkspaceAccessProvider, useWorkspaceAccess } from "@/lib/workspace-access"
 import type { WorkspacePermission } from "@/lib/workspace-access-service"
+
+const DashboardPage = lazy(() => import("@/pages/dashboard-page").then((module) => ({ default: module.DashboardPage })))
+const EmployeesPage = lazy(() => import("@/pages/employees-page").then((module) => ({ default: module.EmployeesPage })))
+const EntitiesPage = lazy(() => import("@/pages/entities-page").then((module) => ({ default: module.EntitiesPage })))
+const ExpensesPage = lazy(() => import("@/pages/expenses-page").then((module) => ({ default: module.ExpensesPage })))
+const InvoicesPage = lazy(() => import("@/pages/invoices-page").then((module) => ({ default: module.InvoicesPage })))
+const OnboardingPage = lazy(() => import("@/pages/onboarding-page").then((module) => ({ default: module.OnboardingPage })))
+const TemplatesPage = lazy(() => import("@/pages/templates-page").then((module) => ({ default: module.TemplatesPage })))
+const TallyExportPage = lazy(() => import("@/pages/tally-export-page").then((module) => ({ default: module.TallyExportPage })))
+const WorkspaceSettingsPage = lazy(() => import("@/pages/workspace-settings-page").then((module) => ({ default: module.WorkspaceSettingsPage })))
+
+function PageFallback() {
+  return <div className="grid min-h-72 place-items-center text-sm text-muted-foreground">Loading page…</div>
+}
 
 function Protected({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -60,7 +65,7 @@ function WorkspaceProviders() {
 
 function App() {
   return (
-    <Routes>
+    <Suspense fallback={<PageFallback />}><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route element={<WorkspaceProviders />}>
@@ -77,7 +82,7 @@ function App() {
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    </Routes></Suspense>
   )
 }
 

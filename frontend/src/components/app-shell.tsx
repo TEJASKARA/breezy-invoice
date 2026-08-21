@@ -1,5 +1,4 @@
 import {
-  Bell,
   Building2,
   Check,
   ChevronDown,
@@ -12,7 +11,6 @@ import {
   Monitor,
   Moon,
   ReceiptText,
-  Search,
   Settings2,
   Sun,
   Users,
@@ -32,7 +30,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
@@ -188,15 +185,6 @@ export function AppShell() {
             </SheetContent>
           </Sheet>
 
-          <div className="relative hidden max-w-md flex-1 md:block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-9 bg-muted/60 pl-9"
-              placeholder="Search entities, invoices, employees..."
-              aria-label="Search workspace"
-            />
-          </div>
-
           <div className="ml-auto flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -220,9 +208,6 @@ export function AppShell() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" size="icon" aria-label="View notifications">
-              <Bell />
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="h-10 gap-2 px-2">

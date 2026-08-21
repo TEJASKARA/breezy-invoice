@@ -113,7 +113,7 @@ export function WorkspaceSettingsPage() {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(updateError.message)
       }
-      completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), gstin: gstin.trim().toUpperCase(), mailingAddress: mailingAddress.trim() })
+      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), gstin: gstin.trim().toUpperCase(), mailingAddress: mailingAddress.trim() })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -172,8 +172,12 @@ export function WorkspaceSettingsPage() {
 
   async function copyCode() {
     if (!workspace) return
-    await navigator.clipboard.writeText(workspace.subscription_code)
-    showSuccess("Subscription code copied.")
+    try {
+      await navigator.clipboard.writeText(workspace.subscription_code)
+      showSuccess("Subscription code copied.")
+    } catch (clipboardError) {
+      showError(clipboardError instanceof Error ? clipboardError : new Error("The subscription code could not be copied. Select it and copy it manually."))
+    }
   }
 
   if (!workspace || !membership) return <p className="text-sm text-muted-foreground">Loading workspace settings…</p>

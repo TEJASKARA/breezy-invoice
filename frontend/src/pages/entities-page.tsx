@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { type Company, useMvpStore } from "@/lib/mvp-store"
 import { useAuthUser } from "@/lib/use-auth-user"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type EntityForm = Omit<Company, "id">
 const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", gstin: "", pan: "", premisesAddress: "", hsnSac: "" })
@@ -28,6 +29,8 @@ const hasFormData = (form: EntityForm) => [
 export function EntitiesPage() {
   const { companies, addCompanies, deleteCompany } = useMvpStore()
   const { user } = useAuthUser()
+  const { can } = useWorkspaceAccess()
+  const canManage = can("entities.manage")
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyCompany)
   const [draftReady, setDraftReady] = useState(false)
@@ -131,7 +134,7 @@ export function EntitiesPage() {
         title="Managed entities"
         description="Add the businesses or legal entities managed under this BreezyInvoice workspace."
         actions={
-          <Button onClick={() => setShowForm((value) => !value)}><Plus />Add entity</Button>
+          canManage ? <Button onClick={() => setShowForm((value) => !value)}><Plus />Add entity</Button> : null
         }
       />
 
@@ -146,7 +149,7 @@ export function EntitiesPage() {
         </p>
       )}
 
-      {showForm && (
+      {showForm && canManage && (
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -217,10 +220,10 @@ export function EntitiesPage() {
                   <TableCell className="hidden lg:table-cell">{company.hsnSac || "—"}</TableCell>
                   <TableCell><Badge variant="outline">Active</Badge></TableCell>
                   <TableCell className="text-right">
-                    {pendingDelete === company.id ? (
+                    {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingDelete === company.id ? (
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button>
-                        <Button size="sm" variant="destructive" onClick={() => { deleteCompany(company.id); setPendingDelete(null); setNoticeIsError(false); setNotice(`${company.companyName} was deleted. Existing invoices were left unchanged.`) }}>Confirm delete</Button>
+                        <Button size="sm" variant="destructive" onClick={async () => { try { await deleteCompany(company.id); setPendingDelete(null); setNoticeIsError(false); setNotice(`${company.companyName} was deleted. Existing invoices were left unchanged.`) } catch (error) { setNoticeIsError(true); setNotice(error instanceof Error ? error.message : "The entity could not be deleted.") } }}>Confirm delete</Button>
                       </div>
                     ) : (
                       <Button size="icon" variant="ghost" aria-label={`Delete ${company.companyName}`} onClick={() => setPendingDelete(company.id)}><Trash2 /></Button>

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { type Company, type Customer, type Invoice, type TemplateElementId, type TemplateSettings, type TemplateTextBlock, useMvpStore } from "@/lib/mvp-store"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { cn } from "@/lib/utils"
 
 const templates = [
@@ -76,7 +77,10 @@ function sampleInvoice(entityName: string, customerName: string): Invoice {
 }
 
 export function TemplatesPage() {
-  const { setup, companies, customers, template, updateTemplate } = useMvpStore()
+  const { setup, companies, customers, template, updateTemplate: persistTemplate } = useMvpStore()
+  const { can } = useWorkspaceAccess()
+  const canManage = can("templates.manage")
+  const updateTemplate = (changes: Partial<TemplateSettings>) => { if (canManage) persistTemplate(changes) }
   const logoInputRef = useRef<HTMLInputElement>(null)
   const signatureInputRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
@@ -187,8 +191,10 @@ export function TemplatesPage() {
         eyebrow="Invoice studio"
         title="Design your invoice"
         description="Create the invoice once here. The preview and downloaded PDF use these same saved settings."
-        actions={<Button variant="outline" onClick={resetTemplate}><RotateCcw />Reset</Button>}
+        actions={canManage ? <Button variant="outline" onClick={resetTemplate}><RotateCcw />Reset</Button> : null}
       />
+
+      {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to this template. Ask a workspace admin for template editing permission to make changes.</p> : null}
 
       {message && (
         <p
@@ -205,7 +211,7 @@ export function TemplatesPage() {
       )}
 
       <div className="grid min-w-0 gap-6 xl:grid-cols-[390px_minmax(0,1fr)]">
-        <Card className="h-fit xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
+        <Card className={cn("h-fit xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto", !canManage && "pointer-events-none opacity-70")}>
           <CardContent className="space-y-6 p-5">
             <section className="space-y-3">
               <div><h2 className="font-semibold">Choose a template</h2><p className="text-sm text-muted-foreground">Three layouts designed for Indian GST invoices.</p></div>

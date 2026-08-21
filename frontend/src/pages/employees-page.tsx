@@ -14,6 +14,7 @@ import { cleanPayslipFileName, defaultDeductions, defaultEarnings, formatSalaryM
 import { createPayslipPdfFile, downloadPayslipPdf } from "@/lib/payslip-pdf"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type PayslipDraft = Omit<Payslip, "id">
 type ImportPayslip = Omit<Payslip, "id">
@@ -62,6 +63,8 @@ export function EmployeesPage() {
     updatePayslip,
     deletePayslip,
   } = useMvpStore()
+  const { can } = useWorkspaceAccess()
+  const canManage = can("payslips.manage")
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
   const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(companies[0]?.id || ""))
@@ -80,6 +83,7 @@ export function EmployeesPage() {
   const [bulkEmployeeSearch, setBulkEmployeeSearch] = useState("")
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<{ type: "employee" | "payslip"; id: string } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const employeeFileInput = useRef<HTMLInputElement>(null)
@@ -113,7 +117,7 @@ export function EmployeesPage() {
     clearMessages()
   }
 
-  const saveEmployee = () => {
+  const saveEmployee = async () => {
     clearMessages()
     const employeeName = employeeDraft.employeeName.trim()
     const employeeCode = employeeDraft.employeeCode.trim().toUpperCase()
@@ -127,16 +131,23 @@ export function EmployeesPage() {
       return
     }
     const normalized = { ...employeeDraft, employeeName, employeeCode, pan: employeeDraft.pan.trim().toUpperCase(), ifsc: employeeDraft.ifsc.trim().toUpperCase() }
-    if (editingEmployeeId) {
-      updateEmployee(editingEmployeeId, normalized)
-      setNotice(`${employeeName}'s employee profile was updated.`)
-    } else {
-      addEmployee(normalized)
-      setNotice(`${employeeName} was added. You can now generate a payslip.`)
+    setSaving(true)
+    try {
+      if (editingEmployeeId) {
+        await updateEmployee(editingEmployeeId, normalized)
+        setNotice(`${employeeName}'s employee profile was updated.`)
+      } else {
+        await addEmployee(normalized)
+        setNotice(`${employeeName} was added. You can now generate a payslip.`)
+      }
+      setEmployeeDraft(blankEmployee(selectedEntityId))
+      setEditingEmployeeId(null)
+      setShowEmployeeForm(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The employee could not be saved.")
+    } finally {
+      setSaving(false)
     }
-    setEmployeeDraft(blankEmployee(selectedEntityId))
-    setEditingEmployeeId(null)
-    setShowEmployeeForm(false)
   }
 
   const editEmployee = (employee: Employee) => {
@@ -331,7 +342,7 @@ export function EmployeesPage() {
     setPayslipDraft({ ...payslipDraft, [kind]: [...payslipDraft[kind], { id: payrollId(), label: "", amount: 0 }] })
   }
 
-  const savePayslip = () => {
+  const savePayslip = async () => {
     clearMessages()
     if (!payslipDraft || !payslipDraft.employeeId || !payslipDraft.month) {
       setError("Select an employee and salary month.")
@@ -352,17 +363,24 @@ export function EmployeesPage() {
       deductions: payslipDraft.deductions.filter((item) => item.label.trim()).map((item) => ({ ...item, label: item.label.trim(), amount: Math.max(0, item.amount) })),
       generatedAt: payslipDraft.status === "Generated" ? new Date().toISOString() : undefined,
     }
-    if (editingPayslipId) {
-      updatePayslip(editingPayslipId, cleaned)
-      setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was updated.`)
-    } else {
-      addPayslip(cleaned)
-      setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was saved.`)
+    setSaving(true)
+    try {
+      if (editingPayslipId) {
+        await updatePayslip(editingPayslipId, cleaned)
+        setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was updated.`)
+      } else {
+        await addPayslip(cleaned)
+        setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was saved.`)
+      }
+      if (rememberStructure) await updateEmployee(cleaned.employeeId, { defaultEarnings: cloneComponents(cleaned.earnings), defaultDeductions: cloneComponents(cleaned.deductions) })
+      setShowPayslipForm(false)
+      setPayslipDraft(null)
+      setEditingPayslipId(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The payslip could not be saved.")
+    } finally {
+      setSaving(false)
     }
-    if (rememberStructure) updateEmployee(cleaned.employeeId, { defaultEarnings: cloneComponents(cleaned.earnings), defaultDeductions: cloneComponents(cleaned.deductions) })
-    setShowPayslipForm(false)
-    setPayslipDraft(null)
-    setEditingPayslipId(null)
   }
 
   const editPayslip = (payslip: Payslip) => {
@@ -599,11 +617,13 @@ export function EmployeesPage() {
         eyebrow="Payroll"
         title="Employees & payslips"
         description="Add employees separately or through Excel, reuse last month’s salary, and generate individual or bulk payslips."
-        actions={<>
+        actions={canManage ? <>
           <Button variant="outline" onClick={() => { setEmployeeDraft(blankEmployee(selectedEntityId)); setEditingEmployeeId(null); setShowEmployeeForm(true); clearMessages() }}><UserPlus />Add employee</Button>
           <Button onClick={() => openPayslipForm()}><Plus />Create payslip</Button>
-        </>}
+        </> : null}
       />
+
+      {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to employees and payslips. You can preview and download saved payslips, but record changes require payroll management permission.</p> : null}
 
       <Card>
         <CardHeader>
@@ -612,12 +632,12 @@ export function EmployeesPage() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-[minmax(220px,1fr)_auto_auto] md:items-end">
           <div className="space-y-2"><Label htmlFor="payroll-entity">Payslip-generating entity</Label><select id="payroll-entity" className={selectClass} value={selectedEntityId} onChange={(event) => changeEntity(event.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
-          <Button variant="outline" onClick={downloadEmployeeTemplate}><Download />Download employee template</Button>
-          <><input ref={employeeFileInput} className="hidden" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importEmployeesFile(file); event.target.value = "" }} /><Button onClick={() => employeeFileInput.current?.click()}><Upload />Upload completed Excel</Button></>
+          {canManage ? <Button variant="outline" onClick={downloadEmployeeTemplate}><Download />Download employee template</Button> : null}
+          {canManage ? <><input ref={employeeFileInput} className="hidden" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importEmployeesFile(file); event.target.value = "" }} /><Button onClick={() => employeeFileInput.current?.click()}><Upload />Upload completed Excel</Button></> : null}
         </CardContent>
       </Card>
 
-      <Card>
+      {canManage ? <Card>
         <CardHeader>
           <CardTitle>Bulk payslip generation</CardTitle>
           <CardDescription>Generate payslips directly from saved employee salaries, or use Excel when monthly amounts need wider changes.</CardDescription>
@@ -666,22 +686,23 @@ export function EmployeesPage() {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card> : null}
 
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p>}
 
-      {showEmployeeForm && (
+      {canManage && showEmployeeForm && (
         <EmployeeForm
           draft={employeeDraft}
           setDraft={setEmployeeDraft}
           editing={Boolean(editingEmployeeId)}
+          saving={saving}
           onCancel={() => { setShowEmployeeForm(false); setEditingEmployeeId(null) }}
           onSave={saveEmployee}
         />
       )}
 
-      {showPayslipForm && payslipDraft && (
+      {canManage && showPayslipForm && payslipDraft && (
         <Card>
           <CardHeader><CardTitle>{editingPayslipId ? "Edit payslip" : "Create individual payslip"}</CardTitle><CardDescription>Select an employee and month. BreezyInvoice automatically starts with the most recent saved salary structure.</CardDescription></CardHeader>
           <CardContent className="space-y-6">
@@ -704,20 +725,20 @@ export function EmployeesPage() {
             </div>
             <label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" checked={rememberStructure} onChange={(event) => setRememberStructure(event.target.checked)} /><span><strong>Use these salary components next month.</strong><span className="block text-muted-foreground">You can still edit every amount when the next payslip is created.</span></span></label>
             <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="outline" onClick={() => { setShowPayslipForm(false); setEditingPayslipId(null) }}>Cancel</Button>
-              <Button variant="outline" onClick={() => setPreviewPayslip({ ...payslipDraft, id: editingPayslipId || "preview" })}><Eye />Preview</Button>
-              <Button onClick={savePayslip}>{editingPayslipId ? "Save changes" : "Save payslip"}</Button>
+              <Button variant="outline" disabled={saving} onClick={() => { setShowPayslipForm(false); setEditingPayslipId(null) }}>Cancel</Button>
+              <Button variant="outline" disabled={saving} onClick={() => setPreviewPayslip({ ...payslipDraft, id: editingPayslipId || "preview" })}><Eye />Preview</Button>
+              <Button disabled={saving} onClick={() => void savePayslip()}>{saving ? "Saving…" : editingPayslipId ? "Save changes" : "Save payslip"}</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {bulkPreview.length > 0 && (
+      {canManage && bulkPreview.length > 0 && (
         <Card>
           <CardHeader><CardTitle>Bulk payslip preview</CardTitle><CardDescription>Review the calculated totals before saving this monthly payroll batch.</CardDescription></CardHeader>
           <CardContent>
             <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Month</TableHead><TableHead>Gross</TableHead><TableHead>Deductions</TableHead><TableHead>Net pay</TableHead></TableRow></TableHeader><TableBody>{bulkPreview.slice(0, 12).map((payslip) => <TableRow key={`${payslip.employeeId}-${payslip.month}`}><TableCell className="font-medium">{payslip.employeeName}</TableCell><TableCell>{formatSalaryMonth(payslip.month)}</TableCell><TableCell>₹{payslip.grossPay.toLocaleString("en-IN")}</TableCell><TableCell className="text-red-600">₹{payslip.totalDeductions.toLocaleString("en-IN")}</TableCell><TableCell className="font-semibold">₹{payslip.netPay.toLocaleString("en-IN")}</TableCell></TableRow>)}</TableBody></Table>
-            <div className="mt-4 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => { setBulkPreview([]); setBulkPayslipsSaved(false) }}>{bulkPayslipsSaved ? "Close" : "Cancel"}</Button><Button variant="outline" disabled={bulkDownloadPending} onClick={() => void downloadBulkPayslipZip()}><Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${bulkPreview.length} PDFs (ZIP)`}</Button><Button disabled={bulkPayslipsSaved} onClick={() => { const count = bulkPreview.length; addPayslips(bulkPreview); bulkPreview.forEach((item) => updateEmployee(item.employeeId, { defaultEarnings: cloneComponents(item.earnings), defaultDeductions: cloneComponents(item.deductions) })); setBulkPayslipsSaved(true); setNotice(`${count} payslips were generated and saved. You can now download the complete batch as a ZIP.`) }}>{bulkPayslipsSaved ? "Payslips generated" : `Generate ${bulkPreview.length} payslips`}</Button></div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => { setBulkPreview([]); setBulkPayslipsSaved(false) }}>{bulkPayslipsSaved ? "Close" : "Cancel"}</Button><Button variant="outline" disabled={bulkDownloadPending || saving} onClick={() => void downloadBulkPayslipZip()}><Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${bulkPreview.length} PDFs (ZIP)`}</Button><Button disabled={bulkPayslipsSaved || saving} onClick={async () => { const count = bulkPreview.length; setSaving(true); clearMessages(); try { await addPayslips(bulkPreview); await Promise.all(bulkPreview.map((item) => updateEmployee(item.employeeId, { defaultEarnings: cloneComponents(item.earnings), defaultDeductions: cloneComponents(item.deductions) }))); setBulkPayslipsSaved(true); setNotice(`${count} payslips were generated and saved. You can now download the complete batch as a ZIP.`) } catch (caught) { setError(caught instanceof Error ? caught.message : "The payslip batch could not be saved.") } finally { setSaving(false) } }}>{saving ? "Saving…" : bulkPayslipsSaved ? "Payslips generated" : `Generate ${bulkPreview.length} payslips`}</Button></div>
           </CardContent>
         </Card>
       )}
@@ -729,7 +750,7 @@ export function EmployeesPage() {
         </Card>
       )}
 
-      {employeeImportPreview.length > 0 && (
+      {canManage && employeeImportPreview.length > 0 && (
         <Card>
           <CardHeader><CardTitle>Bulk employee preview</CardTitle><CardDescription>Review the employee master records before adding them to {selectedEntity?.companyName}.</CardDescription></CardHeader>
           <CardContent>
@@ -738,7 +759,7 @@ export function EmployeesPage() {
               <TableBody>{employeeImportPreview.slice(0, 15).map((employee) => <TableRow key={employee.employeeCode}><TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></TableCell><TableCell>{employee.designation || "—"}<p className="text-xs text-muted-foreground">{employee.department}</p></TableCell><TableCell>{employee.pan || "—"}</TableCell><TableCell>{employee.bankName || "—"}</TableCell><TableCell>₹{amountFor(employee.defaultEarnings, "Basic Salary").toLocaleString("en-IN")}</TableCell></TableRow>)}</TableBody>
             </Table>
             {employeeImportPreview.length > 15 && <p className="mt-3 text-sm text-muted-foreground">Showing 15 of {employeeImportPreview.length} employees.</p>}
-            <div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={() => setEmployeeImportPreview([])}>Cancel</Button><Button onClick={() => { const count = employeeImportPreview.length; addEmployees(employeeImportPreview); setEmployeeImportPreview([]); setError(""); setNotice(`${count} employee${count === 1 ? "" : "s"} added to ${selectedEntity?.companyName}.`) }}>Add {employeeImportPreview.length} employees</Button></div>
+            <div className="mt-4 flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setEmployeeImportPreview([])}>Cancel</Button><Button disabled={saving} onClick={async () => { const count = employeeImportPreview.length; setSaving(true); clearMessages(); try { await addEmployees(employeeImportPreview); setEmployeeImportPreview([]); setNotice(`${count} employee${count === 1 ? "" : "s"} added to ${selectedEntity?.companyName}.`) } catch (caught) { setError(caught instanceof Error ? caught.message : "The employees could not be imported.") } finally { setSaving(false) } }}>{saving ? "Saving…" : `Add ${employeeImportPreview.length} employees`}</Button></div>
           </CardContent>
         </Card>
       )}
@@ -751,7 +772,7 @@ export function EmployeesPage() {
         </CardHeader>
         <CardContent>
           <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Designation</TableHead><TableHead>PAN</TableHead><TableHead>Bank</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
-            {entityEmployees.length ? entityEmployees.map((employee) => <TableRow key={employee.id}><TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></TableCell><TableCell>{employee.designation || "—"}<p className="text-xs text-muted-foreground">{employee.department}</p></TableCell><TableCell>{employee.pan || "—"}</TableCell><TableCell>{employee.bankName || "—"}</TableCell><TableCell className="text-right">{pendingDelete?.type === "employee" && pendingDelete.id === employee.id ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => { deleteEmployee(employee.id); setPendingDelete(null); setNotice(`${employee.employeeName} was removed from the active employee master. Existing payslips were kept.`) }}>Confirm</Button></span> : <span className="inline-flex"><Button size="icon" variant="ghost" aria-label={`Edit ${employee.employeeName}`} onClick={() => editEmployee(employee)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={`Create payslip for ${employee.employeeName}`} onClick={() => openPayslipForm(employee.id)}><Plus /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${employee.employeeName}`} onClick={() => setPendingDelete({ type: "employee", id: employee.id })}><Trash2 /></Button></span>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Add the first employee for this entity.</TableCell></TableRow>}
+            {entityEmployees.length ? entityEmployees.map((employee) => <TableRow key={employee.id}><TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></TableCell><TableCell>{employee.designation || "—"}<p className="text-xs text-muted-foreground">{employee.department}</p></TableCell><TableCell>{employee.pan || "—"}</TableCell><TableCell>{employee.bankName || "—"}</TableCell><TableCell className="text-right">{!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingDelete?.type === "employee" && pendingDelete.id === employee.id ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteEmployee(employee.id); setPendingDelete(null); setNotice(`${employee.employeeName} was removed from the active employee master. Existing payslips were kept.`) } catch (caught) { setError(caught instanceof Error ? caught.message : "The employee could not be deleted.") } }}>Confirm</Button></span> : <span className="inline-flex"><Button size="icon" variant="ghost" aria-label={`Edit ${employee.employeeName}`} onClick={() => editEmployee(employee)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={`Create payslip for ${employee.employeeName}`} onClick={() => openPayslipForm(employee.id)}><Plus /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${employee.employeeName}`} onClick={() => setPendingDelete({ type: "employee", id: employee.id })}><Trash2 /></Button></span>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Add the first employee for this entity.</TableCell></TableRow>}
           </TableBody></Table>
         </CardContent>
       </Card>
@@ -760,7 +781,7 @@ export function EmployeesPage() {
         <CardHeader><CardTitle>Payslip history</CardTitle><CardDescription>Saved payslips remain available to preview, edit, copy into the next month, download, or delete.</CardDescription></CardHeader>
         <CardContent>
           <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Month</TableHead><TableHead>Net pay</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
-            {entityPayslips.length ? entityPayslips.map((payslip) => <TableRow key={payslip.id}><TableCell className="font-medium">{payslip.employeeName}<p className="text-xs font-normal text-muted-foreground">{payslip.employeeCode}</p></TableCell><TableCell>{formatSalaryMonth(payslip.month)}</TableCell><TableCell>₹{payslip.netPay.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={payslip.status === "Draft" ? "secondary" : "outline"}>{payslip.status}</Badge></TableCell><TableCell className="text-right">{pendingDelete?.type === "payslip" && pendingDelete.id === payslip.id ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => { deletePayslip(payslip.id); setPendingDelete(null); setNotice(`${payslip.employeeName}'s ${formatSalaryMonth(payslip.month)} payslip was deleted.`) }}>Confirm</Button></span> : <span className="inline-flex"><Button size="icon" variant="ghost" aria-label="Preview payslip" onClick={() => setPreviewPayslip(payslip)}><Eye /></Button><Button size="icon" variant="ghost" aria-label="Edit payslip" onClick={() => editPayslip(payslip)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label="Copy into next month" onClick={() => copyPayslipToNextMonth(payslip)}><Copy /></Button><Button size="icon" variant="ghost" aria-label="Download payslip PDF" onClick={() => void downloadPayslipPdf({ payslip, entity: companies.find((company) => company.id === payslip.entityId), template })}><Download /></Button><Button size="icon" variant="ghost" aria-label="Delete payslip" onClick={() => setPendingDelete({ type: "payslip", id: payslip.id })}><Trash2 /></Button></span>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-40 text-center text-muted-foreground">Create an individual payslip or upload the monthly Excel file.</TableCell></TableRow>}
+            {entityPayslips.length ? entityPayslips.map((payslip) => <TableRow key={payslip.id}><TableCell className="font-medium">{payslip.employeeName}<p className="text-xs font-normal text-muted-foreground">{payslip.employeeCode}</p></TableCell><TableCell>{formatSalaryMonth(payslip.month)}</TableCell><TableCell>₹{payslip.netPay.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={payslip.status === "Draft" ? "secondary" : "outline"}>{payslip.status}</Badge></TableCell><TableCell className="text-right">{pendingDelete?.type === "payslip" && pendingDelete.id === payslip.id && canManage ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deletePayslip(payslip.id); setPendingDelete(null); setNotice(`${payslip.employeeName}'s ${formatSalaryMonth(payslip.month)} payslip was deleted.`) } catch (caught) { setError(caught instanceof Error ? caught.message : "The payslip could not be deleted.") } }}>Confirm</Button></span> : <span className="inline-flex"><Button size="icon" variant="ghost" aria-label="Preview payslip" onClick={() => setPreviewPayslip(payslip)}><Eye /></Button>{canManage ? <><Button size="icon" variant="ghost" aria-label="Edit payslip" onClick={() => editPayslip(payslip)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label="Copy into next month" onClick={() => copyPayslipToNextMonth(payslip)}><Copy /></Button></> : null}<Button size="icon" variant="ghost" aria-label="Download payslip PDF" onClick={() => void downloadPayslipPdf({ payslip, entity: companies.find((company) => company.id === payslip.entityId), template })}><Download /></Button>{canManage ? <Button size="icon" variant="ghost" aria-label="Delete payslip" onClick={() => setPendingDelete({ type: "payslip", id: payslip.id })}><Trash2 /></Button> : null}</span>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-40 text-center text-muted-foreground">Create an individual payslip or upload the monthly Excel file.</TableCell></TableRow>}
           </TableBody></Table>
         </CardContent>
       </Card>
@@ -768,7 +789,7 @@ export function EmployeesPage() {
   )
 }
 
-function EmployeeForm({ draft, setDraft, editing, onCancel, onSave }: { draft: Omit<Employee, "id">; setDraft: (employee: Omit<Employee, "id">) => void; editing: boolean; onCancel: () => void; onSave: () => void }) {
+function EmployeeForm({ draft, setDraft, editing, saving, onCancel, onSave }: { draft: Omit<Employee, "id">; setDraft: (employee: Omit<Employee, "id">) => void; editing: boolean; saving: boolean; onCancel: () => void; onSave: () => void }) {
   const field = (key: keyof Omit<Employee, "id">, value: string) => setDraft({ ...draft, [key]: value })
   return (
     <Card>
@@ -788,7 +809,7 @@ function EmployeeForm({ draft, setDraft, editing, onCancel, onSave }: { draft: O
           <div className="space-y-2"><Label htmlFor="bank-account">Bank account</Label><Input id="bank-account" value={draft.bankAccount} onChange={(event) => field("bankAccount", event.target.value)} /></div>
           <div className="space-y-2"><Label htmlFor="ifsc">IFSC</Label><Input id="ifsc" className="uppercase" value={draft.ifsc} onChange={(event) => field("ifsc", event.target.value)} /></div>
         </div>
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button onClick={onSave}>{editing ? "Save changes" : "Add employee"}</Button></div>
+        <div className="flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button><Button disabled={saving} onClick={onSave}>{saving ? "Saving…" : editing ? "Save changes" : "Add employee"}</Button></div>
       </CardContent>
     </Card>
   )

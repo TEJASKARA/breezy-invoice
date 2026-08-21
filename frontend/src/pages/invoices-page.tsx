@@ -14,6 +14,7 @@ import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "
 import { nextInvoiceNumber, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type ImportInvoice = Omit<Invoice, "id" | "number">
 type ImportCustomer = Omit<Customer, "id">
@@ -53,6 +54,8 @@ const invoiceColumns = [
 
 export function InvoicesPage() {
   const { setup, companies, customers, invoices, template, addCustomers, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const { can } = useWorkspaceAccess()
+  const canManage = can("invoices.manage")
   const [showForm, setShowForm] = useState(false)
   const [entityName, setEntityName] = useState("")
   const [bulkEntityName, setBulkEntityName] = useState("")
@@ -79,6 +82,7 @@ export function InvoicesPage() {
   const [manualCustomer, setManualCustomer] = useState<ManualCustomer>(emptyManualCustomer)
   const [manualCustomerError, setManualCustomerError] = useState("")
   const [notice, setNotice] = useState("")
+  const [noticeIsError, setNoticeIsError] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [pendingCustomerDelete, setPendingCustomerDelete] = useState<string | null>(null)
   const [showAllInvoices, setShowAllInvoices] = useState(false)
@@ -110,6 +114,7 @@ export function InvoicesPage() {
     return true
   })
   const visibleInvoices = showAllInvoices ? filteredInvoices : filteredInvoices.slice(0, 5)
+  const showNotice = (text: string, isError = false) => { setNotice(text); setNoticeIsError(isError) }
 
   const clearInvoiceFilters = () => {
     setInvoiceSearch("")
@@ -188,7 +193,7 @@ export function InvoicesPage() {
     try {
       await addInvoice(invoice)
       resetForm()
-      setNotice("Invoice saved to your workspace.")
+      showNotice("Invoice saved to your workspace.")
     } catch (saveError) {
       setDraftFormError(saveError instanceof Error ? saveError.message : "The invoice could not be saved. Please try again.")
     } finally {
@@ -232,9 +237,9 @@ export function InvoicesPage() {
           || customers.find((customer) => customer.entityId === invoiceEntity?.id && customer.companyName === invoice.companyName),
         template,
       })
-      setNotice(`${invoice.sourceNumber || invoice.number} downloaded using the selected ${template.preset} template.`)
+      showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the selected ${template.preset} template.`)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The invoice PDF could not be created.")
+      showNotice(error instanceof Error ? error.message : "The invoice PDF could not be created.", true)
     }
   }
 
@@ -256,9 +261,9 @@ export function InvoicesPage() {
       }
       const downloadedOn = new Date().toISOString().slice(0, 10)
       downloadZip(files, `Invoices_${cleanInvoiceFileName(selectedBulkEntity.companyName)}_${downloadedOn}.zip`)
-      setNotice(`${files.length} invoice PDFs downloaded in one ZIP folder.`)
+      showNotice(`${files.length} invoice PDFs downloaded in one ZIP folder.`)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The invoice ZIP could not be created.")
+      showNotice(error instanceof Error ? error.message : "The invoice ZIP could not be created.", true)
     } finally {
       setBulkDownloadPending(false)
     }
@@ -278,7 +283,7 @@ export function InvoicesPage() {
 
   const importInvoiceFile = async (file: File) => {
     if (!bulkEntityName) {
-      setNotice("Select the entity issuing these invoices before uploading the file.")
+      showNotice("Select the entity issuing these invoices before uploading the file.", true)
       return
     }
     setBulkImportPending(true)
@@ -401,7 +406,7 @@ export function InvoicesPage() {
       setPreview(imported)
       setBulkInvoicesSaved(false)
       setBulkImportMessage(`${imported.length} invoice${imported.length === 1 ? "" : "s"} loaded from ${file.name}.${rejectedRows ? ` ${rejectedRows} row${rejectedRows === 1 ? " was" : "s were"} skipped.` : ""} Review the preview below, then generate the invoices.`)
-      setNotice("")
+      showNotice("")
     } catch (error) {
       setBulkImportHasError(true)
       setBulkImportMessage(error instanceof Error ? `The workbook could not be read: ${error.message}` : "The workbook could not be read. Please upload an .xlsx, .xls, or .csv file.")
@@ -412,11 +417,11 @@ export function InvoicesPage() {
 
   const downloadBulkWorkbook = async (mode: "existing" | "new") => {
     if (!bulkEntityName || !selectedBulkEntity) {
-      setNotice("Select the entity issuing the invoices before downloading a template.")
+      showNotice("Select the entity issuing the invoices before downloading a template.", true)
       return
     }
     if (mode === "existing" && !bulkCustomers.length) {
-      setNotice("This entity has no saved customers. Add customers first or choose the new-customer template.")
+      showNotice("This entity has no saved customers. Add customers first or choose the new-customer template.", true)
       return
     }
     const XLSX = await import("xlsx")
@@ -503,12 +508,12 @@ export function InvoicesPage() {
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     setShowDownloadChoices(false)
-    setNotice(`Excel template downloaded for ${bulkEntityName}.`)
+    showNotice(`Excel template downloaded for ${bulkEntityName}.`)
   }
 
   const importCustomerFile = async (file: File) => {
     if (!customerEntityId) {
-      setNotice("Select the entity that owns this customer list before importing customers.")
+      showNotice("Select the entity that owns this customer list before importing customers.", true)
       return
     }
     try {
@@ -530,13 +535,13 @@ export function InvoicesPage() {
       }).filter((row) => row.companyName && row.valid)
         .map(({ valid: _valid, ...customer }) => customer)
       if (!imported.length) {
-        setNotice("No valid invoice customers found. Check the headings and validate GSTIN, PAN, and HSN/SAC.")
+        showNotice("No valid invoice customers found. Check the headings and validate GSTIN, PAN, and HSN/SAC.", true)
         return
       }
       setCustomerPreview(imported)
-      setNotice("")
+      showNotice("")
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The customer spreadsheet could not be read.")
+      showNotice(error instanceof Error ? error.message : "The customer spreadsheet could not be read.", true)
     }
   }
 
@@ -545,7 +550,7 @@ export function InvoicesPage() {
     setManualCustomerError("")
   }
 
-  const saveManualCustomer = () => {
+  const saveManualCustomer = async () => {
     if (!customerEntityId) {
       setManualCustomerError("Select the entity that owns this customer.")
       return
@@ -586,11 +591,15 @@ export function InvoicesPage() {
       setManualCustomerError("This customer name or GSTIN already exists for the selected entity.")
       return
     }
-    addCustomers([{ ...customer, entityId: customerEntityId }])
-    setManualCustomer(emptyManualCustomer())
-    setManualCustomerError("")
-    setShowManualCustomer(false)
-    setNotice(`${customer.companyName} was added to the selected entity's customer master.`)
+    try {
+      await addCustomers([{ ...customer, entityId: customerEntityId }])
+      setManualCustomer(emptyManualCustomer())
+      setManualCustomerError("")
+      setShowManualCustomer(false)
+      showNotice(`${customer.companyName} was added to the selected entity's customer master.`)
+    } catch (error) {
+      setManualCustomerError(error instanceof Error ? error.message : "The customer could not be saved.")
+    }
   }
 
   return (
@@ -599,7 +608,7 @@ export function InvoicesPage() {
         eyebrow="Documents"
         title="Invoices"
         description="Maintain invoice customers, create invoices separately, or import a monthly invoice batch."
-        actions={
+        actions={canManage ? (
           <>
             <input
               ref={customerFileInput}
@@ -628,14 +637,16 @@ export function InvoicesPage() {
             />
             <Button disabled={!companies.length || !customers.length} onClick={() => setShowForm((value) => !value)}><Plus />New invoice</Button>
           </>
-        }
+        ) : null}
       />
 
-      {notice && <p role="status" className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">{notice}</p>}
+      {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to invoices. You can search, preview, and download saved invoices, but creating, importing, or deleting records requires invoice management permission.</p> : null}
+
+      {notice && <p role={noticeIsError ? "alert" : "status"} className={noticeIsError ? "rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{notice}</p>}
       {!companies.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Create at least one managed Entity. The selected entity will be the invoice issuer.</p>}
       {!customers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Select an entity in the Customer Master section, then add a customer manually or import that entity's customer list.</p>}
 
-      {showForm && (
+      {showForm && canManage && (
         <Card>
           <CardHeader><CardTitle>Create individual invoice</CardTitle><CardDescription>Add multiple descriptions and tax amounts, then preview the selected template before saving or downloading.</CardDescription></CardHeader>
           <CardContent className="space-y-6">
@@ -707,7 +718,7 @@ export function InvoicesPage() {
         </Card>
       )}
 
-      <Card>
+      {canManage ? <Card>
         <CardHeader>
           <CardTitle>Bulk invoice generation</CardTitle>
           <CardDescription>Select the entity once, download the format, fill one invoice line item per row, and upload the completed workbook.</CardDescription>
@@ -760,9 +771,9 @@ export function InvoicesPage() {
           <p className="text-xs text-muted-foreground">For existing customers, the workbook includes the saved company details and only the amount inputs are blank. Choose the new-customer workbook when the customer has not yet been saved. Repeat an invoice number on multiple rows to add multiple descriptions to one invoice.</p>
           {bulkEntityName && !bulkCustomers.length && <p className="text-sm text-destructive">This entity has no existing customers, but you can download and upload the new-customer workbook.</p>}
         </CardContent>
-      </Card>
+      </Card> : null}
 
-      {customerPreview.length > 0 && (
+      {canManage && customerPreview.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Invoice customer import preview</CardTitle>
@@ -777,13 +788,22 @@ export function InvoicesPage() {
             </Table>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setCustomerPreview([])}>Cancel</Button>
-              <Button onClick={() => { const count = customerPreview.length; addCustomers(customerPreview); setCustomerPreview([]); setNotice(`${count} invoice customers imported successfully.`) }}>Import {customerPreview.length} customers</Button>
+              <Button onClick={async () => {
+                const count = customerPreview.length
+                try {
+                  await addCustomers(customerPreview)
+                  setCustomerPreview([])
+                  showNotice(`${count} invoice customers imported successfully.`)
+                } catch (error) {
+                  showNotice(error instanceof Error ? error.message : "The invoice customers could not be imported.", true)
+                }
+              }}>Import {customerPreview.length} customers</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {preview.length > 0 && (
+      {canManage && preview.length > 0 && (
         <div ref={bulkPreviewRef} tabIndex={-1} className="scroll-mt-6 outline-none">
           <Card>
             <CardHeader>
@@ -803,13 +823,20 @@ export function InvoicesPage() {
                 <Button variant="outline" disabled={bulkDownloadPending} onClick={() => void downloadBulkInvoiceZip()}>
                   <Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${preview.length} PDFs (ZIP)`}
                 </Button>
-                <Button disabled={bulkInvoicesSaved} onClick={() => {
+                <Button disabled={bulkInvoicesSaved} onClick={async () => {
                   const count = preview.length
                   const customerCount = bulkNewCustomers.length
-                  if (customerCount) addCustomers(bulkNewCustomers)
-                  addInvoices(preview)
-                  setBulkInvoicesSaved(true)
-                  setNotice(`${count} invoices generated successfully${customerCount ? ` and ${customerCount} new customers were saved` : ""}. You can now download the complete batch as a ZIP.`)
+                  try {
+                    if (customerCount) {
+                      await addCustomers(bulkNewCustomers)
+                      setBulkNewCustomers([])
+                    }
+                    await addInvoices(preview)
+                    setBulkInvoicesSaved(true)
+                    showNotice(`${count} invoices generated successfully${customerCount ? ` and ${customerCount} new customers were saved` : ""}. You can now download the complete batch as a ZIP.`)
+                  } catch (error) {
+                    showNotice(error instanceof Error ? error.message : "The invoice batch could not be saved.", true)
+                  }
                 }}>
                   {bulkInvoicesSaved ? "Invoices generated" : `Generate ${preview.length} invoices`}
                 </Button>
@@ -844,7 +871,7 @@ export function InvoicesPage() {
                 {companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}
               </select>
             </div>
-            <Button
+            {canManage ? <Button
               disabled={!customerEntityId}
               onClick={() => {
                 setShowManualCustomer((visible) => !visible)
@@ -852,10 +879,10 @@ export function InvoicesPage() {
               }}
             >
               <Plus />Add customer manually
-            </Button>
-            <Button variant="outline" disabled={!customerEntityId} onClick={() => customerFileInput.current?.click()}><Upload />Import customers for entity</Button>
+            </Button> : null}
+            {canManage ? <Button variant="outline" disabled={!customerEntityId} onClick={() => customerFileInput.current?.click()}><Upload />Import customers for entity</Button> : null}
           </div>
-          {showManualCustomer && customerEntityId && (
+          {canManage && showManualCustomer && customerEntityId && (
             <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
               <div>
                 <h3 className="font-medium">Add customer manually</h3>
@@ -914,8 +941,8 @@ export function InvoicesPage() {
                   <TableCell className="hidden font-mono text-xs md:table-cell">{customer.pan || "—"}</TableCell>
                   <TableCell className="hidden max-w-72 truncate lg:table-cell">{customer.billingAddress || "—"}</TableCell>
                   <TableCell className="text-right">
-                    {pendingCustomerDelete === customer.id ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => { deleteCustomer(customer.id); setPendingCustomerDelete(null); setNotice(`${customer.companyName} was removed from the invoice customer master.`) }}>Confirm delete</Button></div>
+                    {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingCustomerDelete === customer.id ? (
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteCustomer(customer.id); setPendingCustomerDelete(null); showNotice(`${customer.companyName} was removed from the invoice customer master.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The customer could not be deleted.", true) } }}>Confirm delete</Button></div>
                     ) : (
                       <Button size="icon" variant="ghost" aria-label={`Delete invoice customer ${customer.companyName}`} onClick={() => setPendingCustomerDelete(customer.id)}><Trash2 /></Button>
                     )}
@@ -983,13 +1010,13 @@ export function InvoicesPage() {
                 <TableRow key={invoice.id}>
                   <TableCell className="font-medium">{invoice.sourceNumber || invoice.number}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge></TableCell>
                   <TableCell className="text-right">
-                    {pendingDelete === invoice.id ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => { deleteInvoice(invoice.id); setPendingDelete(null); setNotice(`${invoice.number} was deleted.`) }}>Confirm delete</Button></div>
+                    {pendingDelete === invoice.id && canManage ? (
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The invoice could not be deleted.", true) } }}>Confirm delete</Button></div>
                     ) : (
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
-                        <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button>
+                        {canManage ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>
                     )}
                   </TableCell>
@@ -1026,7 +1053,7 @@ export function InvoicesPage() {
         </div>
       )}
 
-      {showDownloadChoices && (
+      {canManage && showDownloadChoices && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="download-template-title">
           <Card className="w-full max-w-2xl shadow-2xl">
             <CardHeader>

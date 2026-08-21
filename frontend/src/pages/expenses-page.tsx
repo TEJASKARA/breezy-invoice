@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { downloadExpenseBill, removeExpenseBill, uploadExpenseBill } from "@/lib/expense-bills"
 import { useAuthUser } from "@/lib/use-auth-user"
 import { useMvpStore } from "@/lib/mvp-store"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 })
 const commonCategories = ["Office expenses", "Rent", "Utilities", "Travel", "Professional fees", "Software", "Repairs and maintenance", "Marketing", "Insurance", "Bank charges", "Taxes", "Miscellaneous"]
@@ -40,6 +41,8 @@ function formatMonth(value: string) {
 export function ExpensesPage() {
   const { user } = useAuthUser()
   const { companies, invoices, payslips, expenses, addExpense, deleteExpense } = useMvpStore()
+  const { can } = useWorkspaceAccess()
+  const canManage = can("expenses.manage")
   const [selectedEntityId, setSelectedEntityId] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [dateFrom, setDateFrom] = useState("")
@@ -114,13 +117,13 @@ export function ExpensesPage() {
       return
     }
     setSaving(true)
+    let billPath: string | undefined
     try {
-      let billPath: string | undefined
       if (billFile) {
         if (!user) throw new Error("Your login session could not be verified. Please sign in again.")
         billPath = await uploadExpenseBill(user.id, billFile)
       }
-      addExpense({
+      await addExpense({
         entityId: draft.entityId,
         name: draft.name.trim(),
         category: selectedCategory,
@@ -137,6 +140,13 @@ export function ExpensesPage() {
       setShowForm(false)
       setNotice("Expense saved successfully.")
     } catch (caught) {
+      if (billPath) {
+        try {
+          await removeExpenseBill(billPath)
+        } catch {
+          // Keep the original save error visible; abandoned files can be cleaned up separately.
+        }
+      }
       setError(caught instanceof Error ? caught.message : "The expense could not be saved.")
     } finally {
       setSaving(false)
@@ -160,7 +170,7 @@ export function ExpensesPage() {
     setError("")
     try {
       if (expense?.billPath) await removeExpenseBill(expense.billPath)
-      deleteExpense(expenseId)
+      await deleteExpense(expenseId)
       setPendingDeleteId(null)
       setNotice("Expense deleted.")
     } catch (caught) {
@@ -174,17 +184,17 @@ export function ExpensesPage() {
         eyebrow="Expense management"
         title="Expenses"
         description="Track invoices, payroll and your own categorized business expenses in one place."
-        actions={<Button onClick={openExpenseForm} disabled={!companies.length}><Plus />Add expense</Button>}
+        actions={canManage ? <Button onClick={openExpenseForm} disabled={!companies.length}><Plus />Add expense</Button> : null}
       />
 
       {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       {notice ? <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div> : null}
 
       {!companies.length ? (
-        <Card className="border-dashed"><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><Banknote className="size-6 text-muted-foreground" /><div><p className="font-medium">Add an entity before recording expenses</p><p className="mt-1 text-sm text-muted-foreground">Every expense belongs to one of your companies.</p></div><Button asChild><Link to="/entities">Add entity</Link></Button></CardContent></Card>
+        <Card className="border-dashed"><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><Banknote className="size-6 text-muted-foreground" /><div><p className="font-medium">No entity is available</p><p className="mt-1 text-sm text-muted-foreground">Every expense belongs to one of your companies.</p></div>{can("entities.manage") ? <Button asChild><Link to="/entities">Add entity</Link></Button> : null}</CardContent></Card>
       ) : null}
 
-      {showForm ? (
+      {showForm && canManage ? (
         <Card>
           <CardHeader><CardTitle>Add another expense</CardTitle><CardDescription>Create your own category and optionally attach the supporting bill.</CardDescription></CardHeader>
           <CardContent>
@@ -221,14 +231,14 @@ export function ExpensesPage() {
       </Suspense>
 
       <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Other expenses</CardTitle><CardDescription>Custom expenses and supporting bills for the selected entity.</CardDescription></div><Button variant="outline" size="sm" onClick={openExpenseForm} disabled={!companies.length}><Plus />Add</Button></CardHeader>
+        <CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Other expenses</CardTitle><CardDescription>Custom expenses and supporting bills for the selected entity.</CardDescription></div>{canManage ? <Button variant="outline" size="sm" onClick={openExpenseForm} disabled={!companies.length}><Plus />Add</Button> : null}</CardHeader>
         <CardContent>
           <Table>
             <TableHeader><TableRow><TableHead>Expense</TableHead><TableHead>Category</TableHead><TableHead className="hidden md:table-cell">Entity / vendor</TableHead><TableHead className="hidden sm:table-cell">Date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {visibleExpenses.length ? visibleExpenses.map((expense) => {
                 const entityName = companyNameById.get(expense.entityId) || "Unknown entity"
-                return <TableRow key={expense.id}><TableCell><p className="font-medium">{expense.name}</p>{expense.notes ? <p className="max-w-56 truncate text-xs text-muted-foreground" title={expense.notes}>{expense.notes}</p> : null}</TableCell><TableCell>{expense.category}</TableCell><TableCell className="hidden md:table-cell"><p>{entityName}</p><p className="text-xs text-muted-foreground">{expense.vendorName || "No vendor"}</p></TableCell><TableCell className="hidden sm:table-cell">{formatDate(expense.date)}</TableCell><TableCell><Badge variant={expense.paymentStatus === "Pending" ? "secondary" : "outline"}>{expense.paymentStatus}</Badge></TableCell><TableCell className="text-right font-medium">{currency.format(expense.amount)}</TableCell><TableCell className="text-right">{pendingDeleteId === expense.id ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDeleteId(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => void confirmDelete(expense.id)}>Confirm</Button></span> : <span className="inline-flex">{expense.billPath ? <Button size="icon" variant="ghost" aria-label={`Download bill for ${expense.name}`} disabled={billBusyId === expense.id} onClick={() => void downloadBill(expense.id, expense.billPath || "", expense.billName || "expense-bill")}><Download /></Button> : <span className="inline-flex size-8 items-center justify-center text-muted-foreground" title="No bill attached"><Paperclip className="size-4" /></span>}<Button size="icon" variant="ghost" aria-label={`Delete ${expense.name}`} onClick={() => setPendingDeleteId(expense.id)}><Trash2 /></Button></span>}</TableCell></TableRow>
+                return <TableRow key={expense.id}><TableCell><p className="font-medium">{expense.name}</p>{expense.notes ? <p className="max-w-56 truncate text-xs text-muted-foreground" title={expense.notes}>{expense.notes}</p> : null}</TableCell><TableCell>{expense.category}</TableCell><TableCell className="hidden md:table-cell"><p>{entityName}</p><p className="text-xs text-muted-foreground">{expense.vendorName || "No vendor"}</p></TableCell><TableCell className="hidden sm:table-cell">{formatDate(expense.date)}</TableCell><TableCell><Badge variant={expense.paymentStatus === "Pending" ? "secondary" : "outline"}>{expense.paymentStatus}</Badge></TableCell><TableCell className="text-right font-medium">{currency.format(expense.amount)}</TableCell><TableCell className="text-right">{pendingDeleteId === expense.id && canManage ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDeleteId(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => void confirmDelete(expense.id)}>Confirm</Button></span> : <span className="inline-flex">{expense.billPath ? <Button size="icon" variant="ghost" aria-label={`Download bill for ${expense.name}`} disabled={billBusyId === expense.id} onClick={() => void downloadBill(expense.id, expense.billPath || "", expense.billName || "expense-bill")}><Download /></Button> : <span className="inline-flex size-8 items-center justify-center text-muted-foreground" title="No bill attached"><Paperclip className="size-4" /></span>}{canManage ? <Button size="icon" variant="ghost" aria-label={`Delete ${expense.name}`} onClick={() => setPendingDeleteId(expense.id)}><Trash2 /></Button> : null}</span>}</TableCell></TableRow>
               }) : <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No custom expenses found for this selection.</TableCell></TableRow>}
             </TableBody>
           </Table>

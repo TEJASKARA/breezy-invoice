@@ -1,4 +1,4 @@
--- BreezyAccounts application data.
+-- BreezyInvoice application data.
 -- Run this migration after 202607290001_auth_profiles.sql.
 -- Every table is protected by Row Level Security and scoped to auth.uid().
 

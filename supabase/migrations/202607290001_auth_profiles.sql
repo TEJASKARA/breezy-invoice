@@ -3,6 +3,7 @@
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
+  email text,
   full_name text not null default '',
   avatar_path text,
   last_seen_at timestamptz,
@@ -19,14 +20,16 @@ security definer
 set search_path = ''
 as $$
 begin
-  insert into public.profiles (id, full_name, avatar_path, last_seen_at)
+  insert into public.profiles (id, email, full_name, avatar_path, last_seen_at)
   values (
     new.id,
+    new.email,
     coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1), 'User'),
     coalesce(new.raw_user_meta_data ->> 'avatar_url', new.raw_user_meta_data ->> 'picture'),
     now()
   )
   on conflict (id) do update set
+    email = excluded.email,
     full_name = excluded.full_name,
     avatar_path = excluded.avatar_path,
     last_seen_at = excluded.last_seen_at,
@@ -37,17 +40,19 @@ $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
-after insert or update of raw_user_meta_data on auth.users
+after insert or update of raw_user_meta_data, email on auth.users
 for each row execute function public.handle_new_auth_user();
 
-insert into public.profiles (id, full_name, avatar_path, last_seen_at)
+insert into public.profiles (id, email, full_name, avatar_path, last_seen_at)
 select
   id,
+  email,
   coalesce(raw_user_meta_data ->> 'full_name', raw_user_meta_data ->> 'name', split_part(email, '@', 1), 'User'),
   coalesce(raw_user_meta_data ->> 'avatar_url', raw_user_meta_data ->> 'picture'),
   now()
 from auth.users
 on conflict (id) do update set
+  email = excluded.email,
   full_name = excluded.full_name,
   avatar_path = excluded.avatar_path,
   last_seen_at = excluded.last_seen_at,

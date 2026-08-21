@@ -22,6 +22,7 @@ const industries = [
   "Logistics / Transportation",
   "Other",
 ]
+const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
 export function OnboardingPage() {
   const { setup, loading, completeSetup } = useMvpStore()
@@ -47,6 +48,11 @@ export function OnboardingPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
+    const normalizedGstin = gstin.trim().toUpperCase()
+    if (!gstinPattern.test(normalizedGstin)) {
+      setSaveError("Enter a valid 15-character GSTIN, for example 27AAAAA0000A1Z5.")
+      return
+    }
     if (continueExistingNumbers && !existingNumbering) {
       setNumberingError("Enter the complete latest invoice number ending in its sequence digits, for example ABC/2025-26/0047.")
       return
@@ -55,10 +61,10 @@ export function OnboardingPage() {
     setSaveError("")
     try {
       await completeSetup({
-        firmName,
+        firmName: firmName.trim(),
         industry: industry === "Other" ? otherIndustry.trim() : industry,
-        gstin: gstin.toUpperCase(),
-        mailingAddress,
+        gstin: normalizedGstin,
+        mailingAddress: mailingAddress.trim(),
         invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
       })
       navigate("/entities")
@@ -96,7 +102,7 @@ export function OnboardingPage() {
                 {industry === "Other" && <Input required value={otherIndustry} onChange={(event) => setOtherIndustry(event.target.value)} placeholder="Enter your industry" aria-label="Other industry" />}
                 <p className="text-xs text-muted-foreground">This will help BreezyInvoice tailor templates and future reports to your business.</p>
               </div>
-              <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => setGstin(event.target.value)} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /></div>
+              <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p></div>
               <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
 
               <section className="space-y-4 rounded-xl border bg-muted/20 p-4">

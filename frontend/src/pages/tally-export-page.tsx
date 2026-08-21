@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type TallySettings, useMvpStore } from "@/lib/mvp-store"
 import { pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { createTallyPayrollXml, createTallySalesXml, downloadXml } from "@/lib/tally-xml"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 const today = () => new Date().toISOString().slice(0, 10)
@@ -40,6 +41,8 @@ function defaultTallySettings(companyName: string): TallySettings {
 
 export function TallyExportPage() {
   const { companies, customers, invoices, employees, payslips, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
+  const { can } = useWorkspaceAccess()
+  const canManage = can("data_export.manage")
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [dateFrom, setDateFrom] = useState(financialYearStart())
   const [dateTo, setDateTo] = useState(today())
@@ -84,15 +87,20 @@ export function TallyExportPage() {
     clearMessages()
   }
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     clearMessages()
+    if (!canManage) { setError("You have view-only access to Data Export."); return }
     if (!entity) return
     if (Object.values(settings).some((value) => !value.trim())) {
       setError("Complete every Tally company and ledger field before saving.")
       return
     }
-    updateCompany(entity.id, { tallySettings: settings })
-    setNotice(`Tally settings saved for ${entity.companyName}.`)
+    try {
+      await updateCompany(entity.id, { tallySettings: settings })
+      setNotice(`Tally settings saved for ${entity.companyName}.`)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "The Tally settings could not be saved.")
+    }
   }
 
   const downloadCustomerMapping = async () => {
@@ -129,18 +137,21 @@ export function TallyExportPage() {
 
   const importCustomerMapping = async (file: File) => {
     clearMessages()
+    if (!canManage) { setError("You do not have permission to import ledger mappings."); return }
     try {
       const rows = await readSpreadsheet(file)
       let updated = 0
+      const writes: Promise<void>[] = []
       rows.forEach((row) => {
         const id = pickCell(row, "Customer ID")
         const companyName = pickCell(row, "Customer Company Name", "Company Name")
         const ledgerName = pickCell(row, "Tally Ledger Name", "Ledger Name")
         const customer = entityCustomers.find((item) => item.id === id) || entityCustomers.find((item) => item.companyName.toLowerCase() === companyName.toLowerCase())
         if (!customer || !ledgerName) return
-        updateCustomer(customer.id, { tallyLedgerName: ledgerName })
+        writes.push(updateCustomer(customer.id, { tallyLedgerName: ledgerName }))
         updated += 1
       })
+      await Promise.all(writes)
       if (updated) setNotice(`${updated} customer ledger mapping${updated === 1 ? "" : "s"} saved from ${file.name}.`)
       else setError("No valid customer ledger mappings were found in this workbook.")
     } catch (importError) {
@@ -150,18 +161,21 @@ export function TallyExportPage() {
 
   const importEmployeeMapping = async (file: File) => {
     clearMessages()
+    if (!canManage) { setError("You do not have permission to import ledger mappings."); return }
     try {
       const rows = await readSpreadsheet(file)
       let updated = 0
+      const writes: Promise<void>[] = []
       rows.forEach((row) => {
         const id = pickCell(row, "Employee ID")
         const code = pickCell(row, "Employee Code")
         const ledgerName = pickCell(row, "Tally Ledger Name", "Ledger Name")
         const employee = entityEmployees.find((item) => item.id === id) || entityEmployees.find((item) => item.employeeCode.toLowerCase() === code.toLowerCase())
         if (!employee || !ledgerName) return
-        updateEmployee(employee.id, { tallyLedgerName: ledgerName })
+        writes.push(updateEmployee(employee.id, { tallyLedgerName: ledgerName }))
         updated += 1
       })
+      await Promise.all(writes)
       if (updated) setNotice(`${updated} employee ledger mapping${updated === 1 ? "" : "s"} saved from ${file.name}.`)
       else setError("No valid employee ledger mappings were found in this workbook.")
     } catch (importError) {
@@ -171,6 +185,7 @@ export function TallyExportPage() {
 
   const exportInvoices = () => {
     clearMessages()
+    if (!canManage) { setError("You do not have permission to create Tally exports."); return }
     if (!generatedInvoices.length) { setError("No generated invoices were found for this entity and date range."); return }
     const xml = createTallySalesXml({ companyName: settings.companyName, invoices: generatedInvoices, customers: entityCustomers, settings })
     downloadXml(xml, `Tally-Sales-${safeFileName(entity?.companyName || "")}-${dateFrom}-to-${dateTo}.xml`)
@@ -179,6 +194,7 @@ export function TallyExportPage() {
 
   const exportPayslips = () => {
     clearMessages()
+    if (!canManage) { setError("You do not have permission to create Tally exports."); return }
     if (!generatedPayslips.length) { setError("No generated payslips were found for this entity and date range."); return }
     const xml = createTallyPayrollXml({ companyName: settings.companyName, payslips: generatedPayslips, employees: entityEmployees, settings })
     downloadXml(xml, `Tally-Payroll-${safeFileName(entity?.companyName || "")}-${dateFrom}-to-${dateTo}.xml`)
@@ -189,6 +205,8 @@ export function TallyExportPage() {
 
   return <div className="space-y-7">
     <PageHeader eyebrow="Accounting export" title="Data Export" description="Map BreezyInvoice names to existing Tally ledgers and export generated invoices and payslips as importable voucher XML." />
+
+    {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access. Ledger edits, mapping uploads, and XML generation require Data Export management permission.</p> : null}
 
     <Card>
       <CardHeader><CardTitle>Export selection</CardTitle><CardDescription>Select the Tally company and reporting period used by both sales and payroll exports.</CardDescription></CardHeader>
@@ -208,7 +226,7 @@ export function TallyExportPage() {
         <div className="grid gap-4 md:grid-cols-3">
           {(Object.entries(settings) as [keyof TallySettings, string][]).map(([key, value]) => <div key={key} className="space-y-2"><Label htmlFor={`tally-${key}`}>{settingLabel(key)}</Label><Input id={`tally-${key}`} value={value} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} /></div>)}
         </div>
-        <div className="flex justify-end"><Button onClick={saveSettings}><Save />Save Tally settings</Button></div>
+        <div className="flex justify-end"><Button disabled={!canManage} onClick={() => void saveSettings()}><Save />Save Tally settings</Button></div>
       </CardContent>
     </Card>
 
@@ -223,7 +241,7 @@ export function TallyExportPage() {
       inputRef={customerMappingInput}
       importMapping={importCustomerMapping}
     >
-      <Table><TableHeader><TableRow><TableHead>Customer company</TableHead><TableHead>GSTIN</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleCustomers.length ? visibleCustomers.map((customer) => <TableRow key={customer.id}><TableCell className="font-medium">{customer.companyName}</TableCell><TableCell>{customer.gstin || "—"}</TableCell><TableCell><LedgerNameInput initialValue={customer.tallyLedgerName || customer.companyName} onSave={(value) => updateCustomer(customer.id, { tallyLedgerName: value })} ariaLabel={`Tally ledger for ${customer.companyName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No customers match this search.</TableCell></TableRow>}</TableBody></Table>
+      <Table><TableHeader><TableRow><TableHead>Customer company</TableHead><TableHead>GSTIN</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleCustomers.length ? visibleCustomers.map((customer) => <TableRow key={customer.id}><TableCell className="font-medium">{customer.companyName}</TableCell><TableCell>{customer.gstin || "—"}</TableCell><TableCell><LedgerNameInput disabled={!canManage} initialValue={customer.tallyLedgerName || customer.companyName} onSave={async (value) => { if (!canManage) return; try { await updateCustomer(customer.id, { tallyLedgerName: value }); setNotice(`Ledger mapping saved for ${customer.companyName}.`) } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The ledger mapping could not be saved.") } }} ariaLabel={`Tally ledger for ${customer.companyName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No customers match this search.</TableCell></TableRow>}</TableBody></Table>
     </LedgerMappingCard>
 
     <LedgerMappingCard
@@ -237,12 +255,12 @@ export function TallyExportPage() {
       inputRef={employeeMappingInput}
       importMapping={importEmployeeMapping}
     >
-      <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Code</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => <TableRow key={employee.id}><TableCell className="font-medium">{employee.employeeName}</TableCell><TableCell>{employee.employeeCode}</TableCell><TableCell><LedgerNameInput initialValue={employee.tallyLedgerName || employee.employeeName} onSave={(value) => updateEmployee(employee.id, { tallyLedgerName: value })} ariaLabel={`Tally ledger for ${employee.employeeName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No employees match this search.</TableCell></TableRow>}</TableBody></Table>
+      <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Code</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => <TableRow key={employee.id}><TableCell className="font-medium">{employee.employeeName}</TableCell><TableCell>{employee.employeeCode}</TableCell><TableCell><LedgerNameInput disabled={!canManage} initialValue={employee.tallyLedgerName || employee.employeeName} onSave={async (value) => { if (!canManage) return; try { await updateEmployee(employee.id, { tallyLedgerName: value }); setNotice(`Ledger mapping saved for ${employee.employeeName}.`) } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The ledger mapping could not be saved.") } }} ariaLabel={`Tally ledger for ${employee.employeeName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No employees match this search.</TableCell></TableRow>}</TableBody></Table>
     </LedgerMappingCard>
 
     <div className="grid gap-5 lg:grid-cols-2">
-      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>Invoice sales vouchers</CardTitle><CardDescription>Accounting-invoice Sales vouchers for generated invoices in the selected date range.</CardDescription></div><Badge variant="outline">{generatedInvoices.length}</Badge></div></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">Party, Sales, CGST, SGST, IGST and round-off ledger entries are included where applicable.</p><Button className="w-full" disabled={!generatedInvoices.length} onClick={exportInvoices}><FileCode2 />Download invoice Tally XML</Button></CardContent></Card>
-      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>Payslip journal vouchers</CardTitle><CardDescription>Salary expense, employee payable and statutory-deduction Journal vouchers.</CardDescription></div><Badge variant="outline">{generatedPayslips.length}</Badge></div></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">Each generated payslip becomes one balanced Journal voucher using the mapped employee ledger.</p><Button className="w-full" disabled={!generatedPayslips.length} onClick={exportPayslips}><FileCode2 />Download payslip Tally XML</Button></CardContent></Card>
+      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>Invoice sales vouchers</CardTitle><CardDescription>Accounting-invoice Sales vouchers for generated invoices in the selected date range.</CardDescription></div><Badge variant="outline">{generatedInvoices.length}</Badge></div></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">Party, Sales, CGST, SGST, IGST and round-off ledger entries are included where applicable.</p><Button className="w-full" disabled={!canManage || !generatedInvoices.length} onClick={exportInvoices}><FileCode2 />Download invoice Tally XML</Button></CardContent></Card>
+      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>Payslip journal vouchers</CardTitle><CardDescription>Salary expense, employee payable and statutory-deduction Journal vouchers.</CardDescription></div><Badge variant="outline">{generatedPayslips.length}</Badge></div></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">Each generated payslip becomes one balanced Journal voucher using the mapped employee ledger.</p><Button className="w-full" disabled={!canManage || !generatedPayslips.length} onClick={exportPayslips}><FileCode2 />Download payslip Tally XML</Button></CardContent></Card>
     </div>
 
     <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Before importing, back up the Tally company and confirm that every referenced ledger already exists. Test the XML in a development or copied Tally company first.</p>
@@ -267,10 +285,10 @@ function settingLabel(key: keyof TallySettings) {
   return labels[key]
 }
 
-function LedgerNameInput({ initialValue, onSave, ariaLabel }: { initialValue: string; onSave: (value: string) => void; ariaLabel: string }) {
+function LedgerNameInput({ initialValue, onSave, ariaLabel, disabled = false }: { initialValue: string; onSave: (value: string) => Promise<void>; ariaLabel: string; disabled?: boolean }) {
   const [value, setValue] = useState(initialValue)
   useEffect(() => setValue(initialValue), [initialValue])
-  return <Input aria-label={ariaLabel} value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => { const cleaned = value.trim(); if (cleaned && cleaned !== initialValue) onSave(cleaned) }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur() }} />
+  return <Input disabled={disabled} aria-label={ariaLabel} value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => { const cleaned = value.trim(); if (cleaned && cleaned !== initialValue) void onSave(cleaned) }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur() }} />
 }
 
 function LedgerMappingCard({ title, description, mapped, total, search, setSearch, downloadMapping, inputRef, importMapping, children }: { title: string; description: string; mapped: number; total: number; search: string; setSearch: (value: string) => void; downloadMapping: () => void; inputRef: React.RefObject<HTMLInputElement | null>; importMapping: (file: File) => Promise<void>; children: React.ReactNode }) {
