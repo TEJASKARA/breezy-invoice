@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Download, Eye, LoaderCircle, MessageCircle, Plus, Search, Trash2, Upload, X } from "lucide-react"
+import { Download, Eye, LoaderCircle, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react"
 
 import { InvoicePreview } from "@/components/invoice-preview"
 import { PageHeader } from "@/components/page-header"
@@ -1045,7 +1045,7 @@ export function InvoicesPage() {
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
-                        <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number} through WhatsApp`} title="Share via WhatsApp" onClick={() => void shareInvoiceOnWhatsApp(invoice)}><MessageCircle /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number} through WhatsApp`} title="Share via WhatsApp" onClick={() => void shareInvoiceOnWhatsApp(invoice)}><Share2 /></Button>
                         {canManage ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>
                     )}
@@ -1066,7 +1066,7 @@ export function InvoicesPage() {
                 <p className="text-sm text-muted-foreground">Selected template: {template.preset}. The downloaded PDF will use this format.</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => void shareInvoiceOnWhatsApp(pdfPreview)}><MessageCircle />Share via WhatsApp</Button>
+                <Button variant="outline" onClick={() => void shareInvoiceOnWhatsApp(pdfPreview)}><Share2 />Share via WhatsApp</Button>
                 <Button variant="outline" onClick={() => void downloadPdf(pdfPreview)}><Download />Download PDF</Button>
                 <Button size="icon" variant="ghost" aria-label="Close invoice preview" onClick={() => setPdfPreview(null)}><X /></Button>
               </div>
