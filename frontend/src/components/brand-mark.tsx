@@ -1,4 +1,3 @@
-import { Wind } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { cn } from "@/lib/utils"
@@ -12,13 +11,19 @@ export function BrandMark({ compact = false, className }: BrandMarkProps) {
   return (
     <Link
       to="/"
-      className={cn("flex items-center gap-2.5 font-semibold tracking-tight", className)}
-      aria-label="BreezyInvoice home"
+      className={cn("inline-flex items-center", className)}
+      aria-label="ChanaX home"
     >
-      <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-        <Wind className="size-5" aria-hidden="true" />
-      </span>
-      {!compact && <span className="text-base">BreezyInvoice</span>}
+      <img
+        src={compact ? "/chanax-icon.png" : "/chanax-wordmark.png"}
+        alt={compact ? "" : "ChanaX"}
+        className={cn(
+          "object-contain",
+          compact
+            ? "size-9"
+            : "h-9 w-auto max-w-[142px] dark:rounded-md dark:bg-white dark:px-1",
+        )}
+      />
     </Link>
   )
 }
