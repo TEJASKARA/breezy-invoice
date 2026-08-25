@@ -21,7 +21,7 @@ export function BrandMark({ compact = false, className }: BrandMarkProps) {
           "object-contain",
           compact
             ? "size-9"
-            : "h-9 w-auto max-w-[142px] dark:rounded-md dark:bg-white dark:px-1",
+            : "h-9 w-auto max-w-[142px] dark:brightness-0 dark:invert",
         )}
       />
     </Link>
