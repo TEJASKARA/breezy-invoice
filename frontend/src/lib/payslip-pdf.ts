@@ -99,10 +99,35 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   detail(114, "Tax & employment", `PAN: ${payslip.pan || "-"}`, payslip.employmentStatus)
   detail(158, "Disbursal bank", payslip.bankName, `A/C: ${maskBankAccount(payslip.bankAccount)}`)
 
+  if (payslip.attendance) {
+    const attendanceItems = [
+      ["Calendar", payslip.attendance.calendarDays],
+      ["Working", payslip.workingDays],
+      ["Full present", payslip.attendance.fullPresentDays],
+      ["Half days", payslip.attendance.halfDays],
+      ["Unpaid leave", payslip.attendance.unpaidLeaveDays],
+      ["Payable", payslip.payableDays],
+    ] as const
+    doc.setFillColor(...soft)
+    doc.roundedRect(margin, 98, pageWidth - margin * 2, 13, 2, 2, "F")
+    const attendanceWidth = (pageWidth - margin * 2) / attendanceItems.length
+    attendanceItems.forEach(([label, value], index) => {
+      const x = margin + 4 + index * attendanceWidth
+      doc.setFont(baseFont, "normal")
+      doc.setFontSize(6.5)
+      doc.setTextColor(...muted)
+      doc.text(label, x, 103)
+      doc.setFont(baseFont, "bold")
+      doc.setFontSize(8.5)
+      doc.setTextColor(...(label === "Payable" ? accent : ink))
+      doc.text(String(value), x, 108)
+    })
+  }
+
   const leftX = margin
   const rightX = 110
   const tableWidth = 84
-  const tableStart = 108
+  const tableStart = payslip.attendance ? 117 : 108
   const drawPayroll = (x: number, title: string, items: Payslip["earnings"], totalLabel: string, total: number, deduction = false) => {
     doc.setFont(baseFont, "bold")
     doc.setFontSize(9)
@@ -161,7 +186,8 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   doc.setFont(baseFont, "normal")
   doc.setFontSize(7.5)
   doc.setTextColor(...muted)
-  doc.text(`Working days: ${payslip.workingDays || "-"}  |  Payable days: ${payslip.payableDays || "-"}`, margin, 280)
+  const attendanceFooter = payslip.attendance ? `  |  Half days: ${payslip.attendance.halfDays}  |  Unpaid leave: ${payslip.attendance.unpaidLeaveDays}` : ""
+  doc.text(`Working days: ${payslip.workingDays || "-"}  |  Payable days: ${payslip.payableDays || "-"}${attendanceFooter}`, margin, 280)
   doc.text("This is a computer-generated payslip.", pageWidth - margin, 280, { align: "right" })
 
   return doc

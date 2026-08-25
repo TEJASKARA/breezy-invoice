@@ -65,6 +65,19 @@ export type Invoice = {
   status: "Draft" | "Generated"
 }
 export type PayrollComponent = { id: string; label: string; amount: number }
+export type AttendanceHoliday = { id: string; date: string; name: string }
+export type PayslipAttendance = {
+  saturdayWeeklyOff: boolean
+  sundayWeeklyOff: boolean
+  holidays: AttendanceHoliday[]
+  halfDays: number
+  paidLeaveDays: number
+  unpaidLeaveDays: number
+  calendarDays: number
+  weeklyOffDays: number
+  holidayDays: number
+  fullPresentDays: number
+}
 export type Employee = {
   id: string
   entityId: string
@@ -104,6 +117,7 @@ export type Payslip = {
   paymentDate: string
   workingDays: number
   payableDays: number
+  attendance?: PayslipAttendance
   earnings: PayrollComponent[]
   deductions: PayrollComponent[]
   grossPay: number

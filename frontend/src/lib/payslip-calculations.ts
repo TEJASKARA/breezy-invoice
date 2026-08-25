@@ -1,4 +1,4 @@
-import type { PayrollComponent } from "@/lib/mvp-store"
+import type { AttendanceHoliday, PayrollComponent, PayslipAttendance } from "@/lib/mvp-store"
 
 export const payrollId = () => crypto.randomUUID()
 
@@ -16,6 +16,78 @@ export const defaultDeductions = (): PayrollComponent[] => [
 
 export function sumPayrollComponents(items: PayrollComponent[]) {
   return items.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0)
+}
+
+const nationalHolidayDefinitions = [
+  { monthDay: "01-26", name: "Republic Day" },
+  { monthDay: "08-15", name: "Independence Day" },
+  { monthDay: "10-02", name: "Gandhi Jayanti" },
+] as const
+
+export function indianNationalHolidays(month: string): AttendanceHoliday[] {
+  if (!/^\d{4}-\d{2}$/.test(month)) return []
+  const year = month.slice(0, 4)
+  return nationalHolidayDefinitions
+    .filter((holiday) => `${year}-${holiday.monthDay}`.startsWith(month))
+    .map((holiday) => ({ id: payrollId(), date: `${year}-${holiday.monthDay}`, name: holiday.name }))
+}
+
+export function defaultPayslipAttendance(month: string): PayslipAttendance {
+  return calculatePayslipAttendance(month, {
+    saturdayWeeklyOff: true,
+    sundayWeeklyOff: true,
+    holidays: indianNationalHolidays(month),
+    halfDays: 0,
+    paidLeaveDays: 0,
+    unpaidLeaveDays: 0,
+  }).attendance
+}
+
+export function calculatePayslipAttendance(month: string, input: Partial<PayslipAttendance>) {
+  const validMonth = /^\d{4}-\d{2}$/.test(month)
+  const [year, monthNumber] = validMonth ? month.split("-").map(Number) : [0, 0]
+  const calendarDays = validMonth ? new Date(year, monthNumber, 0).getDate() : 0
+  const saturdayWeeklyOff = input.saturdayWeeklyOff ?? true
+  const sundayWeeklyOff = input.sundayWeeklyOff ?? true
+  const holidays = (input.holidays || [])
+    .filter((holiday, index, items) => holiday.date.startsWith(`${month}-`) && items.findIndex((item) => item.date === holiday.date) === index)
+    .map((holiday) => ({ ...holiday, name: holiday.name.trim() || "Public holiday" }))
+
+  let weeklyOffDays = 0
+  const weeklyOffDates = new Set<string>()
+  for (let day = 1; day <= calendarDays; day += 1) {
+    const date = new Date(year, monthNumber - 1, day)
+    const isWeeklyOff = (date.getDay() === 6 && saturdayWeeklyOff) || (date.getDay() === 0 && sundayWeeklyOff)
+    if (isWeeklyOff) {
+      weeklyOffDays += 1
+      weeklyOffDates.add(`${month}-${String(day).padStart(2, "0")}`)
+    }
+  }
+  const holidayDays = holidays.filter((holiday) => !weeklyOffDates.has(holiday.date)).length
+  const workingDays = Math.max(0, calendarDays - weeklyOffDays - holidayDays)
+  const clamp = (value: number | undefined, maximum: number) => Math.min(maximum, Math.max(0, Number.isFinite(value) ? Number(value) : 0))
+  const halfDays = clamp(input.halfDays, workingDays)
+  const paidLeaveDays = clamp(input.paidLeaveDays, Math.max(0, workingDays - halfDays))
+  const unpaidLeaveDays = clamp(input.unpaidLeaveDays, Math.max(0, workingDays - halfDays - paidLeaveDays))
+  const fullPresentDays = Math.max(0, workingDays - halfDays - paidLeaveDays - unpaidLeaveDays)
+  const payableDays = Math.round((weeklyOffDays + holidayDays + fullPresentDays + paidLeaveDays + halfDays * 0.5) * 100) / 100
+
+  return {
+    attendance: {
+      saturdayWeeklyOff,
+      sundayWeeklyOff,
+      holidays,
+      halfDays,
+      paidLeaveDays,
+      unpaidLeaveDays,
+      calendarDays,
+      weeklyOffDays,
+      holidayDays,
+      fullPresentDays,
+    } satisfies PayslipAttendance,
+    workingDays,
+    payableDays,
+  }
 }
 
 export function formatSalaryMonth(month: string) {

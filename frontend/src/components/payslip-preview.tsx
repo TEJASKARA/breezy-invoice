@@ -47,6 +47,18 @@ export function PayslipPreview({
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Disbursal bank</p><p className="mt-1 font-bold">{payslip.bankName || "—"}</p><p className="text-xs text-zinc-500">A/C: {maskBankAccount(payslip.bankAccount)}</p></div>
       </section>
 
+      {payslip.attendance ? <section className="mb-8 rounded-xl border p-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-bold uppercase tracking-wider">Attendance</h3><p className="mt-1 text-xs text-zinc-500">Calendar and paid-day summary for this pay period</p></div>{payslip.attendance.holidays.length ? <p className="max-w-md text-right text-xs text-zinc-500">Holidays: {payslip.attendance.holidays.map((holiday) => holiday.name).join(", ")}</p> : null}</div>
+        <div className="grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
+          <AttendanceValue label="Calendar" value={payslip.attendance.calendarDays} />
+          <AttendanceValue label="Working" value={payslip.workingDays} />
+          <AttendanceValue label="Full present" value={payslip.attendance.fullPresentDays} />
+          <AttendanceValue label="Half days" value={payslip.attendance.halfDays} />
+          <AttendanceValue label="Unpaid leave" value={payslip.attendance.unpaidLeaveDays} />
+          <AttendanceValue label="Payable" value={payslip.payableDays} accent={template.accentColor} />
+        </div>
+      </section> : null}
+
       <section className="grid gap-8 lg:grid-cols-2">
         <PayrollTable title="Earnings & benefits" items={payslip.earnings} totalLabel="Total Earnings (A)" total={payslip.grossPay} accent={template.accentColor} />
         <PayrollTable title="Deductions & tax withholdings" items={payslip.deductions} totalLabel="Total Deductions (B)" total={payslip.totalDeductions} accent="#e11d48" deductions />
@@ -58,11 +70,15 @@ export function PayslipPreview({
       </section>
 
       <footer className="mt-12 flex flex-wrap justify-between gap-4 border-t pt-5 text-xs text-zinc-500">
-        <span>Working days: {payslip.workingDays || "—"} · Payable days: {payslip.payableDays || "—"}</span>
+        <span>Working days: {payslip.workingDays || "—"} · Payable days: {payslip.payableDays || "—"}{payslip.attendance ? ` · Weekly offs: ${payslip.attendance.weeklyOffDays} · Holidays: ${payslip.attendance.holidayDays}` : ""}</span>
         <span>This is a computer-generated payslip.</span>
       </footer>
     </article>
   )
+}
+
+function AttendanceValue({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return <div><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">{label}</p><p className="mt-1 font-bold" style={{ color: accent }}>{value}</p></div>
 }
 
 function PayrollTable({
