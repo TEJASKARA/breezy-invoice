@@ -77,6 +77,13 @@ export type PayslipAttendance = {
   weeklyOffDays: number
   holidayDays: number
   fullPresentDays: number
+  eligiblePaidLeaveDays?: number
+  excessLeaveDays?: number
+  leaveAllowanceDays?: number
+  leaveUsedBefore?: number
+  leaveAllowancePeriod?: "monthly" | "yearly"
+  lossOfPayDays?: number
+  leaveDeductionAmount?: number
 }
 export type Employee = {
   id: string
@@ -186,12 +193,17 @@ export type InvoiceNumbering = {
   nextNumber: number
   padding: number
 }
+export type LeavePolicy = {
+  period: "monthly" | "yearly"
+  allowanceDays: number
+}
 export type Setup = {
   firmName: string
   industry: string
   gstin: string
   mailingAddress: string
   invoiceNumbering?: InvoiceNumbering
+  leavePolicy?: LeavePolicy
 }
 export type MvpState = { setup: Setup | null; companies: Company[]; customers: Customer[]; invoices: Invoice[]; employees: Employee[]; payslips: Payslip[]; expenses: Expense[]; template: TemplateSettings }
 type MvpStore = MvpState & {

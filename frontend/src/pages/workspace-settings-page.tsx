@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Check, Clipboard, Crown, KeyRound, MailPlus, Save, ShieldCheck, UserCog, Users } from "lucide-react"
+import { CalendarDays, Check, Clipboard, Crown, KeyRound, MailPlus, Save, ShieldCheck, UserCog, Users } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -66,6 +66,8 @@ export function WorkspaceSettingsPage() {
   const [industry, setIndustry] = useState(setup?.industry || "")
   const [gstin, setGstin] = useState(setup?.gstin || "")
   const [mailingAddress, setMailingAddress] = useState(setup?.mailingAddress || "")
+  const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">(setup?.leavePolicy?.period || "monthly")
+  const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(setup?.leavePolicy?.allowanceDays ?? 1)
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<EditableRole>("viewer")
   const [invitePermissions, setInvitePermissions] = useState<WorkspacePermission[]>(permissionsForRole("viewer"))
@@ -85,6 +87,8 @@ export function WorkspaceSettingsPage() {
     setIndustry(setup?.industry || "")
     setGstin(setup?.gstin || "")
     setMailingAddress(setup?.mailingAddress || "")
+    setLeavePeriod(setup?.leavePolicy?.period || "monthly")
+    setLeaveAllowanceDays(setup?.leavePolicy?.allowanceDays ?? 1)
   }, [setup, workspace?.id, workspace?.name])
 
   const loadPeople = useCallback(async () => {
@@ -113,7 +117,7 @@ export function WorkspaceSettingsPage() {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(updateError.message)
       }
-      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), gstin: gstin.trim().toUpperCase(), mailingAddress: mailingAddress.trim() })
+      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), gstin: gstin.trim().toUpperCase(), mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -212,7 +216,15 @@ export function WorkspaceSettingsPage() {
             <div className="space-y-2"><Label htmlFor="settings-industry">Industry</Label><Input id="settings-industry" required disabled={!canManageWorkspace} value={industry} onChange={(event) => setIndustry(event.target.value)} /></div>
             <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" /></div>
             <div className="space-y-2 md:col-span-2"><Label htmlFor="settings-address">Mailing address</Label><textarea id="settings-address" required disabled={!canManageWorkspace} value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50" /></div>
-            <div className="md:col-span-2 flex justify-end"><Button type="submit" disabled={saving || !canManageWorkspace}><Save />Save business details</Button></div>
+            <section className="space-y-4 rounded-xl border bg-muted/20 p-4 md:col-span-2">
+              <div className="flex items-start gap-3"><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><div><h3 className="font-medium">Employee leave policy</h3><p className="text-sm text-muted-foreground">This allowance applies to every employee and can be changed by a workspace administrator.</p></div></div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2"><Label htmlFor="settings-leave-period">Calculate paid leave</Label><select id="settings-leave-period" disabled={!canManageWorkspace} value={leavePeriod} onChange={(event) => setLeavePeriod(event.target.value as "monthly" | "yearly")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="monthly">Monthly allowance</option><option value="yearly">Yearly allowance</option></select></div>
+                <div className="space-y-2"><Label htmlFor="settings-leave-days">Paid leave allowance</Label><Input id="settings-leave-days" disabled={!canManageWorkspace} type="number" min="0" step="0.5" value={leaveAllowanceDays} onChange={(event) => setLeaveAllowanceDays(Math.max(0, Number(event.target.value) || 0))} /><p className="text-xs text-muted-foreground">{leavePeriod === "monthly" ? "Days per employee each month." : "Days per employee each calendar year."}</p></div>
+              </div>
+              <p className="text-xs text-muted-foreground">Excess leave, unpaid leave and half-day loss are deducted using monthly gross salary ÷ calendar days.</p>
+            </section>
+            <div className="md:col-span-2 flex justify-end"><Button type="submit" disabled={saving || !canManageWorkspace}><Save />Save workspace settings</Button></div>
           </form>
         </CardContent>
       </Card>

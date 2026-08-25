@@ -53,10 +53,11 @@ export function PayslipPreview({
           <AttendanceValue label="Calendar" value={payslip.attendance.calendarDays} />
           <AttendanceValue label="Working" value={payslip.workingDays} />
           <AttendanceValue label="Full present" value={payslip.attendance.fullPresentDays} />
-          <AttendanceValue label="Half days" value={payslip.attendance.halfDays} />
-          <AttendanceValue label="Unpaid leave" value={payslip.attendance.unpaidLeaveDays} />
+          <AttendanceValue label="Leave taken" value={payslip.attendance.paidLeaveDays} />
+          <AttendanceValue label="Loss of pay" value={payslip.attendance.lossOfPayDays ?? payslip.attendance.unpaidLeaveDays} />
           <AttendanceValue label="Payable" value={payslip.payableDays} accent={template.accentColor} />
         </div>
+        {payslip.attendance.leaveAllowancePeriod ? <p className="mt-3 text-xs text-zinc-500"><span className="capitalize">{payslip.attendance.leaveAllowancePeriod}</span> leave allowance: {payslip.attendance.leaveAllowanceDays || 0} days · Eligible paid leave: {payslip.attendance.eligiblePaidLeaveDays || 0} · Excess leave: {payslip.attendance.excessLeaveDays || 0} · Attendance deduction: ₹{(payslip.attendance.leaveDeductionAmount || 0).toLocaleString("en-IN")}</p> : null}
       </section> : null}
 
       <section className="grid gap-8 lg:grid-cols-2">

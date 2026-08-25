@@ -1,4 +1,4 @@
-import type { AttendanceHoliday, PayrollComponent, PayslipAttendance } from "@/lib/mvp-store"
+import type { AttendanceHoliday, LeavePolicy, PayrollComponent, PayslipAttendance } from "@/lib/mvp-store"
 
 export const payrollId = () => crypto.randomUUID()
 
@@ -87,6 +87,49 @@ export function calculatePayslipAttendance(month: string, input: Partial<Payslip
     } satisfies PayslipAttendance,
     workingDays,
     payableDays,
+  }
+}
+
+export function calculateLeaveAdjustedAttendance({
+  month,
+  attendance,
+  policy,
+  leaveUsedBefore,
+  grossPay,
+}: {
+  month: string
+  attendance: Partial<PayslipAttendance>
+  policy?: LeavePolicy
+  leaveUsedBefore: number
+  grossPay: number
+}): { attendance: PayslipAttendance; workingDays: number; payableDays: number; leaveDeductionAmount: number } {
+  const base = calculatePayslipAttendance(month, attendance)
+  if (!policy) return { ...base, leaveDeductionAmount: 0 }
+
+  const allowanceDays = Math.max(0, Number(policy.allowanceDays) || 0)
+  const leaveTakenDays = base.attendance.paidLeaveDays
+  const remainingAllowance = Math.max(0, allowanceDays - Math.max(0, leaveUsedBefore))
+  const eligiblePaidLeaveDays = Math.min(leaveTakenDays, remainingAllowance)
+  const excessLeaveDays = Math.max(0, leaveTakenDays - eligiblePaidLeaveDays)
+  const lossOfPayDays = Math.round((base.attendance.unpaidLeaveDays + excessLeaveDays + base.attendance.halfDays * 0.5) * 100) / 100
+  const leaveDeductionAmount = base.attendance.calendarDays
+    ? Math.round((Math.max(0, grossPay) / base.attendance.calendarDays) * lossOfPayDays * 100) / 100
+    : 0
+
+  return {
+    attendance: {
+      ...base.attendance,
+      eligiblePaidLeaveDays,
+      excessLeaveDays,
+      leaveAllowanceDays: allowanceDays,
+      leaveUsedBefore: Math.max(0, leaveUsedBefore),
+      leaveAllowancePeriod: policy.period,
+      lossOfPayDays,
+      leaveDeductionAmount,
+    } satisfies PayslipAttendance,
+    workingDays: base.workingDays,
+    payableDays: Math.max(0, Math.round((base.payableDays - excessLeaveDays) * 100) / 100),
+    leaveDeductionAmount,
   }
 }
 

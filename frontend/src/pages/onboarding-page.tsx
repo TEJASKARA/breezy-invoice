@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Building2, CheckCircle2, Hash } from "lucide-react"
+import { Building2, CalendarDays, CheckCircle2, Hash } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
@@ -34,6 +34,8 @@ export function OnboardingPage() {
   const [mailingAddress, setMailingAddress] = useState("")
   const [continueExistingNumbers, setContinueExistingNumbers] = useState(false)
   const [latestInvoiceNumber, setLatestInvoiceNumber] = useState("")
+  const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">("monthly")
+  const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(1)
   const [numberingError, setNumberingError] = useState("")
   const [saveError, setSaveError] = useState("")
   const [saving, setSaving] = useState(false)
@@ -66,6 +68,7 @@ export function OnboardingPage() {
         gstin: normalizedGstin,
         mailingAddress: mailingAddress.trim(),
         invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
+        leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) },
       })
       navigate("/entities")
     } catch (error) {
@@ -104,6 +107,18 @@ export function OnboardingPage() {
               </div>
               <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p></div>
               <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
+
+              <section className="space-y-4 rounded-xl border bg-muted/20 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-background"><CalendarDays className="size-4" /></span>
+                  <div><h2 className="font-medium">Employee leave policy</h2><p className="text-sm text-muted-foreground">Choose how many paid leave days each employee receives and when that allowance resets.</p></div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2"><Label htmlFor="leave-period">Calculate paid leave</Label><select id="leave-period" value={leavePeriod} onChange={(event) => setLeavePeriod(event.target.value as "monthly" | "yearly")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="monthly">Monthly allowance</option><option value="yearly">Yearly allowance</option></select></div>
+                  <div className="space-y-2"><Label htmlFor="leave-allowance">Paid leave allowance</Label><Input id="leave-allowance" required type="number" min="0" step="0.5" value={leaveAllowanceDays} onChange={(event) => setLeaveAllowanceDays(Math.max(0, Number(event.target.value) || 0))} /><p className="text-xs text-muted-foreground">{leavePeriod === "monthly" ? "Days available to each employee every month." : "Days available to each employee per calendar year."}</p></div>
+                </div>
+                <p className="text-xs text-muted-foreground">Leave above this allowance becomes loss of pay. The deduction is calculated as monthly gross salary ÷ calendar days × loss-of-pay days.</p>
+              </section>
 
               <section className="space-y-4 rounded-xl border bg-muted/20 p-4">
                 <div className="flex items-start gap-3">

@@ -101,11 +101,11 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
 
   if (payslip.attendance) {
     const attendanceItems = [
-      ["Calendar", payslip.attendance.calendarDays],
       ["Working", payslip.workingDays],
       ["Full present", payslip.attendance.fullPresentDays],
-      ["Half days", payslip.attendance.halfDays],
-      ["Unpaid leave", payslip.attendance.unpaidLeaveDays],
+      ["Leave taken", payslip.attendance.paidLeaveDays],
+      ["Excess leave", payslip.attendance.excessLeaveDays || 0],
+      ["LOP days", payslip.attendance.lossOfPayDays ?? payslip.attendance.unpaidLeaveDays],
       ["Payable", payslip.payableDays],
     ] as const
     doc.setFillColor(...soft)
@@ -186,9 +186,9 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   doc.setFont(baseFont, "normal")
   doc.setFontSize(7.5)
   doc.setTextColor(...muted)
-  const attendanceFooter = payslip.attendance ? `  |  Half days: ${payslip.attendance.halfDays}  |  Unpaid leave: ${payslip.attendance.unpaidLeaveDays}` : ""
-  doc.text(`Working days: ${payslip.workingDays || "-"}  |  Payable days: ${payslip.payableDays || "-"}${attendanceFooter}`, margin, 280)
-  doc.text("This is a computer-generated payslip.", pageWidth - margin, 280, { align: "right" })
+  doc.text(`Working days: ${payslip.workingDays || "-"}  |  Payable days: ${payslip.payableDays || "-"}`, margin, payslip.attendance ? 277 : 280)
+  if (payslip.attendance) doc.text(`Half days: ${payslip.attendance.halfDays}  |  Excess leave: ${payslip.attendance.excessLeaveDays || 0}  |  LOP deduction: ${money(payslip.attendance.leaveDeductionAmount || 0)}`, margin, 282)
+  doc.text("This is a computer-generated payslip.", pageWidth - margin, payslip.attendance ? 282 : 280, { align: "right" })
 
   return doc
 }
