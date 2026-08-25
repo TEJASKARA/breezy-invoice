@@ -32,7 +32,7 @@ export type TallySettings = {
   tdsPayableLedger: string
   otherDeductionLedger: string
 }
-export type Company = { id: string; companyName: string; billingAddress: string; gstin: string; pan: string; premisesAddress: string; hsnSac: string; tallySettings?: TallySettings }
+export type Company = { id: string; companyName: string; billingAddress: string; gstin: string; pan: string; premisesAddress: string; hsnSac: string; hsnSacCodes?: string[]; tallySettings?: TallySettings }
 export type Customer = Company & { entityId: string; tallyLedgerName?: string }
 export type InvoiceLineItem = {
   id: string
@@ -302,6 +302,10 @@ function normalizeState(saved: Partial<MvpState>): MvpState {
   const fallbackEntityName = restored.companies[0]?.companyName || ""
   return {
     ...restored,
+    companies: restored.companies.map((company) => ({
+      ...company,
+      hsnSacCodes: [...new Set([...(company.hsnSacCodes || []), company.hsnSac].filter(Boolean))],
+    })),
     expenses: restored.expenses || [],
     customers: restored.customers.map((customer) => ({ ...customer, entityId: customer.entityId || fallbackEntityId })),
     employees: (restored.employees || []).map((employee) => ({

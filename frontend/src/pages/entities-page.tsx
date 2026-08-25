@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Building2, Plus, Trash2 } from "lucide-react"
+import { Building2, Pencil, Plus, Trash2, X } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -13,10 +13,11 @@ import { useAuthUser } from "@/lib/use-auth-user"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type EntityForm = Omit<Company, "id">
-const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", gstin: "", pan: "", premisesAddress: "", hsnSac: "" })
+const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", gstin: "", pan: "", premisesAddress: "", hsnSac: "", hsnSacCodes: [] })
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
+const entityHsnCodes = (company: Pick<Company, "hsnSac" | "hsnSacCodes">) => [...new Set([...(company.hsnSacCodes || []), company.hsnSac].filter(Boolean))]
 const hasFormData = (form: EntityForm) => [
   form.companyName,
   form.billingAddress,
@@ -24,10 +25,10 @@ const hasFormData = (form: EntityForm) => [
   form.pan,
   form.premisesAddress,
   form.hsnSac,
-].some((value) => value.trim())
+].some((value) => value.trim()) || Boolean(form.hsnSacCodes?.length)
 
 export function EntitiesPage() {
-  const { companies, addCompanies, deleteCompany } = useMvpStore()
+  const { companies, addCompanies, updateCompany, deleteCompany } = useMvpStore()
   const { user } = useAuthUser()
   const { can } = useWorkspaceAccess()
   const canManage = can("entities.manage")
@@ -38,6 +39,9 @@ export function EntitiesPage() {
   const [notice, setNotice] = useState("")
   const [noticeIsError, setNoticeIsError] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [hsnEditingCompanyId, setHsnEditingCompanyId] = useState<string | null>(null)
+  const [hsnEditCodes, setHsnEditCodes] = useState<string[]>([])
+  const [hsnEditInput, setHsnEditInput] = useState("")
   const draftStorageKey = user ? `breezyinvoice-entity-draft:${user.id}` : null
 
   useEffect(() => {
@@ -83,6 +87,17 @@ export function EntitiesPage() {
     setNotice("Demo identifiers added. Replace them with verified statutory details before using this entity for real invoices.")
   }
 
+  const addFormHsnCode = () => {
+    const code = form.hsnSac.trim()
+    if (!hsnSacPattern.test(code)) {
+      setNoticeIsError(true)
+      setNotice("HSN/SAC must contain exactly 4, 6, or 8 digits.")
+      return
+    }
+    setForm((current) => ({ ...current, hsnSac: "", hsnSacCodes: [...new Set([...(current.hsnSacCodes || []), code])] }))
+    setNotice("")
+  }
+
   const save = async () => {
     const gstin = form.gstin.toUpperCase().trim()
     const pan = form.pan.toUpperCase().trim()
@@ -106,22 +121,63 @@ export function EntitiesPage() {
       setNotice("The PAN does not match the PAN embedded in the GSTIN.")
       return
     }
-    if (form.hsnSac && !hsnSacPattern.test(form.hsnSac)) {
+    const hsnCodes = [...new Set([...(form.hsnSacCodes || []), form.hsnSac.trim()].filter(Boolean))]
+    if (hsnCodes.some((code) => !hsnSacPattern.test(code))) {
       setNoticeIsError(true)
-      setNotice("HSN/SAC must contain exactly 4, 6, or 8 digits.")
+      setNotice("Every HSN/SAC must contain exactly 4, 6, or 8 digits.")
       return
     }
     setSaving(true)
     try {
-      await addCompanies([{ ...form, gstin, pan }])
+      await addCompanies([{ ...form, gstin, pan, hsnSac: hsnCodes[0] || "", hsnSacCodes: hsnCodes }])
       setForm(emptyCompany())
       if (draftStorageKey) window.localStorage.removeItem(draftStorageKey)
       setShowForm(false)
       setNoticeIsError(false)
-      setNotice("Entity saved to your workspace with validated GSTIN, PAN, and HSN/SAC.")
+      setNotice(`Entity saved with ${hsnCodes.length} HSN/SAC code${hsnCodes.length === 1 ? "" : "s"}.`)
     } catch (error) {
       setNoticeIsError(true)
       setNotice(error instanceof Error ? error.message : "The entity could not be saved. Please try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openHsnManager = (company: Company) => {
+    setHsnEditingCompanyId(company.id)
+    setHsnEditCodes(entityHsnCodes(company))
+    setHsnEditInput("")
+    setNotice("")
+  }
+
+  const addManagedHsnCode = () => {
+    const code = hsnEditInput.trim()
+    if (!hsnSacPattern.test(code)) {
+      setNoticeIsError(true)
+      setNotice("HSN/SAC must contain exactly 4, 6, or 8 digits.")
+      return
+    }
+    setHsnEditCodes((current) => [...new Set([...current, code])])
+    setHsnEditInput("")
+    setNotice("")
+  }
+
+  const saveManagedHsnCodes = async () => {
+    if (!hsnEditingCompanyId) return
+    if (hsnEditCodes.some((code) => !hsnSacPattern.test(code))) {
+      setNoticeIsError(true)
+      setNotice("Every HSN/SAC must contain exactly 4, 6, or 8 digits.")
+      return
+    }
+    setSaving(true)
+    try {
+      await updateCompany(hsnEditingCompanyId, { hsnSac: hsnEditCodes[0] || "", hsnSacCodes: hsnEditCodes })
+      setHsnEditingCompanyId(null)
+      setNoticeIsError(false)
+      setNotice(`HSN/SAC list updated with ${hsnEditCodes.length} code${hsnEditCodes.length === 1 ? "" : "s"}.`)
+    } catch (error) {
+      setNoticeIsError(true)
+      setNotice(error instanceof Error ? error.message : "The HSN/SAC list could not be saved.")
     } finally {
       setSaving(false)
     }
@@ -175,10 +231,11 @@ export function EntitiesPage() {
               <Input id="entity-pan" value={form.pan} maxLength={10} autoCapitalize="characters" placeholder="AAICR5789A" onChange={(event) => setForm({ ...form, pan: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10) })} />
               <p className="text-xs text-muted-foreground">{form.pan.length}/10 characters</p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="entity-hsnSac">Default HSN/SAC</Label>
-              <Input id="entity-hsnSac" value={form.hsnSac} maxLength={8} inputMode="numeric" placeholder="997212" onChange={(event) => setForm({ ...form, hsnSac: event.target.value.replace(/\D/g, "").slice(0, 8) })} />
-              <p className="text-xs text-muted-foreground">Enter exactly 4, 6, or 8 digits.</p>
+            <div className="space-y-3 md:col-span-2">
+              <Label htmlFor="entity-hsnSac">HSN/SAC codes</Label>
+              <div className="flex gap-2"><Input id="entity-hsnSac" value={form.hsnSac} maxLength={8} inputMode="numeric" placeholder="997212" onChange={(event) => setForm({ ...form, hsnSac: event.target.value.replace(/\D/g, "").slice(0, 8) })} /><Button type="button" variant="outline" disabled={!form.hsnSac} onClick={addFormHsnCode}><Plus />Add code</Button></div>
+              <p className="text-xs text-muted-foreground">Add every 4, 6, or 8-digit HSN/SAC this entity uses. The first code becomes the default.</p>
+              {form.hsnSacCodes?.length ? <div className="flex flex-wrap gap-2">{form.hsnSacCodes.map((code, index) => <span key={code} className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1 text-xs"><span>{code}{index === 0 ? " · Default" : ""}</span><button type="button" aria-label={`Remove HSN/SAC ${code}`} onClick={() => setForm({ ...form, hsnSacCodes: form.hsnSacCodes?.filter((item) => item !== code) })}><X className="size-3" /></button></span>)}</div> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="entity-billing-address">Billing address</Label>
@@ -195,6 +252,15 @@ export function EntitiesPage() {
           </CardContent>
         </Card>
       )}
+
+      {hsnEditingCompanyId && canManage ? <Card>
+        <CardHeader><CardTitle>Manage entity HSN/SAC codes</CardTitle><CardDescription>Add all codes used by {companies.find((company) => company.id === hsnEditingCompanyId)?.companyName}. The first code is used as the default on new invoices.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2"><Input aria-label="New entity HSN/SAC" value={hsnEditInput} maxLength={8} inputMode="numeric" placeholder="998314" onChange={(event) => setHsnEditInput(event.target.value.replace(/\D/g, "").slice(0, 8))} /><Button type="button" variant="outline" disabled={!hsnEditInput} onClick={addManagedHsnCode}><Plus />Add code</Button></div>
+          {hsnEditCodes.length ? <div className="flex flex-wrap gap-2">{hsnEditCodes.map((code, index) => <span key={code} className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1 text-sm"><span>{code}{index === 0 ? " · Default" : ""}</span><button type="button" aria-label={`Remove HSN/SAC ${code}`} onClick={() => setHsnEditCodes((current) => current.filter((item) => item !== code))}><X className="size-3.5" /></button></span>)}</div> : <p className="text-sm text-muted-foreground">No HSN/SAC codes saved. You can still save the entity without one.</p>}
+          <div className="flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setHsnEditingCompanyId(null)}>Cancel</Button><Button disabled={saving} onClick={() => void saveManagedHsnCodes()}>{saving ? "Saving…" : "Save HSN/SAC codes"}</Button></div>
+        </CardContent>
+      </Card> : null}
 
       <Card>
         <CardHeader>
@@ -217,7 +283,7 @@ export function EntitiesPage() {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{company.gstin}</TableCell>
                   <TableCell className="hidden font-mono text-xs md:table-cell">{company.pan}</TableCell>
-                  <TableCell className="hidden lg:table-cell">{company.hsnSac || "—"}</TableCell>
+                  <TableCell className="hidden lg:table-cell"><div className="flex max-w-64 flex-wrap gap-1">{entityHsnCodes(company).length ? entityHsnCodes(company).map((code, index) => <Badge key={code} variant={index === 0 ? "secondary" : "outline"}>{code}</Badge>) : "—"}</div></TableCell>
                   <TableCell><Badge variant="outline">Active</Badge></TableCell>
                   <TableCell className="text-right">
                     {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingDelete === company.id ? (
@@ -226,7 +292,7 @@ export function EntitiesPage() {
                         <Button size="sm" variant="destructive" onClick={async () => { try { await deleteCompany(company.id); setPendingDelete(null); setNoticeIsError(false); setNotice(`${company.companyName} was deleted. Existing invoices were left unchanged.`) } catch (error) { setNoticeIsError(true); setNotice(error instanceof Error ? error.message : "The entity could not be deleted.") } }}>Confirm delete</Button>
                       </div>
                     ) : (
-                      <Button size="icon" variant="ghost" aria-label={`Delete ${company.companyName}`} onClick={() => setPendingDelete(company.id)}><Trash2 /></Button>
+                      <span className="inline-flex"><Button size="icon" variant="ghost" aria-label={`Manage HSN/SAC codes for ${company.companyName}`} onClick={() => openHsnManager(company)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${company.companyName}`} onClick={() => setPendingDelete(company.id)}><Trash2 /></Button></span>
                     )}
                   </TableCell>
                 </TableRow>

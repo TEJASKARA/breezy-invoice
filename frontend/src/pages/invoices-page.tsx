@@ -25,10 +25,10 @@ type DraftLineItem = Omit<InvoiceLineItem, "taxableAmount" | "cgstAmount" | "sgs
   sgstAmount: string
   igstAmount: string
 }
-const newDraftLine = (): DraftLineItem => ({
+const newDraftLine = (hsnSac = ""): DraftLineItem => ({
   id: crypto.randomUUID(),
   description: "",
-  hsnSac: "",
+  hsnSac,
   taxableAmount: "",
   cgstAmount: "",
   sgstAmount: "",
@@ -37,6 +37,7 @@ const newDraftLine = (): DraftLineItem => ({
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
+const entityHsnCodes = (company: { hsnSac: string; hsnSacCodes?: string[] } | undefined) => [...new Set([...(company?.hsnSacCodes || []), company?.hsnSac || ""].filter(Boolean))]
 const emptyManualCustomer = (): ManualCustomer => ({
   companyName: "",
   billingAddress: "",
@@ -94,6 +95,7 @@ export function InvoicesPage() {
   const customerFileInput = useRef<HTMLInputElement>(null)
   const bulkPreviewRef = useRef<HTMLDivElement>(null)
   const selectedEntity = companies.find((company) => company.companyName === entityName)
+  const selectedEntityHsnCodes = entityHsnCodes(selectedEntity)
   const selectedBulkEntity = companies.find((company) => company.companyName === bulkEntityName)
   const individualCustomers = customers.filter((customer) => customer.entityId === selectedEntity?.id)
   const bulkCustomers = customers.filter((customer) => customer.entityId === selectedBulkEntity?.id)
@@ -179,6 +181,15 @@ export function InvoicesPage() {
     setOtherDeduction("")
     setDraftFormError("")
     setShowForm(false)
+  }
+
+  const selectInvoiceEntity = (nextEntityName: string) => {
+    const nextEntity = companies.find((company) => company.companyName === nextEntityName)
+    const defaultHsnSac = entityHsnCodes(nextEntity)[0] || ""
+    setEntityName(nextEntityName)
+    setCompanyName("")
+    setLineItems((items) => items.map((item) => ({ ...item, hsnSac: defaultHsnSac })))
+    setDraftFormError("")
   }
 
   const save = async () => {
@@ -653,7 +664,7 @@ export function InvoicesPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
-                <select id="invoice-entity" value={entityName} onChange={(event) => { setEntityName(event.target.value); setCompanyName(""); setDraftFormError("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <select id="invoice-entity" value={entityName} onChange={(event) => selectInvoiceEntity(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">Select entity</option>
                   {companies.map((company) => <option key={company.id}>{company.companyName}</option>)}
                 </select>
@@ -673,9 +684,9 @@ export function InvoicesPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-medium">Invoice descriptions</h3>
-                  <p className="text-xs text-muted-foreground">Enter tax amounts in rupees. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices.</p>
+                  <p className="text-xs text-muted-foreground">Choose an HSN/SAC saved for the issuing entity on each line. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices.</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => setLineItems((items) => [...items, newDraftLine()])}><Plus />Add description</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setLineItems((items) => [...items, newDraftLine(selectedEntityHsnCodes[0] || "")])}><Plus />Add description</Button>
               </div>
               <div className="overflow-x-auto rounded-lg border">
                 <div className="min-w-[980px]">
@@ -685,7 +696,7 @@ export function InvoicesPage() {
                   {lineItems.map((item, index) => (
                     <div key={item.id} className="grid grid-cols-[2fr_110px_repeat(4,130px)_44px] gap-2 border-t p-3">
                       <Input aria-label={`Description ${index + 1}`} value={item.description} onChange={(event) => updateLineItem(item.id, "description", event.target.value)} placeholder="Service or item description" />
-                      <Input aria-label={`HSN/SAC ${index + 1}`} inputMode="numeric" maxLength={8} value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value.replace(/\D/g, ""))} placeholder="998222" />
+                      {selectedEntityHsnCodes.length ? <select aria-label={`HSN/SAC ${index + 1}`} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value)}><option value="">Select code</option>{selectedEntityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN/SAC ${index + 1}`} inputMode="numeric" maxLength={8} value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value.replace(/\D/g, ""))} placeholder="998222" />}
                       <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" value={item.taxableAmount} onChange={(event) => updateLineItem(item.id, "taxableAmount", event.target.value)} placeholder="0.00" />
                       <Input aria-label={`CGST ${index + 1}`} type="number" min="0" step="0.01" value={item.cgstAmount} onChange={(event) => updateLineItem(item.id, "cgstAmount", event.target.value)} placeholder="0.00" />
                       <Input aria-label={`SGST ${index + 1}`} type="number" min="0" step="0.01" value={item.sgstAmount} onChange={(event) => updateLineItem(item.id, "sgstAmount", event.target.value)} placeholder="0.00" />
