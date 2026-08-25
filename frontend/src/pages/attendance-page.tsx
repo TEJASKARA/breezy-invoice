@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { downloadAttendanceExcel, downloadAttendancePdf, type AttendanceExportInput } from "@/lib/attendance-export"
 import { type AttendanceDayRecord, type AttendanceDayStatus, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
 import { calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
@@ -66,6 +67,7 @@ export function AttendancePage() {
   const [saving, setSaving] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [savingAttendance, setSavingAttendance] = useState(false)
+  const [exportingAttendance, setExportingAttendance] = useState<"excel" | "pdf" | null>(null)
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
 
@@ -181,6 +183,52 @@ export function AttendancePage() {
       setSavingAttendance(false)
     }
   }
+  const attendanceExportInput = (): AttendanceExportInput | null => {
+    if (!selectedEntity) return null
+    const rows = entityEmployees.map((employee) => {
+      const savedPayslip = payslips.find((payslip) => payslip.entityId === selectedEntityId && payslip.employeeId === employee.id && payslip.month === month)
+      if (savedPayslip?.attendance) return {
+        employeeName: employee.employeeName,
+        employeeCode: employee.employeeCode,
+        designation: employee.designation,
+        department: employee.department,
+        dailyRecords: savedPayslip.attendance.dailyRecords || employeeAttendance[employee.id]?.dailyRecords || [],
+        attendance: savedPayslip.attendance,
+        workingDays: savedPayslip.workingDays,
+        payableDays: savedPayslip.payableDays,
+        deductionAmount: savedPayslip.attendance.leaveDeductionAmount || 0,
+      }
+      const grossPay = sumPayrollComponents(employee.defaultEarnings)
+      const estimate = calculateLeaveAdjustedAttendance({ month, attendance: attendanceForEmployee(employee.id), policy: leavePolicy, leaveUsedBefore: leaveUsedBefore(employee.id), grossPay })
+      return {
+        employeeName: employee.employeeName,
+        employeeCode: employee.employeeCode,
+        designation: employee.designation,
+        department: employee.department,
+        dailyRecords: estimate.attendance.dailyRecords || [],
+        attendance: estimate.attendance,
+        workingDays: estimate.workingDays,
+        payableDays: estimate.payableDays,
+        deductionAmount: estimate.leaveDeductionAmount,
+      }
+    })
+    return { entity: selectedEntity, month, calendar: attendance, rows }
+  }
+  const downloadAttendanceCopy = async (format: "excel" | "pdf") => {
+    const exportInput = attendanceExportInput()
+    if (!exportInput) { setError("Select an entity before downloading attendance."); return }
+    setExportingAttendance(format)
+    clearMessages()
+    try {
+      if (format === "excel") await downloadAttendanceExcel(exportInput)
+      else await downloadAttendancePdf(exportInput)
+      setNotice(`${format === "excel" ? "Excel" : "PDF"} attendance copy downloaded for ${formatSalaryMonth(month)}.`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `The attendance ${format.toUpperCase()} could not be created.`)
+    } finally {
+      setExportingAttendance(null)
+    }
+  }
 
   const preparePayslips = () => {
     clearMessages()
@@ -282,7 +330,7 @@ export function AttendancePage() {
         eyebrow="Payroll"
         title="Attendance"
         description="Maintain monthly attendance for every employee and generate leave-adjusted payslips from one register."
-        actions={<Button variant="outline" asChild><Link to="/employees"><Users />Employees & payslips</Link></Button>}
+        actions={<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("excel")}><FileSpreadsheet />{exportingAttendance === "excel" ? "Preparing Excel…" : "Download Excel"}</Button><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("pdf")}><Download />{exportingAttendance === "pdf" ? "Preparing PDF…" : "Download PDF"}</Button><Button variant="outline" asChild><Link to="/employees"><Users />Employees & payslips</Link></Button></div>}
       />
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only payroll access. Attendance changes and payslip generation require payroll management permission.</p> : null}
