@@ -266,7 +266,7 @@ export function InvoicesPage() {
         createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template }),
       })
       if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
-      if (result === "downloaded-and-opened") showNotice("Invoice downloaded and WhatsApp opened. Attach the downloaded PDF to the chat.")
+      if (result === "opened") showNotice("WhatsApp opened with the invoice message. This browser cannot attach the generated PDF automatically.")
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "The invoice could not be shared through WhatsApp.", true)
     }

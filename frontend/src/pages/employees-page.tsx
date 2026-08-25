@@ -615,7 +615,7 @@ export function EmployeesPage() {
         createFile: () => createPayslipPdfFile({ payslip, entity, template }),
       })
       if (result === "shared") setNotice("Payslip prepared. Choose WhatsApp in the share panel to send the PDF.")
-      if (result === "downloaded-and-opened") setNotice("Payslip downloaded and WhatsApp opened. Attach the downloaded PDF to the chat.")
+      if (result === "opened") setNotice("WhatsApp opened with the payslip message. This browser cannot attach the generated PDF automatically.")
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The payslip could not be shared through WhatsApp.")
     }
