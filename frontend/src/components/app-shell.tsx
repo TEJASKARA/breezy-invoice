@@ -1,5 +1,6 @@
 import {
   Building2,
+  CalendarCheck2,
   Check,
   ChevronDown,
   FileText,
@@ -55,6 +56,7 @@ const navigation = [
   { label: "Entities", href: "/entities", icon: Building2, permission: "entities.read" },
   { label: "Invoices", href: "/invoices", icon: ReceiptText, permission: "invoices.read" },
   { label: "Employees", href: "/employees", icon: Users, permission: "payslips.read" },
+  { label: "Attendance", href: "/attendance", icon: CalendarCheck2, permission: "payslips.read" },
   { label: "Expenses", href: "/expenses", icon: WalletCards, permission: "expenses.read" },
   { label: "Data Export", href: "/tally-export", icon: FileOutput, permission: "data_export.read" },
   { label: "Templates", href: "/settings/templates", icon: FileText, permission: "templates.read" },

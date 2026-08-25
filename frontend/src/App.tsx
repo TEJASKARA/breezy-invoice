@@ -11,6 +11,7 @@ import { WorkspaceAccessProvider, useWorkspaceAccess } from "@/lib/workspace-acc
 import type { WorkspacePermission } from "@/lib/workspace-access-service"
 
 const DashboardPage = lazy(() => import("@/pages/dashboard-page").then((module) => ({ default: module.DashboardPage })))
+const AttendancePage = lazy(() => import("@/pages/attendance-page").then((module) => ({ default: module.AttendancePage })))
 const EmployeesPage = lazy(() => import("@/pages/employees-page").then((module) => ({ default: module.EmployeesPage })))
 const EntitiesPage = lazy(() => import("@/pages/entities-page").then((module) => ({ default: module.EntitiesPage })))
 const ExpensesPage = lazy(() => import("@/pages/expenses-page").then((module) => ({ default: module.ExpensesPage })))
@@ -75,6 +76,7 @@ function App() {
           <Route path="/entities" element={<PermissionGate permission="entities.read"><EntitiesPage /></PermissionGate>} />
           <Route path="/invoices" element={<PermissionGate permission="invoices.read"><InvoicesPage /></PermissionGate>} />
           <Route path="/employees" element={<PermissionGate permission="payslips.read"><EmployeesPage /></PermissionGate>} />
+          <Route path="/attendance" element={<PermissionGate permission="payslips.read"><AttendancePage /></PermissionGate>} />
           <Route path="/expenses" element={<PermissionGate permission="expenses.read"><ExpensesPage /></PermissionGate>} />
           <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />
           <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />

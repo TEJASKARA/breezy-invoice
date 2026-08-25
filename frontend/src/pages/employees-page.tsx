@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react"
-import { CalendarDays, Copy, Download, Eye, FileSpreadsheet, Pencil, Plus, Trash2, Upload, UserPlus, X } from "lucide-react"
+import { CalendarCheck2, Copy, Download, Eye, Pencil, Plus, Trash2, Upload, UserPlus, X } from "lucide-react"
+import { Link } from "react-router-dom"
 
+import { AttendanceEditor } from "@/components/attendance-editor"
 import { PageHeader } from "@/components/page-header"
 import { PayslipPreview } from "@/components/payslip-preview"
 import { Badge } from "@/components/ui/badge"
@@ -25,8 +27,6 @@ const currentMonth = () => new Date().toISOString().slice(0, 7)
 const cloneComponents = (items: PayrollComponent[]) => items.map((item) => ({ ...item, id: payrollId() }))
 const normalizedLabel = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "")
 const leaveDeductionLabel = "Loss of pay (attendance)"
-type AttendanceException = Pick<PayslipAttendance, "halfDays" | "paidLeaveDays" | "unpaidLeaveDays">
-const blankAttendanceException = (): AttendanceException => ({ halfDays: 0, paidLeaveDays: 0, unpaidLeaveDays: 0 })
 
 function withoutLeaveDeduction(items: PayrollComponent[]) {
   return items.filter((item) => normalizedLabel(item.label) !== normalizedLabel(leaveDeductionLabel))
@@ -120,10 +120,6 @@ export function EmployeesPage() {
   const [bulkDownloadPending, setBulkDownloadPending] = useState(false)
   const [bulkPayslipsSaved, setBulkPayslipsSaved] = useState(false)
   const [bulkMonth, setBulkMonth] = useState(currentMonth())
-  const [bulkAttendance, setBulkAttendance] = useState<PayslipAttendance>(() => defaultPayslipAttendance(currentMonth()))
-  const [bulkAttendanceByEmployee, setBulkAttendanceByEmployee] = useState<Record<string, AttendanceException>>({})
-  const [excludedPayslipEmployeeIds, setExcludedPayslipEmployeeIds] = useState<string[]>([])
-  const [bulkEmployeeSearch, setBulkEmployeeSearch] = useState("")
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
@@ -134,13 +130,6 @@ export function EmployeesPage() {
   const entityEmployees = useMemo(() => employees.filter((employee) => employee.entityId === selectedEntityId), [employees, selectedEntityId])
   const entityPayslips = useMemo(() => payslips.filter((payslip) => payslip.entityId === selectedEntityId), [payslips, selectedEntityId])
   const selectedEntity = companies.find((company) => company.id === selectedEntityId)
-  const existingBulkPayslipEmployeeIds = useMemo(() => new Set(payslips.filter((payslip) => payslip.entityId === selectedEntityId && payslip.month === bulkMonth).map((payslip) => payslip.employeeId)), [payslips, selectedEntityId, bulkMonth])
-  const eligibleBulkEmployees = entityEmployees.filter((employee) => !existingBulkPayslipEmployeeIds.has(employee.id))
-  const selectedBulkEmployeeCount = eligibleBulkEmployees.filter((employee) => !excludedPayslipEmployeeIds.includes(employee.id)).length
-  const normalizedBulkEmployeeSearch = bulkEmployeeSearch.trim().toLowerCase()
-  const visibleBulkEmployees = normalizedBulkEmployeeSearch
-    ? entityEmployees.filter((employee) => [employee.employeeName, employee.employeeCode, employee.designation, employee.department].some((value) => value.toLowerCase().includes(normalizedBulkEmployeeSearch)))
-    : entityEmployees
 
   const leavePolicy = setup?.leavePolicy
   const leaveUsedBefore = (employeeId: string, month: string, excludedPayslipId?: string | null) => {
@@ -165,10 +154,6 @@ export function EmployeesPage() {
     setEmployeeImportPreview([])
     setBulkPreview([])
     setBulkPayslipsSaved(false)
-    setBulkAttendance(defaultPayslipAttendance(bulkMonth))
-    setBulkAttendanceByEmployee({})
-    setExcludedPayslipEmployeeIds([])
-    setBulkEmployeeSearch("")
     clearMessages()
   }
 
@@ -395,15 +380,6 @@ export function EmployeesPage() {
     setPayslipDraft(applyAttendance(next, next.attendance || defaultPayslipAttendance(next.month), editingPayslipId))
   }
 
-  const updateBulkAttendanceException = (employeeId: string, field: keyof AttendanceException, value: number) => {
-    setBulkAttendanceByEmployee((current) => ({
-      ...current,
-      [employeeId]: { ...(current[employeeId] || blankAttendanceException()), [field]: Math.max(0, value || 0) },
-    }))
-    setBulkPreview([])
-    setBulkPayslipsSaved(false)
-  }
-
   const savePayslip = async () => {
     clearMessages()
     if (!payslipDraft || !payslipDraft.employeeId || !payslipDraft.month) {
@@ -471,67 +447,6 @@ export function EmployeesPage() {
     setNotice(`Copied ${formatSalaryMonth(payslip.month)} into ${formatSalaryMonth(month)}. Change anything that is different, then save.`)
   }
 
-  const preparePayslipsFromSavedSalary = () => {
-    clearMessages()
-    setBulkPreview([])
-    setBulkPayslipsSaved(false)
-    if (!bulkMonth || !/^\d{4}-\d{2}$/.test(bulkMonth)) {
-      setError("Select a valid salary month.")
-      return
-    }
-    const selectedEmployees = entityEmployees.filter((employee) =>
-      !excludedPayslipEmployeeIds.includes(employee.id) &&
-      !payslips.some((payslip) => payslip.employeeId === employee.id && payslip.month === bulkMonth),
-    )
-    if (!selectedEmployees.length) {
-      setError("Select at least one employee who does not already have a payslip for this month.")
-      return
-    }
-    const invalidEmployees: string[] = []
-    const prepared = selectedEmployees.flatMap((employee): ImportPayslip[] => {
-      const earnings = cloneComponents(employee.defaultEarnings).filter((item) => item.label.trim() && item.amount > 0)
-      const deductions = cloneComponents(employee.defaultDeductions).filter((item) => item.label.trim() && item.amount > 0)
-      const grossPay = sumPayrollComponents(earnings)
-      const totalDeductions = sumPayrollComponents(deductions)
-      if (grossPay <= 0 || totalDeductions > grossPay) {
-        invalidEmployees.push(employee.employeeName)
-        return []
-      }
-      const attendanceException = bulkAttendanceByEmployee[employee.id] || blankAttendanceException()
-      return [applyAttendance({
-        entityId: employee.entityId,
-        entityName: selectedEntity?.companyName || "",
-        employeeId: employee.id,
-        employeeName: employee.employeeName,
-        employeeCode: employee.employeeCode,
-        designation: employee.designation,
-        department: employee.department,
-        pan: employee.pan,
-        uan: employee.uan,
-        esiNumber: employee.esiNumber,
-        bankName: employee.bankName,
-        bankAccount: employee.bankAccount,
-        ifsc: employee.ifsc,
-        employmentStatus: employee.employmentStatus,
-        month: bulkMonth,
-        paymentDate: "",
-        earnings,
-        deductions,
-        grossPay,
-        totalDeductions,
-        netPay: grossPay - totalDeductions,
-        status: "Generated",
-        generatedAt: new Date().toISOString(),
-      }, { ...bulkAttendance, ...attendanceException })]
-    })
-    if (!prepared.length) {
-      setError("The selected employees do not have a valid saved salary. Add earnings to their employee profiles first.")
-      return
-    }
-    setBulkPreview(prepared)
-    setNotice(`${prepared.length} selected payslip${prepared.length === 1 ? " is" : "s are"} ready using saved employee salaries.${invalidEmployees.length ? ` ${invalidEmployees.length} employee${invalidEmployees.length === 1 ? " was" : "s were"} skipped because the saved salary is invalid.` : ""}`)
-  }
-
   const downloadBulkTemplate = async () => {
     clearMessages()
     if (!selectedEntityId || !entityEmployees.length) {
@@ -543,7 +458,7 @@ export function EmployeesPage() {
       const previous = findPreviousPayslip(employee.id, bulkMonth)
       const earnings = previous?.earnings?.length ? previous.earnings : employee.defaultEarnings
       const deductions = previous?.deductions?.length ? previous.deductions : employee.defaultDeductions
-      const attendance = { ...bulkAttendance, ...(bulkAttendanceByEmployee[employee.id] || blankAttendanceException()) }
+      const attendance = defaultPayslipAttendance(bulkMonth)
       const calculated = calculateLeaveAdjustedAttendance({ month: bulkMonth, attendance, policy: leavePolicy, leaveUsedBefore: leaveUsedBefore(employee.id, bulkMonth), grossPay: sumPayrollComponents(earnings) })
       return {
         "Employee Code": employee.employeeCode,
@@ -699,10 +614,11 @@ export function EmployeesPage() {
         eyebrow="Payroll"
         title="Employees & payslips"
         description="Add employees separately or through Excel, reuse last month’s salary, and generate individual or bulk payslips."
-        actions={canManage ? <>
-          <Button variant="outline" onClick={() => { setEmployeeDraft(blankEmployee(selectedEntityId)); setEditingEmployeeId(null); setShowEmployeeForm(true); clearMessages() }}><UserPlus />Add employee</Button>
-          <Button onClick={() => openPayslipForm()}><Plus />Create payslip</Button>
-        </> : null}
+        actions={<>
+          <Button variant="outline" asChild><Link to="/attendance"><CalendarCheck2 />Attendance</Link></Button>
+          {canManage ? <Button variant="outline" onClick={() => { setEmployeeDraft(blankEmployee(selectedEntityId)); setEditingEmployeeId(null); setShowEmployeeForm(true); clearMessages() }}><UserPlus />Add employee</Button> : null}
+          {canManage ? <Button onClick={() => openPayslipForm()}><Plus />Create payslip</Button> : null}
+        </>}
       />
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to employees and payslips. You can preview and download saved payslips, but record changes require payroll management permission.</p> : null}
@@ -719,75 +635,17 @@ export function EmployeesPage() {
         </CardContent>
       </Card>
 
-      {canManage ? <Card>
-        <CardHeader>
-          <CardTitle>Monthly attendance register</CardTitle>
-          <CardDescription>Record attendance directly in BreezyInvoice. These values are used automatically when you preview and generate the month’s payslips.</CardDescription>
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div><CardTitle>Attendance & monthly payroll</CardTitle><CardDescription>Attendance now has its own workspace page, connected to these employee records and saved salary structures.</CardDescription></div>
+          <Button asChild><Link to="/attendance"><CalendarCheck2 />Open attendance</Link></Button>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)] md:items-end">
-            <div className="space-y-2"><Label htmlFor="bulk-month">Attendance month</Label><Input id="bulk-month" type="month" value={bulkMonth} onChange={(event) => { const month = event.target.value; setBulkMonth(month); setBulkAttendance(defaultPayslipAttendance(month)); setBulkAttendanceByEmployee({}); setBulkPreview([]); setBulkPayslipsSaved(false) }} /></div>
-            <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm"><p className="font-medium">Leave policy: <span className="capitalize">{leavePolicy?.period || "not configured"}</span>{leavePolicy ? ` · ${leavePolicy.allowanceDays} paid leave day${leavePolicy.allowanceDays === 1 ? "" : "s"}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">Change this policy anytime from Workspace settings.</p></div>
-          </div>
-
-          <AttendanceEditor
-            month={bulkMonth}
-            value={bulkAttendance}
-            onChange={(attendance) => { setBulkAttendance(attendance); setBulkPreview([]); setBulkPayslipsSaved(false) }}
-            showExceptions={false}
-            title="Monthly attendance calendar"
-            description="Saturdays, Sundays and paid holidays apply to every employee. Enter each employee’s attendance directly in the register below."
-          />
-
-          <div className="rounded-xl border">
-            <div className="space-y-4 border-b p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="font-medium">Employee attendance</p><p className="text-sm text-muted-foreground">{selectedBulkEmployeeCount} of {eligibleBulkEmployees.length} eligible employees selected. Existing payslips for {formatSalaryMonth(bulkMonth)} cannot be selected again.</p></div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => { const visibleIds = new Set(visibleBulkEmployees.map((employee) => employee.id)); setExcludedPayslipEmployeeIds((current) => current.filter((id) => !visibleIds.has(id))) }}>Select shown</Button>
-                  <Button size="sm" variant="outline" onClick={() => setExcludedPayslipEmployeeIds((current) => [...new Set([...current, ...visibleBulkEmployees.map((employee) => employee.id)])])}>Deselect shown</Button>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Input aria-label="Search employees for payslip generation" value={bulkEmployeeSearch} onChange={(event) => setBulkEmployeeSearch(event.target.value)} placeholder="Search employee name, code, designation, or department…" />
-                {bulkEmployeeSearch && <Button size="sm" variant="ghost" onClick={() => setBulkEmployeeSearch("")}>Clear search</Button>}
-              </div>
-              {normalizedBulkEmployeeSearch && <p className="text-xs text-muted-foreground">Showing {visibleBulkEmployees.length} matching employee{visibleBulkEmployees.length === 1 ? "" : "s"}.</p>}
-            </div>
-            <div className="max-h-80 overflow-auto">
-              <Table>
-                <TableHeader><TableRow><TableHead className="w-12">Use</TableHead><TableHead>Employee</TableHead><TableHead>Half days</TableHead><TableHead>Leave taken</TableHead><TableHead>Unpaid leave</TableHead><TableHead>Excess leave</TableHead><TableHead>LOP deduction</TableHead><TableHead>Estimated net</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                <TableBody>{visibleBulkEmployees.length ? visibleBulkEmployees.map((employee) => {
-                  const alreadyExists = existingBulkPayslipEmployeeIds.has(employee.id)
-                  const grossPay = sumPayrollComponents(employee.defaultEarnings)
-                  const totalDeductions = sumPayrollComponents(employee.defaultDeductions)
-                  const checked = !alreadyExists && !excludedPayslipEmployeeIds.includes(employee.id)
-                  const attendanceException = bulkAttendanceByEmployee[employee.id] || blankAttendanceException()
-                  const attendanceEstimate = calculateLeaveAdjustedAttendance({ month: bulkMonth, attendance: { ...bulkAttendance, ...attendanceException }, policy: leavePolicy, leaveUsedBefore: leaveUsedBefore(employee.id, bulkMonth), grossPay })
-                  const estimatedNet = grossPay - totalDeductions - attendanceEstimate.leaveDeductionAmount
-                  return <TableRow key={employee.id} className={alreadyExists ? "opacity-60" : undefined}>
-                    <TableCell><input type="checkbox" aria-label={`Generate payslip for ${employee.employeeName}`} disabled={alreadyExists} checked={checked} onChange={(event) => setExcludedPayslipEmployeeIds((current) => event.target.checked ? current.filter((id) => id !== employee.id) : [...new Set([...current, employee.id])])} /></TableCell>
-                    <TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></TableCell>
-                    <TableCell><Input className="w-24" aria-label={`Half days for ${employee.employeeName}`} disabled={!checked} type="number" min="0" step="1" value={attendanceException.halfDays || ""} onChange={(event) => updateBulkAttendanceException(employee.id, "halfDays", Number(event.target.value))} placeholder="0" /></TableCell>
-                    <TableCell><Input className="w-24" aria-label={`Leave taken for ${employee.employeeName}`} disabled={!checked} type="number" min="0" step="0.5" value={attendanceException.paidLeaveDays || ""} onChange={(event) => updateBulkAttendanceException(employee.id, "paidLeaveDays", Number(event.target.value))} placeholder="0" /></TableCell>
-                    <TableCell><Input className="w-24" aria-label={`Unpaid leave for ${employee.employeeName}`} disabled={!checked} type="number" min="0" step="0.5" value={attendanceException.unpaidLeaveDays || ""} onChange={(event) => updateBulkAttendanceException(employee.id, "unpaidLeaveDays", Number(event.target.value))} placeholder="0" /></TableCell>
-                    <TableCell>{attendanceEstimate.attendance.excessLeaveDays || 0}</TableCell>
-                    <TableCell className="text-red-600">₹{attendanceEstimate.leaveDeductionAmount.toLocaleString("en-IN")}</TableCell>
-                    <TableCell className="font-medium">₹{estimatedNet.toLocaleString("en-IN")}</TableCell>
-                    <TableCell>{alreadyExists ? <Badge variant="secondary">Already generated</Badge> : grossPay > 0 && estimatedNet >= 0 ? <Badge variant="outline">Ready</Badge> : <Badge variant="destructive">Salary required</Badge>}</TableCell>
-                  </TableRow>
-                }) : <TableRow><TableCell colSpan={9} className="h-28 text-center text-muted-foreground">{entityEmployees.length ? "No employees match this search." : "Add employees before recording attendance."}</TableCell></TableRow>}</TableBody>
-              </Table>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-medium">Attendance is ready for payroll</p><p className="text-xs text-muted-foreground">Review the estimated deductions above, then create the payslip preview.</p></div><Button disabled={!selectedBulkEmployeeCount} onClick={preparePayslipsFromSavedSalary}><FileSpreadsheet />Preview payslips from attendance</Button></div>
-        </CardContent>
-      </Card> : null}
+      </Card>
 
       {canManage ? <Card>
-        <CardHeader><CardTitle>Bulk payslip generation</CardTitle><CardDescription>Use the in-app attendance register above, or use Excel as an optional alternative when salary amounts also need bulk changes.</CardDescription></CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3">
-          <Button disabled={!selectedBulkEmployeeCount} onClick={preparePayslipsFromSavedSalary}><FileSpreadsheet />Preview from attendance register</Button>
+        <CardHeader><CardTitle>Optional Excel payroll import</CardTitle><CardDescription>The Attendance page is recommended. Use Excel only when salary components also need bulk changes.</CardDescription></CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-3">
+          <div className="w-56 space-y-2"><Label htmlFor="bulk-month">Salary month</Label><Input id="bulk-month" type="month" value={bulkMonth} onChange={(event) => { setBulkMonth(event.target.value); setBulkPreview([]); setBulkPayslipsSaved(false) }} /></div>
           <Button variant="outline" onClick={() => void downloadBulkTemplate()}><Download />Download monthly Excel</Button>
           <input ref={fileInput} className="hidden" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBulkFile(file); event.target.value = "" }} />
           <Button variant="outline" onClick={() => fileInput.current?.click()}><Upload />Upload monthly Excel</Button>
@@ -898,75 +756,6 @@ export function EmployeesPage() {
       </Card>
     </div>
   )
-}
-
-function AttendanceEditor({
-  month,
-  value,
-  onChange,
-  showExceptions = true,
-  title,
-  description,
-}: {
-  month: string
-  value: PayslipAttendance
-  onChange: (attendance: PayslipAttendance) => void
-  showExceptions?: boolean
-  title: string
-  description: string
-}) {
-  const [holidayDate, setHolidayDate] = useState(`${month}-01`)
-  const [holidayName, setHolidayName] = useState("")
-  const summary = calculatePayslipAttendance(month, value)
-  const effectiveHolidayDate = holidayDate.startsWith(`${month}-`) ? holidayDate : `${month}-01`
-  const update = (changes: Partial<PayslipAttendance>) => onChange(calculatePayslipAttendance(month, { ...value, ...changes }).attendance)
-  const addHoliday = () => {
-    if (!effectiveHolidayDate || !holidayName.trim()) return
-    update({ holidays: [...value.holidays.filter((holiday) => holiday.date !== effectiveHolidayDate), { id: payrollId(), date: effectiveHolidayDate, name: holidayName.trim() }] })
-    setHolidayName("")
-  }
-  const restoreNationalHolidays = () => {
-    const national = indianNationalHolidays(month)
-    update({ holidays: [...value.holidays.filter((holiday) => !national.some((item) => item.date === holiday.date)), ...national] })
-  }
-
-  return (
-    <div className="space-y-4 rounded-xl border p-4">
-      <div className="flex items-start gap-3"><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><div><h3 className="font-semibold">{title}</h3><p className="text-sm text-muted-foreground">{description}</p></div></div>
-      <div className="flex flex-wrap gap-5 text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={value.saturdayWeeklyOff} onChange={(event) => update({ saturdayWeeklyOff: event.target.checked })} />Saturday is a paid weekly off</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={value.sundayWeeklyOff} onChange={(event) => update({ sundayWeeklyOff: event.target.checked })} />Sunday is a paid weekly off</label>
-      </div>
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Paid public holidays</p><p className="text-xs text-muted-foreground">India’s three nationwide national holidays are added automatically when they fall in this month. Add state or company holidays as needed.</p></div><Button type="button" size="sm" variant="outline" onClick={restoreNationalHolidays}>Restore national holidays</Button></div>
-        {value.holidays.length ? <div className="flex flex-wrap gap-2">{value.holidays.map((holiday) => <span key={holiday.id} className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1 text-xs"><span>{holiday.date} · {holiday.name}</span><button type="button" className="text-muted-foreground hover:text-red-600" aria-label={`Remove ${holiday.name}`} onClick={() => update({ holidays: value.holidays.filter((item) => item.id !== holiday.id) })}>×</button></span>)}</div> : <p className="text-sm text-muted-foreground">No public holidays are included for this month.</p>}
-        <div className="grid gap-2 md:grid-cols-[170px_minmax(180px,1fr)_auto]">
-          <Input aria-label="Holiday date" type="date" min={`${month}-01`} max={`${month}-${String(summary.attendance.calendarDays).padStart(2, "0")}`} value={effectiveHolidayDate} onChange={(event) => setHolidayDate(event.target.value)} />
-          <Input aria-label="Holiday name" value={holidayName} onChange={(event) => setHolidayName(event.target.value)} placeholder="State or company holiday" />
-          <Button type="button" variant="outline" disabled={!holidayName.trim()} onClick={addHoliday}><Plus />Add holiday</Button>
-        </div>
-      </div>
-      {showExceptions ? <div className="grid gap-4 sm:grid-cols-3">
-        <div className="space-y-2"><Label htmlFor={`${title}-half-days`}>Half days</Label><Input id={`${title}-half-days`} type="number" min="0" max={summary.workingDays} step="1" value={value.halfDays || ""} onChange={(event) => update({ halfDays: Number(event.target.value) || 0 })} placeholder="0" /></div>
-        <div className="space-y-2"><Label htmlFor={`${title}-paid-leave`}>Leave taken</Label><Input id={`${title}-paid-leave`} type="number" min="0" max={summary.workingDays} step="0.5" value={value.paidLeaveDays || ""} onChange={(event) => update({ paidLeaveDays: Number(event.target.value) || 0 })} placeholder="0" /></div>
-        <div className="space-y-2"><Label htmlFor={`${title}-unpaid-leave`}>Unpaid leave / absent days</Label><Input id={`${title}-unpaid-leave`} type="number" min="0" max={summary.workingDays} step="0.5" value={value.unpaidLeaveDays || ""} onChange={(event) => update({ unpaidLeaveDays: Number(event.target.value) || 0 })} placeholder="0" /></div>
-      </div> : null}
-      <div className="grid gap-3 rounded-lg bg-muted p-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
-        <AttendanceStat label="Calendar" value={summary.attendance.calendarDays} />
-        <AttendanceStat label="Working" value={summary.workingDays} />
-        <AttendanceStat label="Full present" value={summary.attendance.fullPresentDays} />
-        <AttendanceStat label="Weekly offs" value={summary.attendance.weeklyOffDays} />
-        <AttendanceStat label="Holidays" value={summary.attendance.holidayDays} />
-        <AttendanceStat label="Half days" value={summary.attendance.halfDays} />
-        <AttendanceStat label="Payable" value={summary.payableDays} highlight />
-      </div>
-      {value.leaveAllowancePeriod ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong className="font-semibold capitalize">{value.leaveAllowancePeriod} allowance:</strong> {value.leaveAllowanceDays || 0} days · Used before: {value.leaveUsedBefore || 0} · Eligible this period: {value.eligiblePaidLeaveDays || 0} · Excess: {value.excessLeaveDays || 0} · Loss of pay: {value.lossOfPayDays || 0} days · Deduction: ₹{(value.leaveDeductionAmount || 0).toLocaleString("en-IN")}</div> : <p className="text-xs text-muted-foreground">Configure a leave allowance in Workspace settings to calculate excess-leave salary deductions.</p>}
-    </div>
-  )
-}
-
-function AttendanceStat({ label, value, highlight = false }: { label: string; value: number; highlight?: boolean }) {
-  return <div><p className="text-xs text-muted-foreground">{label}</p><p className={highlight ? "font-semibold text-blue-600" : "font-semibold"}>{value}</p></div>
 }
 
 function EmployeeForm({ draft, setDraft, editing, saving, onCancel, onSave }: { draft: Omit<Employee, "id">; setDraft: (employee: Omit<Employee, "id">) => void; editing: boolean; saving: boolean; onCancel: () => void; onSave: () => void }) {
