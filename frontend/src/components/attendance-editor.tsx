@@ -61,7 +61,7 @@ export function AttendanceEditor({
       <div className="grid gap-3 rounded-lg bg-muted p-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
         <AttendanceStat label="Calendar" value={summary.attendance.calendarDays} />
         <AttendanceStat label="Working" value={summary.workingDays} />
-        <AttendanceStat label="Full present" value={summary.attendance.fullPresentDays} />
+        <AttendanceStat label="Present days" value={summary.attendance.fullPresentDays} />
         <AttendanceStat label="Weekly offs" value={summary.attendance.weeklyOffDays} />
         <AttendanceStat label="Holidays" value={summary.attendance.holidayDays} />
         <AttendanceStat label="Half days" value={summary.attendance.halfDays} />

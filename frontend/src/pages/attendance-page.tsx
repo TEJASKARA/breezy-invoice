@@ -205,7 +205,7 @@ export function AttendancePage() {
       <AttendanceEditor month={month} value={attendance} onChange={(next) => { setAttendance(next); resetPreview() }} showExceptions={false} title="Monthly work calendar" description="Set weekly offs and public holidays once; they apply to every employee in this register." />
 
       <Card>
-        <CardHeader><CardTitle>Employee attendance register</CardTitle><CardDescription>Enter only exceptions such as half-days and leave. Present and payable days are calculated automatically.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Employee attendance register</CardTitle><CardDescription>Present days are calculated automatically from working days after half-days and leave are entered.</CardDescription></CardHeader>
         <CardContent className="p-0">
           <div className="space-y-4 border-b p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -216,7 +216,7 @@ export function AttendancePage() {
           </div>
           <div className="max-h-[520px] overflow-auto [content-visibility:auto]">
             <Table>
-              <TableHeader><TableRow><TableHead className="w-12">Use</TableHead><TableHead>Employee</TableHead><TableHead>Half days</TableHead><TableHead>Leave taken</TableHead><TableHead>Unpaid leave</TableHead><TableHead>Excess leave</TableHead><TableHead>LOP deduction</TableHead><TableHead>Estimated net</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="w-12">Use</TableHead><TableHead>Employee</TableHead><TableHead>Present days</TableHead><TableHead>Half days</TableHead><TableHead>Leave taken</TableHead><TableHead>Unpaid leave</TableHead><TableHead>Excess leave</TableHead><TableHead>LOP deduction</TableHead><TableHead>Estimated net</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
               <TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => {
                 const alreadyExists = existingEmployeeIds.has(employee.id)
                 const checked = !alreadyExists && !excludedEmployeeIds.includes(employee.id)
@@ -228,6 +228,7 @@ export function AttendancePage() {
                 return <TableRow key={employee.id} className={alreadyExists ? "opacity-60" : undefined}>
                   <TableCell><input type="checkbox" aria-label={`Include ${employee.employeeName}`} disabled={!canManage || alreadyExists} checked={checked} onChange={(event) => { setExcludedEmployeeIds((current) => event.target.checked ? current.filter((id) => id !== employee.id) : [...new Set([...current, employee.id])]); resetPreview() }} /></TableCell>
                   <TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}{employee.department ? ` · ${employee.department}` : ""}</p></TableCell>
+                  <TableCell><span className="inline-flex min-w-14 justify-center rounded-md bg-muted px-2 py-1 font-medium">{estimate.attendance.fullPresentDays}</span></TableCell>
                   <TableCell><Input className="w-24" aria-label={`Half days for ${employee.employeeName}`} disabled={!canManage || !checked} type="number" min="0" step="1" value={exception.halfDays || ""} onChange={(event) => updateEmployeeAttendance(employee.id, "halfDays", Number(event.target.value))} placeholder="0" /></TableCell>
                   <TableCell><Input className="w-24" aria-label={`Leave taken for ${employee.employeeName}`} disabled={!canManage || !checked} type="number" min="0" step="0.5" value={exception.paidLeaveDays || ""} onChange={(event) => updateEmployeeAttendance(employee.id, "paidLeaveDays", Number(event.target.value))} placeholder="0" /></TableCell>
                   <TableCell><Input className="w-24" aria-label={`Unpaid leave for ${employee.employeeName}`} disabled={!canManage || !checked} type="number" min="0" step="0.5" value={exception.unpaidLeaveDays || ""} onChange={(event) => updateEmployeeAttendance(employee.id, "unpaidLeaveDays", Number(event.target.value))} placeholder="0" /></TableCell>
@@ -236,7 +237,7 @@ export function AttendancePage() {
                   <TableCell className="font-medium">₹{estimatedNet.toLocaleString("en-IN")}</TableCell>
                   <TableCell>{alreadyExists ? <Badge variant="secondary">Payslip exists</Badge> : grossPay > 0 && estimatedNet >= 0 ? <Badge variant="outline">Ready</Badge> : <Badge variant="destructive">Salary required</Badge>}</TableCell>
                 </TableRow>
-              }) : <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">{entityEmployees.length ? "No employees match this search." : "No employees have been added to this entity."}</TableCell></TableRow>}</TableBody>
+              }) : <TableRow><TableCell colSpan={10} className="h-32 text-center text-muted-foreground">{entityEmployees.length ? "No employees match this search." : "No employees have been added to this entity."}</TableCell></TableRow>}</TableBody>
             </Table>
           </div>
           {canManage ? <div className="flex flex-col gap-3 border-t p-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-muted-foreground">Review the deductions above before creating payslips.</p><Button disabled={!selectedCount} onClick={preparePayslips}><FileSpreadsheet />Preview {selectedCount || ""} payslips</Button></div> : null}
@@ -246,7 +247,7 @@ export function AttendancePage() {
       {preview.length ? <Card>
         <CardHeader><CardTitle>Payslip preview</CardTitle><CardDescription>These payslips use the attendance entered above. Generate to save them to the Employees page.</CardDescription></CardHeader>
         <CardContent>
-          <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Payable days</TableHead><TableHead>Gross</TableHead><TableHead>Attendance deduction</TableHead><TableHead>Total deductions</TableHead><TableHead>Net pay</TableHead></TableRow></TableHeader><TableBody>{preview.map((payslip) => <TableRow key={`${payslip.employeeId}-${payslip.month}`}><TableCell className="font-medium">{payslip.employeeName}</TableCell><TableCell>{payslip.payableDays}</TableCell><TableCell>₹{payslip.grossPay.toLocaleString("en-IN")}</TableCell><TableCell className="text-red-600">₹{(payslip.attendance?.leaveDeductionAmount || 0).toLocaleString("en-IN")}</TableCell><TableCell>₹{payslip.totalDeductions.toLocaleString("en-IN")}</TableCell><TableCell className="font-semibold">₹{payslip.netPay.toLocaleString("en-IN")}</TableCell></TableRow>)}</TableBody></Table>
+          <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Present days</TableHead><TableHead>Payable days</TableHead><TableHead>Gross</TableHead><TableHead>Attendance deduction</TableHead><TableHead>Total deductions</TableHead><TableHead>Net pay</TableHead></TableRow></TableHeader><TableBody>{preview.map((payslip) => <TableRow key={`${payslip.employeeId}-${payslip.month}`}><TableCell className="font-medium">{payslip.employeeName}</TableCell><TableCell>{payslip.attendance?.fullPresentDays ?? "—"}</TableCell><TableCell>{payslip.payableDays}</TableCell><TableCell>₹{payslip.grossPay.toLocaleString("en-IN")}</TableCell><TableCell className="text-red-600">₹{(payslip.attendance?.leaveDeductionAmount || 0).toLocaleString("en-IN")}</TableCell><TableCell>₹{payslip.totalDeductions.toLocaleString("en-IN")}</TableCell><TableCell className="font-semibold">₹{payslip.netPay.toLocaleString("en-IN")}</TableCell></TableRow>)}</TableBody></Table>
           <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => { setPreview([]); setSaved(false) }}>{saved ? "Close" : "Cancel"}</Button><Button variant="outline" disabled={downloading || saving} onClick={() => void downloadPayslips()}><Download />{downloading ? "Preparing ZIP…" : `Download ${preview.length} PDFs`}</Button><Button disabled={saved || saving} onClick={() => void savePayslips()}><CalendarCheck2 />{saving ? "Saving…" : saved ? "Payslips generated" : `Generate ${preview.length} payslips`}</Button></div>
         </CardContent>
       </Card> : null}
