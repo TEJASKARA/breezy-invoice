@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Download, Eye, LoaderCircle, Plus, Search, Trash2, Upload, X } from "lucide-react"
+import { Download, Eye, LoaderCircle, MessageCircle, Plus, Search, Trash2, Upload, X } from "lucide-react"
 
 import { InvoicePreview } from "@/components/invoice-preview"
 import { PageHeader } from "@/components/page-header"
@@ -14,6 +14,7 @@ import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "
 import { nextInvoiceNumber, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
+import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type ImportInvoice = Omit<Invoice, "id" | "number">
@@ -251,6 +252,23 @@ export function InvoicesPage() {
       showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the selected ${template.preset} template.`)
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "The invoice PDF could not be created.", true)
+    }
+  }
+
+  const shareInvoiceOnWhatsApp = async (invoice: Invoice) => {
+    try {
+      const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+      const customer = customers.find((item) => item.id === invoice.customerId)
+        || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
+      const result = await sharePdfViaWhatsApp({
+        title: `Invoice ${invoice.sourceNumber || invoice.number}`,
+        message: `Invoice ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
+        createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template }),
+      })
+      if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
+      if (result === "downloaded-and-opened") showNotice("Invoice downloaded and WhatsApp opened. Attach the downloaded PDF to the chat.")
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "The invoice could not be shared through WhatsApp.", true)
     }
   }
 
@@ -1027,6 +1045,7 @@ export function InvoicesPage() {
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number} through WhatsApp`} title="Share via WhatsApp" onClick={() => void shareInvoiceOnWhatsApp(invoice)}><MessageCircle /></Button>
                         {canManage ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>
                     )}
@@ -1047,6 +1066,7 @@ export function InvoicesPage() {
                 <p className="text-sm text-muted-foreground">Selected template: {template.preset}. The downloaded PDF will use this format.</p>
               </div>
               <div className="flex gap-2">
+                <Button variant="outline" onClick={() => void shareInvoiceOnWhatsApp(pdfPreview)}><MessageCircle />Share via WhatsApp</Button>
                 <Button variant="outline" onClick={() => void downloadPdf(pdfPreview)}><Download />Download PDF</Button>
                 <Button size="icon" variant="ghost" aria-label="Close invoice preview" onClick={() => setPdfPreview(null)}><X /></Button>
               </div>
