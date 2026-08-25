@@ -1,4 +1,4 @@
-import type { AttendanceHoliday, LeavePolicy, PayrollComponent, PayslipAttendance } from "@/lib/mvp-store"
+import type { AttendanceDayRecord, AttendanceDayStatus, AttendanceHoliday, LeavePolicy, PayrollComponent, PayslipAttendance } from "@/lib/mvp-store"
 
 export const payrollId = () => crypto.randomUUID()
 
@@ -64,12 +64,19 @@ export function calculatePayslipAttendance(month: string, input: Partial<Payslip
     }
   }
   const holidayDays = holidays.filter((holiday) => !weeklyOffDates.has(holiday.date)).length
+  const holidayDates = new Set(holidays.map((holiday) => holiday.date))
   const workingDays = Math.max(0, calendarDays - weeklyOffDays - holidayDays)
   const clamp = (value: number | undefined, maximum: number) => Math.min(maximum, Math.max(0, Number.isFinite(value) ? Number(value) : 0))
-  const halfDays = clamp(input.halfDays, workingDays)
-  const paidLeaveDays = clamp(input.paidLeaveDays, Math.max(0, workingDays - halfDays))
-  const unpaidLeaveDays = clamp(input.unpaidLeaveDays, Math.max(0, workingDays - halfDays - paidLeaveDays))
-  const fullPresentDays = Math.max(0, workingDays - halfDays - paidLeaveDays - unpaidLeaveDays)
+  const dailyMode = Array.isArray(input.dailyRecords)
+  const validStatuses = new Set<AttendanceDayStatus>(["present", "half_day", "paid_leave", "unpaid_leave"])
+  const dailyRecords = dailyMode ? [...new Map((input.dailyRecords || [])
+    .filter((record): record is AttendanceDayRecord => record.date.startsWith(`${month}-`) && !weeklyOffDates.has(record.date) && !holidayDates.has(record.date) && validStatuses.has(record.status))
+    .map((record) => [record.date, record])).values()].sort((left, right) => left.date.localeCompare(right.date)) : undefined
+  const countStatus = (status: AttendanceDayStatus) => dailyRecords?.filter((record) => record.status === status).length || 0
+  const halfDays = dailyMode ? countStatus("half_day") : clamp(input.halfDays, workingDays)
+  const paidLeaveDays = dailyMode ? countStatus("paid_leave") : clamp(input.paidLeaveDays, Math.max(0, workingDays - halfDays))
+  const unpaidLeaveDays = dailyMode ? countStatus("unpaid_leave") : clamp(input.unpaidLeaveDays, Math.max(0, workingDays - halfDays - paidLeaveDays))
+  const fullPresentDays = dailyMode ? countStatus("present") : Math.max(0, workingDays - halfDays - paidLeaveDays - unpaidLeaveDays)
   const payableDays = Math.round((weeklyOffDays + holidayDays + fullPresentDays + paidLeaveDays + halfDays * 0.5) * 100) / 100
 
   return {
@@ -80,6 +87,7 @@ export function calculatePayslipAttendance(month: string, input: Partial<Payslip
       halfDays,
       paidLeaveDays,
       unpaidLeaveDays,
+      ...(dailyMode ? { dailyRecords } : {}),
       calendarDays,
       weeklyOffDays,
       holidayDays,
@@ -104,11 +112,9 @@ export function calculateLeaveAdjustedAttendance({
   grossPay: number
 }): { attendance: PayslipAttendance; workingDays: number; payableDays: number; leaveDeductionAmount: number } {
   const base = calculatePayslipAttendance(month, attendance)
-  if (!policy) return { ...base, leaveDeductionAmount: 0 }
-
-  const allowanceDays = Math.max(0, Number(policy.allowanceDays) || 0)
   const leaveTakenDays = base.attendance.paidLeaveDays
-  const remainingAllowance = Math.max(0, allowanceDays - Math.max(0, leaveUsedBefore))
+  const allowanceDays = policy ? Math.max(0, Number(policy.allowanceDays) || 0) : leaveTakenDays
+  const remainingAllowance = policy ? Math.max(0, allowanceDays - Math.max(0, leaveUsedBefore)) : leaveTakenDays
   const eligiblePaidLeaveDays = Math.min(leaveTakenDays, remainingAllowance)
   const excessLeaveDays = Math.max(0, leaveTakenDays - eligiblePaidLeaveDays)
   const lossOfPayDays = Math.round((base.attendance.unpaidLeaveDays + excessLeaveDays + base.attendance.halfDays * 0.5) * 100) / 100
@@ -121,9 +127,7 @@ export function calculateLeaveAdjustedAttendance({
       ...base.attendance,
       eligiblePaidLeaveDays,
       excessLeaveDays,
-      leaveAllowanceDays: allowanceDays,
-      leaveUsedBefore: Math.max(0, leaveUsedBefore),
-      leaveAllowancePeriod: policy.period,
+      ...(policy ? { leaveAllowanceDays: allowanceDays, leaveUsedBefore: Math.max(0, leaveUsedBefore), leaveAllowancePeriod: policy.period } : {}),
       lossOfPayDays,
       leaveDeductionAmount,
     } satisfies PayslipAttendance,

@@ -66,6 +66,8 @@ export type Invoice = {
 }
 export type PayrollComponent = { id: string; label: string; amount: number }
 export type AttendanceHoliday = { id: string; date: string; name: string }
+export type AttendanceDayStatus = "present" | "half_day" | "paid_leave" | "unpaid_leave"
+export type AttendanceDayRecord = { date: string; status: AttendanceDayStatus }
 export type PayslipAttendance = {
   saturdayWeeklyOff: boolean
   sundayWeeklyOff: boolean
@@ -73,6 +75,7 @@ export type PayslipAttendance = {
   halfDays: number
   paidLeaveDays: number
   unpaidLeaveDays: number
+  dailyRecords?: AttendanceDayRecord[]
   calendarDays: number
   weeklyOffDays: number
   holidayDays: number
@@ -197,6 +200,13 @@ export type LeavePolicy = {
   period: "monthly" | "yearly"
   allowanceDays: number
 }
+export type AttendanceDraft = {
+  entityId: string
+  month: string
+  attendance: PayslipAttendance
+  employeeRecords: Record<string, AttendanceDayRecord[]>
+  updatedAt: string
+}
 export type Setup = {
   firmName: string
   industry: string
@@ -204,6 +214,7 @@ export type Setup = {
   mailingAddress: string
   invoiceNumbering?: InvoiceNumbering
   leavePolicy?: LeavePolicy
+  attendanceDrafts?: Record<string, AttendanceDraft>
 }
 export type MvpState = { setup: Setup | null; companies: Company[]; customers: Customer[]; invoices: Invoice[]; employees: Employee[]; payslips: Payslip[]; expenses: Expense[]; template: TemplateSettings }
 type MvpStore = MvpState & {
@@ -211,6 +222,7 @@ type MvpStore = MvpState & {
   syncStatus: "local" | "loading" | "saving" | "synced" | "error"
   syncError: string | null
   completeSetup: (setup: Setup) => Promise<void>
+  saveAttendanceDraft: (draft: AttendanceDraft) => Promise<void>
   addCompanies: (companies: Omit<Company, "id">[]) => Promise<void>
   updateCompany: (companyId: string, changes: Partial<Omit<Company, "id">>) => Promise<void>
   deleteCompany: (companyId: string) => Promise<void>
@@ -490,6 +502,14 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const next = { ...stateRef.current, setup }
       await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
       commit(next)
+    },
+    saveAttendanceDraft: async (draft) => {
+      const current = stateRef.current
+      if (!current.setup) throw new Error("Complete your firm setup before saving attendance.")
+      const key = `${draft.entityId}:${draft.month}`
+      const nextSetup = { ...current.setup, attendanceDrafts: { ...(current.setup.attendanceDrafts || {}), [key]: draft } }
+      await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template))
+      commit({ ...stateRef.current, setup: nextSetup })
     },
     addCompanies: async (companies) => {
       const added = companies.map((company) => {
