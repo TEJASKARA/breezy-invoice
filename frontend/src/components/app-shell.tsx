@@ -6,6 +6,7 @@ import {
   FileText,
   FileOutput,
   CircleHelp,
+  Coins,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -94,7 +95,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { user } = useAuthUser()
-  const { workspace, membership, can } = useWorkspaceAccess()
+  const { workspace, membership, creditAccount, can } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
   const { setup, companies, invoices, payslips, syncError } = useMvpStore()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
@@ -103,6 +104,11 @@ export function AppShell() {
   const setupProgress = getSetupProgress({ hasLogin: Boolean(user), setup, companies, invoices, payslips })
   const showSetupProgress = setupProgress.completed < setupProgress.total
   const ThemeIcon = theme === "system" ? Monitor : resolvedTheme === "dark" ? Moon : Sun
+  const creditsRemaining = creditAccount
+    ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used)
+      + creditAccount.monthly_credits_remaining
+      + creditAccount.topup_credits_remaining
+    : Math.max(0, 10 - invoices.length - payslips.length)
   useEffect(() => {
     if (!user) return
     const storageKey = `breezyinvoice-product-tour:${user.id}`
@@ -188,6 +194,17 @@ export function AppShell() {
           </Sheet>
 
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="h-9 gap-2 px-2.5 sm:px-3"
+              title={`${creditsRemaining} shared document credits remaining`}
+              aria-label={`${creditsRemaining} shared document credits remaining. Open workspace settings.`}
+              onClick={() => navigate("/settings/workspace")}
+            >
+              <Coins className="size-4" />
+              <span className="font-semibold tabular-nums">{creditsRemaining}</span>
+              <span className="hidden text-muted-foreground sm:inline">credits</span>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label={`Theme: ${theme}`}>
