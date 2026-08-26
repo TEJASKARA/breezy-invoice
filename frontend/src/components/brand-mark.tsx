@@ -5,9 +5,10 @@ import { cn } from "@/lib/utils"
 type BrandMarkProps = {
   compact?: boolean
   className?: string
+  tone?: "auto" | "light"
 }
 
-export function BrandMark({ compact = false, className }: BrandMarkProps) {
+export function BrandMark({ compact = false, className, tone = "auto" }: BrandMarkProps) {
   return (
     <Link
       to="/"
@@ -21,7 +22,8 @@ export function BrandMark({ compact = false, className }: BrandMarkProps) {
           "object-contain",
           compact
             ? "size-9"
-            : "h-9 w-auto max-w-[142px] dark:brightness-0 dark:invert",
+            : "h-9 w-auto max-w-[142px]",
+          tone === "light" ? "brightness-0 invert" : "dark:brightness-0 dark:invert",
         )}
       />
     </Link>

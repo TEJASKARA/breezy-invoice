@@ -67,7 +67,7 @@ export function LoginPage() {
     <main className="grid min-h-svh lg:grid-cols-2">
       <section className="relative hidden overflow-hidden bg-primary p-12 text-primary-foreground lg:flex lg:flex-col">
         <div className="absolute inset-0 opacity-10 page-grid" />
-        <BrandMark className="relative [&>span:first-child]:bg-primary-foreground [&>span:first-child]:text-primary" />
+        <BrandMark tone="light" className="relative" />
         <div className="relative my-auto max-w-lg">
           <span className="mb-5 flex size-11 items-center justify-center rounded-xl bg-primary-foreground/10">
             <Sparkles className="size-5" />
