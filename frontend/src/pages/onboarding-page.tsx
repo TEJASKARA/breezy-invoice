@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { verifyGstin, type GstVerification } from "@/lib/gst-api"
 import { parseExistingInvoiceNumber, useMvpStore } from "@/lib/mvp-store"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const industries = [
   "Accounting / CA firm",
@@ -26,6 +28,7 @@ const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
 export function OnboardingPage() {
   const { setup, loading, completeSetup } = useMvpStore()
+  const { workspace, refresh: refreshWorkspaceAccess } = useWorkspaceAccess()
   const navigate = useNavigate()
   const [firmName, setFirmName] = useState("")
   const [accountType, setAccountType] = useState<"ca" | "founder" | "employee" | null>(null)
@@ -41,6 +44,8 @@ export function OnboardingPage() {
   const [numberingError, setNumberingError] = useState("")
   const [saveError, setSaveError] = useState("")
   const [saving, setSaving] = useState(false)
+  const [verifyingGstin, setVerifyingGstin] = useState(false)
+  const [gstDetails, setGstDetails] = useState<GstVerification | null>(null)
 
   if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
   if (setup) return <Navigate to="/workspace" replace />
@@ -49,6 +54,28 @@ export function OnboardingPage() {
   const nextNumberPreview = existingNumbering
     ? `${existingNumbering.prefix}${String(existingNumbering.nextNumber).padStart(existingNumbering.padding, "0")}`
     : ""
+
+  async function fetchGstDetails() {
+    const normalizedGstin = gstin.trim().toUpperCase()
+    if (!workspace?.id) throw new Error("Your workspace is still loading. Please try again.")
+    if (!gstinPattern.test(normalizedGstin)) throw new Error("Enter a valid 15-character GSTIN first.")
+    setVerifyingGstin(true)
+    setSaveError("")
+    try {
+      const details = await verifyGstin(normalizedGstin, workspace.id)
+      setGstDetails(details)
+      const fetchedName = details.trade_name || details.legal_name
+      if (fetchedName) setFirmName(fetchedName)
+      if (details.billing_address) setMailingAddress(details.billing_address)
+      return details
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "GSTIN verification failed."
+      setSaveError(message)
+      throw error
+    } finally {
+      setVerifyingGstin(false)
+    }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -72,16 +99,28 @@ export function OnboardingPage() {
     setSaving(true)
     setSaveError("")
     try {
+      const verified = hasGstin ? await fetchGstDetails() : null
       await completeSetup({
-        firmName: firmName.trim(),
+        firmName: firmName.trim() || verified?.trade_name || verified?.legal_name || "",
         accountType,
         industry: industry === "Other" ? otherIndustry.trim() : industry,
         hasGstin,
         gstin: hasGstin ? normalizedGstin : "",
-        mailingAddress: mailingAddress.trim(),
+        mailingAddress: mailingAddress.trim() || verified?.billing_address || "",
         invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
         leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) },
       })
+      if (hasGstin && workspace?.id) {
+        const verification = await verifyGstin(normalizedGstin, workspace.id)
+        if (!verification.workspace_verified) {
+          throw new Error(
+            verification.registration_status
+              ? `This GSTIN has registration status “${verification.registration_status}” and could not be verified for free credits.`
+              : "The GSTIN details were found, but the workspace verification could not be completed. Please try again.",
+          )
+        }
+        await refreshWorkspaceAccess()
+      }
       navigate("/entities")
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "We could not save your setup. Please try again.")
@@ -104,7 +143,7 @@ export function OnboardingPage() {
         </div>
 
         <Card>
-          <CardHeader><CardTitle>Your business details</CardTitle><CardDescription>GST lookup is optional for now; enter the information you want to show.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Your business details</CardTitle><CardDescription>Verify your GSTIN to securely fill the registered business details. Non-GST businesses can continue without it.</CardDescription></CardHeader>
           <CardContent>
             <form onSubmit={submit} className="space-y-6">
               <div className="space-y-2"><Label htmlFor="firmName">Firm or business name</Label><Input id="firmName" required value={firmName} onChange={(event) => setFirmName(event.target.value)} placeholder="Rushi & Co." /></div>
@@ -115,7 +154,7 @@ export function OnboardingPage() {
                   {industries.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
                 {industry === "Other" && <Input required value={otherIndustry} onChange={(event) => setOtherIndustry(event.target.value)} placeholder="Enter your industry" aria-label="Other industry" />}
-                <p className="text-xs text-muted-foreground">This will help BreezyInvoice tailor templates and future reports to your business.</p>
+                <p className="text-xs text-muted-foreground">This helps ChanaX tailor templates and reports to your business.</p>
               </div>
               <fieldset className="space-y-3">
                 <legend className="text-sm font-medium">Does your business have a GSTIN?</legend>
@@ -132,7 +171,7 @@ export function OnboardingPage() {
                   </label>
                 </div>
               </fieldset>
-              {hasGstin ? <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p></div> : null}
+              {hasGstin ? <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><div className="flex gap-2"><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setGstDetails(null); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><Button type="button" variant="outline" disabled={verifyingGstin || gstin.length !== 15} onClick={() => void fetchGstDetails().catch(() => undefined)}>{verifyingGstin ? "Checking…" : "Verify & fill"}</Button></div><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p>{gstDetails ? <p className="text-sm font-medium text-emerald-700">Verified with WhiteBooks{gstDetails.cached ? " from saved GST data" : ""}. {gstDetails.trade_name || gstDetails.legal_name}</p> : null}</div> : null}
               <fieldset className="space-y-3">
                 <legend className="text-sm font-medium">How will you use ChanaX?</legend>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -173,7 +212,7 @@ export function OnboardingPage() {
                     }}
                     className="mt-0.5 size-4 accent-foreground"
                   />
-                  <span><span className="block text-sm font-medium">Continue my existing invoice sequence</span><span className="block text-xs text-muted-foreground">Turn this off to use the BreezyInvoice format, such as INV-{new Date().getFullYear()}-0001.</span></span>
+                  <span><span className="block text-sm font-medium">Continue my existing invoice sequence</span><span className="block text-xs text-muted-foreground">Turn this off to use the ChanaX format, such as INV-{new Date().getFullYear()}-0001.</span></span>
                 </label>
 
                 {continueExistingNumbers && (
@@ -187,7 +226,7 @@ export function OnboardingPage() {
                       placeholder="ABC/2025-26/0047"
                       className="font-mono"
                     />
-                    <p className="text-xs text-muted-foreground">The changing sequence must be at the end. BreezyInvoice preserves the complete prefix and the number of leading zeroes.</p>
+                    <p className="text-xs text-muted-foreground">The changing sequence must be at the end. ChanaX preserves the complete prefix and the number of leading zeroes.</p>
                     {nextNumberPreview && <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Your next invoice will be {nextNumberPreview}</p>}
                     {numberingError && <p role="alert" className="text-sm font-medium text-destructive">{numberingError}</p>}
                   </div>

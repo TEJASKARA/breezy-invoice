@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
+import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
 import { nextInvoiceNumber, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
@@ -57,7 +58,7 @@ const invoiceColumns = [
 
 export function InvoicesPage() {
   const { setup, companies, customers, invoices, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
-  const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
+  const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
   const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
   const [showForm, setShowForm] = useState(false)
@@ -85,6 +86,7 @@ export function InvoicesPage() {
   const [showManualCustomer, setShowManualCustomer] = useState(false)
   const [manualCustomer, setManualCustomer] = useState<ManualCustomer>(emptyManualCustomer)
   const [manualCustomerError, setManualCustomerError] = useState("")
+  const [manualCustomerVerifying, setManualCustomerVerifying] = useState(false)
   const [notice, setNotice] = useState("")
   const [noticeIsError, setNoticeIsError] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
@@ -123,6 +125,33 @@ export function InvoicesPage() {
   })
   const visibleInvoices = showAllInvoices ? filteredInvoices : filteredInvoices.slice(0, 5)
   const showNotice = (text: string, isError = false) => { setNotice(text); setNoticeIsError(isError) }
+
+  const verifyManualCustomerGstin = async () => {
+    if (!workspace?.id) {
+      setManualCustomerError("Your workspace is not ready. Refresh and try again.")
+      return
+    }
+    if (!gstinPattern.test(manualCustomer.gstin)) {
+      setManualCustomerError("Enter a valid 15-character GSTIN before verifying.")
+      return
+    }
+    setManualCustomerVerifying(true)
+    setManualCustomerError("")
+    try {
+      const result = await verifyGstin(manualCustomer.gstin, workspace.id)
+      setManualCustomer((customer) => ({
+        ...customer,
+        companyName: result.trade_name || result.legal_name || customer.companyName,
+        pan: result.pan || customer.pan,
+        billingAddress: result.billing_address || customer.billingAddress,
+        premisesAddress: result.premises_address || result.billing_address || customer.premisesAddress,
+      }))
+    } catch (error) {
+      setManualCustomerError(error instanceof Error ? error.message : "GSTIN verification failed.")
+    } finally {
+      setManualCustomerVerifying(false)
+    }
+  }
 
   const clearInvoiceFilters = () => {
     setInvoiceSearch("")
@@ -946,7 +975,12 @@ export function InvoicesPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="manual-customer-gstin">GSTIN {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
-                  <Input id="manual-customer-gstin" value={manualCustomer.gstin} onChange={(event) => updateManualCustomer("gstin", event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={15} placeholder="36ABCDE1234F1Z5" className="font-mono uppercase" />
+                  <div className="flex gap-2">
+                    <Input id="manual-customer-gstin" value={manualCustomer.gstin} onChange={(event) => updateManualCustomer("gstin", event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={15} placeholder="36ABCDE1234F1Z5" className="font-mono uppercase" />
+                    <Button type="button" variant="outline" disabled={manualCustomerVerifying || manualCustomer.gstin.length !== 15} onClick={() => void verifyManualCustomerGstin()}>
+                      {manualCustomerVerifying ? <LoaderCircle className="animate-spin" /> : "Verify"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="manual-customer-pan">PAN {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>

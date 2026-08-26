@@ -1,1 +1,1 @@
-"""BreezyInvoice backend package."""
+"""ChanaX backend package."""

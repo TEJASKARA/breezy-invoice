@@ -28,6 +28,6 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 async def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "service": "breezyinvoice-api",
+        "service": "chanax-api",
         "environment": settings.app_env,
     }

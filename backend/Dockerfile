@@ -8,12 +8,14 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN playwright install --with-deps chromium
 
 COPY app ./app
 
-RUN addgroup --system breezy && adduser --system --ingroup breezy breezy
-USER breezy
+RUN addgroup --system chanax && adduser --system --ingroup chanax chanax
+USER chanax
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
 
 EXPOSE 8000
 

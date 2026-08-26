@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { verifyGstin } from "@/lib/gst-api"
 import { type Company, useMvpStore } from "@/lib/mvp-store"
 import { useAuthUser } from "@/lib/use-auth-user"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -30,12 +31,13 @@ const hasFormData = (form: EntityForm) => [
 export function EntitiesPage() {
   const { companies, addCompanies, updateCompany, deleteCompany } = useMvpStore()
   const { user } = useAuthUser()
-  const { can } = useWorkspaceAccess()
+  const { can, workspace } = useWorkspaceAccess()
   const canManage = can("entities.manage")
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyCompany)
   const [draftReady, setDraftReady] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [verifyingGstin, setVerifyingGstin] = useState(false)
   const [notice, setNotice] = useState("")
   const [noticeIsError, setNoticeIsError] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
@@ -85,6 +87,40 @@ export function EntitiesPage() {
     }))
     setNoticeIsError(false)
     setNotice("Demo identifiers added. Replace them with verified statutory details before using this entity for real invoices.")
+  }
+
+  const fetchGstDetails = async () => {
+    const gstin = form.gstin.trim().toUpperCase()
+    if (!workspace?.id) {
+      setNoticeIsError(true)
+      setNotice("Your workspace is still loading. Please try again.")
+      return
+    }
+    if (!gstinPattern.test(gstin)) {
+      setNoticeIsError(true)
+      setNotice("Enter a valid 15-character GSTIN first.")
+      return
+    }
+    setVerifyingGstin(true)
+    setNotice("")
+    try {
+      const details = await verifyGstin(gstin, workspace.id)
+      setForm((current) => ({
+        ...current,
+        gstin: details.gstin,
+        pan: details.pan,
+        companyName: details.trade_name || details.legal_name || current.companyName,
+        billingAddress: details.billing_address || current.billingAddress,
+        premisesAddress: details.premises_address || details.billing_address || current.premisesAddress,
+      }))
+      setNoticeIsError(false)
+      setNotice(`GST details verified with WhiteBooks${details.cached ? " using saved data" : ""}.`)
+    } catch (error) {
+      setNoticeIsError(true)
+      setNotice(error instanceof Error ? error.message : "GSTIN verification failed.")
+    } finally {
+      setVerifyingGstin(false)
+    }
   }
 
   const addFormHsnCode = () => {
@@ -227,7 +263,7 @@ export function EntitiesPage() {
             </div>
             {form.hasGstin !== false ? <div className="space-y-2">
               <Label htmlFor="entity-gstin">GSTIN</Label>
-              <Input id="entity-gstin" value={form.gstin} maxLength={15} autoCapitalize="characters" placeholder="36AAICR5789A1Z4" onChange={(event) => setForm({ ...form, gstin: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15) })} />
+              <div className="flex gap-2"><Input id="entity-gstin" value={form.gstin} maxLength={15} autoCapitalize="characters" placeholder="36AAICR5789A1Z4" onChange={(event) => setForm({ ...form, gstin: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15) })} /><Button type="button" variant="outline" disabled={verifyingGstin || form.gstin.length !== 15} onClick={() => void fetchGstDetails()}>{verifyingGstin ? "Checking…" : "Verify & fill"}</Button></div>
               <p className="text-xs text-muted-foreground">{form.gstin.length}/15 characters</p>
             </div> : null}
             <div className="space-y-2">

@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_env: str = "development"
-    app_name: str = "BreezyInvoice API"
+    app_name: str = "ChanaX API"
     api_v1_prefix: str = "/api/v1"
     frontend_origins: str = "http://localhost:5173"
 
@@ -13,9 +13,12 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
 
-    gstinapi_base_url: str = "https://gstinapi.in"
-    gstinapi_key: str = ""
-    gstinapi_timeout_seconds: float = 15
+    whitebooks_base_url: str = "https://api.whitebooks.in"
+    whitebooks_client_id: str = ""
+    whitebooks_client_secret: str = ""
+    whitebooks_token_path: str = "/oauth/token"
+    whitebooks_gstin_path: str = "/gst/api/v1/gstin/{gstin}"
+    whitebooks_timeout_seconds: float = 20
 
     redis_url: str = "redis://localhost:6379/0"
 
@@ -34,8 +37,12 @@ class Settings(BaseSettings):
         ]
 
     @property
-    def gstinapi_is_configured(self) -> bool:
-        return bool(self.gstinapi_base_url and self.gstinapi_key)
+    def whitebooks_is_configured(self) -> bool:
+        return bool(
+            self.whitebooks_base_url
+            and self.whitebooks_client_id
+            and self.whitebooks_client_secret
+        )
 
 
 @lru_cache
