@@ -41,6 +41,19 @@ export type WorkspaceSubscription = {
   current_period_ends_at: string | null
   cancel_at_period_end: boolean
   limits: Record<string, unknown>
+  included_seats?: number
+  extra_seats?: number
+}
+
+export type WorkspaceCreditAccount = {
+  workspace_id: string
+  gst_status: "no_gst" | "provisional" | "verified" | "rejected"
+  verified_gstin: string | null
+  free_credits_granted: number
+  free_credits_used: number
+  monthly_credits_remaining: number
+  topup_credits_remaining: number
+  monthly_credits_reset_at: string | null
 }
 
 export type WorkspaceMember = WorkspaceMembership & {
@@ -94,18 +107,22 @@ export async function loadWorkspaceAccess(user: User) {
     if (membershipResult.error) throw new Error(membershipResult.error.message)
   }
   const membership = membershipResult.data as WorkspaceMembership | null
-  if (!membership) return { membership: null, workspace: null, subscription: null }
+  if (!membership) return { membership: null, workspace: null, subscription: null, creditAccount: null }
 
-  const [workspaceResult, subscriptionResult] = await Promise.all([
+  const [workspaceResult, subscriptionResult, creditResult] = await Promise.all([
     supabase.from("breezy_workspaces").select("id, owner_user_id, name, subscription_code, status, created_at").eq("id", membership.workspace_id).single(),
     supabase.from("breezy_subscriptions").select("id, workspace_id, plan_key, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, limits").eq("workspace_id", membership.workspace_id).maybeSingle(),
+    supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at").eq("workspace_id", membership.workspace_id).maybeSingle(),
   ])
   if (workspaceResult.error) throw new Error(workspaceResult.error.message)
   if (subscriptionResult.error) throw new Error(subscriptionResult.error.message)
+  const creditTableMissing = creditResult.error?.code === "42P01" || creditResult.error?.message?.includes("breezy_credit_accounts")
+  if (creditResult.error && !creditTableMissing) throw new Error(creditResult.error.message)
   return {
     membership,
     workspace: workspaceResult.data as Workspace,
     subscription: subscriptionResult.data as WorkspaceSubscription | null,
+    creditAccount: creditTableMissing ? null : creditResult.data as WorkspaceCreditAccount | null,
   }
 }
 

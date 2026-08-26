@@ -29,18 +29,24 @@ const currentMonth = () => new Date().toISOString().slice(0, 7)
 const cloneComponents = (items: PayrollComponent[]) => items.map((item) => ({ ...item, id: payrollId() }))
 const normalizedLabel = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "")
 const leaveDeductionLabel = "Loss of pay (attendance)"
+const extraWorkLabel = "Additional work"
 
 function withoutLeaveDeduction(items: PayrollComponent[]) {
   return items.filter((item) => normalizedLabel(item.label) !== normalizedLabel(leaveDeductionLabel))
 }
 
 function withAttendance<T extends { month: string; earnings: PayrollComponent[]; deductions: PayrollComponent[] }>(draft: T, attendance: Partial<PayslipAttendance>, policy: LeavePolicy | undefined, leaveUsedBefore: number) {
-  const grossPay = sumPayrollComponents(draft.earnings)
+  const extraWork = "extraWork" in draft ? draft.extraWork as Payslip["extraWork"] : undefined
+  const earnings = draft.earnings.filter((item) => normalizedLabel(item.label) !== normalizedLabel(extraWorkLabel))
+  if (extraWork && extraWork.units > 0 && extraWork.rate > 0) {
+    earnings.push({ id: payrollId(), label: extraWorkLabel, amount: extraWork.units * extraWork.rate })
+  }
+  const grossPay = sumPayrollComponents(earnings)
   const calculated = calculateLeaveAdjustedAttendance({ month: draft.month, attendance, policy, leaveUsedBefore, grossPay })
   const deductions = withoutLeaveDeduction(draft.deductions)
   if (calculated.leaveDeductionAmount > 0) deductions.push({ id: payrollId(), label: leaveDeductionLabel, amount: calculated.leaveDeductionAmount })
   const totalDeductions = sumPayrollComponents(deductions)
-  return { ...draft, deductions, grossPay, totalDeductions, netPay: grossPay - totalDeductions, attendance: calculated.attendance, workingDays: calculated.workingDays, payableDays: calculated.payableDays }
+  return { ...draft, earnings, extraWork: extraWork ? { ...extraWork, amount: extraWork.units * extraWork.rate } : undefined, deductions, grossPay, totalDeductions, netPay: grossPay - totalDeductions, attendance: calculated.attendance, workingDays: calculated.workingDays, payableDays: calculated.payableDays }
 }
 
 function yesNo(value: boolean) {
@@ -83,6 +89,8 @@ const blankEmployee = (entityId = ""): Omit<Employee, "id"> => ({
   joiningDate: "",
   defaultEarnings: defaultEarnings(),
   defaultDeductions: defaultDeductions(),
+  overtimeMode: "hourly",
+  overtimeRate: 0,
 })
 
 function amountFor(items: PayrollComponent[], ...labels: string[]) {
@@ -96,6 +104,7 @@ export function EmployeesPage() {
     companies,
     employees,
     payslips,
+    invoices,
     template,
     addEmployee,
     addEmployees,
@@ -106,9 +115,9 @@ export function EmployeesPage() {
     updatePayslip,
     deletePayslip,
   } = useMvpStore()
-  const { can, subscription, refresh } = useWorkspaceAccess()
+  const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
-  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, "payslip", payslips.length)
+  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
   const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(companies[0]?.id || ""))
@@ -297,7 +306,7 @@ export function EmployeesPage() {
 
   const draftForEmployee = (employee: Employee, month: string): PayslipDraft => {
     const previous = findPreviousPayslip(employee.id, month)
-    const earnings = cloneComponents(previous?.earnings?.length ? previous.earnings : employee.defaultEarnings)
+    const earnings = cloneComponents(previous?.earnings?.length ? previous.earnings : employee.defaultEarnings).filter((item) => normalizedLabel(item.label) !== normalizedLabel(extraWorkLabel))
     const deductions = cloneComponents(previous?.deductions?.length ? previous.deductions : employee.defaultDeductions)
     const grossPay = sumPayrollComponents(earnings)
     const totalDeductions = sumPayrollComponents(deductions)
@@ -319,6 +328,7 @@ export function EmployeesPage() {
       employmentStatus: employee.employmentStatus,
       month,
       paymentDate: "",
+      extraWork: { mode: employee.overtimeMode || previous?.extraWork?.mode || "hourly", units: 0, rate: employee.overtimeRate || previous?.extraWork?.rate || 0, amount: 0 },
       earnings,
       deductions,
       grossPay,
@@ -383,6 +393,12 @@ export function EmployeesPage() {
     setPayslipDraft(applyAttendance(next, next.attendance || defaultPayslipAttendance(next.month), editingPayslipId))
   }
 
+  const updateExtraWork = (changes: Partial<NonNullable<Payslip["extraWork"]>>) => {
+    if (!payslipDraft) return
+    const extraWork = { mode: "hourly" as const, units: 0, rate: 0, amount: 0, ...payslipDraft.extraWork, ...changes }
+    setPayslipDraft(applyAttendance({ ...payslipDraft, extraWork }, payslipDraft.attendance || defaultPayslipAttendance(payslipDraft.month), editingPayslipId))
+  }
+
   const savePayslip = async () => {
     clearMessages()
     if (!payslipDraft || !payslipDraft.employeeId || !payslipDraft.month) {
@@ -421,7 +437,7 @@ export function EmployeesPage() {
         await refresh()
         setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was saved.`)
       }
-      if (rememberStructure) await updateEmployee(cleaned.employeeId, { defaultEarnings: cloneComponents(cleaned.earnings), defaultDeductions: cloneComponents(withoutLeaveDeduction(cleaned.deductions)) })
+      if (rememberStructure) await updateEmployee(cleaned.employeeId, { defaultEarnings: cloneComponents(cleaned.earnings.filter((item) => normalizedLabel(item.label) !== normalizedLabel(extraWorkLabel))), defaultDeductions: cloneComponents(withoutLeaveDeduction(cleaned.deductions)), overtimeMode: cleaned.extraWork?.mode, overtimeRate: cleaned.extraWork?.rate })
       setShowPayslipForm(false)
       setPayslipDraft(null)
       setEditingPayslipId(null)
@@ -648,7 +664,7 @@ export function EmployeesPage() {
         </>}
       />
 
-      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Free payslip allowance:</strong> {payslipAllowance.used} of {payslipAllowance.limit} used · {payslipAllowance.remaining} remaining. {payslipAllowance.hasGstin ? "GST-registered workspace." : "Non-GST workspace."}</p> : null}
+      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {payslipAllowance.remaining} remaining for invoices or payslips. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to employees and payslips. You can preview and download saved payslips, but record changes require payroll management permission.</p> : null}
 
@@ -712,6 +728,15 @@ export function EmployeesPage() {
               title="Attendance"
               description="Enter only attendance exceptions. Full present days, working days and payable days are calculated automatically."
             />
+            <div className="space-y-3 rounded-xl border p-4">
+              <div><h3 className="font-semibold">Overtime / additional work</h3><p className="text-sm text-muted-foreground">Choose hourly or daily calculation, then enter the completed units and agreed rate.</p></div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2"><Label htmlFor="extra-work-mode">Calculation</Label><select id="extra-work-mode" className={selectClass} value={payslipDraft.extraWork?.mode || "hourly"} onChange={(event) => updateExtraWork({ mode: event.target.value as "hourly" | "daily" })}><option value="hourly">Hourly</option><option value="daily">Daily</option></select></div>
+                <div className="space-y-2"><Label htmlFor="extra-work-units">{payslipDraft.extraWork?.mode === "daily" ? "Additional days" : "Overtime hours"}</Label><Input id="extra-work-units" type="number" min="0" step={payslipDraft.extraWork?.mode === "daily" ? "0.5" : "0.25"} value={payslipDraft.extraWork?.units || ""} onChange={(event) => updateExtraWork({ units: Math.max(0, Number(event.target.value) || 0) })} /></div>
+                <div className="space-y-2"><Label htmlFor="extra-work-rate">Rate per {payslipDraft.extraWork?.mode === "daily" ? "day" : "hour"} (₹)</Label><Input id="extra-work-rate" type="number" min="0" step="0.01" value={payslipDraft.extraWork?.rate || ""} onChange={(event) => updateExtraWork({ rate: Math.max(0, Number(event.target.value) || 0) })} /></div>
+              </div>
+              <p className="text-sm font-medium">Additional earning: ₹{(payslipDraft.extraWork?.amount || 0).toLocaleString("en-IN")}</p>
+            </div>
             <div className="grid gap-7 lg:grid-cols-2">
               <ComponentEditor title="Earnings & benefits" items={payslipDraft.earnings} onAdd={() => addComponent("earnings")} onChange={(id, changes) => updateComponent("earnings", id, changes)} onRemove={(id) => removeComponent("earnings", id)} />
               <ComponentEditor title="Deductions & tax" items={payslipDraft.deductions} onAdd={() => addComponent("deductions")} onChange={(id, changes) => updateComponent("deductions", id, changes)} onRemove={(id) => removeComponent("deductions", id)} deductions lockedLabel={leaveDeductionLabel} />
@@ -722,9 +747,10 @@ export function EmployeesPage() {
               <div><span className="text-muted-foreground">Net take-home</span><p className="text-lg font-semibold text-blue-600">₹{payslipDraft.netPay.toLocaleString("en-IN")}</p></div>
             </div>
             <label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" checked={rememberStructure} onChange={(event) => setRememberStructure(event.target.checked)} /><span><strong>Use these salary components next month.</strong><span className="block text-muted-foreground">You can still edit every amount when the next payslip is created.</span></span></label>
+            {!editingPayslipId ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">Review the salary and attendance summary above. The complete payslip preview, download and sharing options become available after it is saved; previewing itself does not use a credit.</p> : null}
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" disabled={saving} onClick={() => { setShowPayslipForm(false); setEditingPayslipId(null) }}>Cancel</Button>
-              <Button variant="outline" disabled={saving} onClick={() => setPreviewPayslip({ ...payslipDraft, id: editingPayslipId || "preview" })}><Eye />Preview</Button>
+              {editingPayslipId ? <Button variant="outline" disabled={saving} onClick={() => setPreviewPayslip({ ...payslipDraft, id: editingPayslipId })}><Eye />Preview saved payslip</Button> : null}
               <Button disabled={saving} onClick={() => void savePayslip()}>{saving ? "Saving…" : editingPayslipId ? "Save changes" : "Save payslip"}</Button>
             </div>
           </CardContent>
@@ -806,6 +832,8 @@ function EmployeeForm({ draft, setDraft, editing, saving, onCancel, onSave }: { 
           <div className="space-y-2"><Label htmlFor="bank-name">Bank name</Label><Input id="bank-name" value={draft.bankName} onChange={(event) => field("bankName", event.target.value)} /></div>
           <div className="space-y-2"><Label htmlFor="bank-account">Bank account</Label><Input id="bank-account" value={draft.bankAccount} onChange={(event) => field("bankAccount", event.target.value)} /></div>
           <div className="space-y-2"><Label htmlFor="ifsc">IFSC</Label><Input id="ifsc" className="uppercase" value={draft.ifsc} onChange={(event) => field("ifsc", event.target.value)} /></div>
+          <div className="space-y-2"><Label htmlFor="overtime-mode">Default extra-work method</Label><select id="overtime-mode" className={selectClass} value={draft.overtimeMode || "hourly"} onChange={(event) => setDraft({ ...draft, overtimeMode: event.target.value as "hourly" | "daily" })}><option value="hourly">Hourly</option><option value="daily">Daily</option></select></div>
+          <div className="space-y-2"><Label htmlFor="overtime-rate">Default {draft.overtimeMode === "daily" ? "daily" : "hourly"} rate (₹)</Label><Input id="overtime-rate" type="number" min="0" step="0.01" value={draft.overtimeRate || ""} onChange={(event) => setDraft({ ...draft, overtimeRate: Math.max(0, Number(event.target.value) || 0) })} /></div>
         </div>
         <div className="flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button><Button disabled={saving} onClick={onSave}>{saving ? "Saving…" : editing ? "Save changes" : "Add employee"}</Button></div>
       </CardContent>

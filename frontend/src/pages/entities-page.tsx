@@ -13,7 +13,7 @@ import { useAuthUser } from "@/lib/use-auth-user"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type EntityForm = Omit<Company, "id">
-const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", gstin: "", pan: "", premisesAddress: "", hsnSac: "", hsnSacCodes: [] })
+const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", hasGstin: true, gstin: "", pan: "", premisesAddress: "", hsnSac: "", hsnSacCodes: [], invoiceNumbering: { mode: "continue", prefix: "CHX/{FY}/", nextNumber: 1, padding: 4, resetPolicy: "financial_year" } })
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
@@ -106,17 +106,17 @@ export function EntitiesPage() {
       setNotice("Company name is required.")
       return
     }
-    if (!gstinPattern.test(gstin)) {
+    if (form.hasGstin !== false && !gstinPattern.test(gstin)) {
       setNoticeIsError(true)
       setNotice("GSTIN must be a valid 15-character GST number.")
       return
     }
-    if (!panPattern.test(pan)) {
+    if (pan && !panPattern.test(pan)) {
       setNoticeIsError(true)
       setNotice("PAN must follow the valid 10-character format, for example ABCDE1234F.")
       return
     }
-    if (gstin.slice(2, 12) !== pan) {
+    if (form.hasGstin !== false && gstin.slice(2, 12) !== pan) {
       setNoticeIsError(true)
       setNotice("The PAN does not match the PAN embedded in the GSTIN.")
       return
@@ -129,7 +129,7 @@ export function EntitiesPage() {
     }
     setSaving(true)
     try {
-      await addCompanies([{ ...form, gstin, pan, hsnSac: hsnCodes[0] || "", hsnSacCodes: hsnCodes }])
+      await addCompanies([{ ...form, gstin: form.hasGstin === false ? "" : gstin, pan, hsnSac: hsnCodes[0] || "", hsnSacCodes: hsnCodes }])
       setForm(emptyCompany())
       if (draftStorageKey) window.localStorage.removeItem(draftStorageKey)
       setShowForm(false)
@@ -222,15 +222,24 @@ export function EntitiesPage() {
               <Input id="entity-companyName" value={form.companyName} onChange={(event) => setForm({ ...form, companyName: event.target.value })} />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="entity-gst-status">GST registration</Label>
+              <select id="entity-gst-status" value={form.hasGstin === false ? "no" : "yes"} onChange={(event) => setForm({ ...form, hasGstin: event.target.value === "yes", gstin: event.target.value === "yes" ? form.gstin : "" })} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="yes">GST registered</option><option value="no">Not GST registered</option></select>
+            </div>
+            {form.hasGstin !== false ? <div className="space-y-2">
               <Label htmlFor="entity-gstin">GSTIN</Label>
               <Input id="entity-gstin" value={form.gstin} maxLength={15} autoCapitalize="characters" placeholder="36AAICR5789A1Z4" onChange={(event) => setForm({ ...form, gstin: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15) })} />
               <p className="text-xs text-muted-foreground">{form.gstin.length}/15 characters</p>
-            </div>
+            </div> : null}
             <div className="space-y-2">
               <Label htmlFor="entity-pan">PAN</Label>
               <Input id="entity-pan" value={form.pan} maxLength={10} autoCapitalize="characters" placeholder="AAICR5789A" onChange={(event) => setForm({ ...form, pan: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10) })} />
               <p className="text-xs text-muted-foreground">{form.pan.length}/10 characters</p>
             </div>
+            <section className="space-y-3 rounded-xl border bg-muted/20 p-4 md:col-span-2">
+              <div><h3 className="font-medium">Invoice numbering</h3><p className="text-xs text-muted-foreground">Use {"{FY}"} in the prefix to insert the current Indian financial year.</p></div>
+              <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-2 sm:col-span-2"><Label htmlFor="entity-invoice-prefix">Prefix</Label><Input id="entity-invoice-prefix" value={form.invoiceNumbering?.prefix || ""} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", nextNumber: 1, padding: 4 }), prefix: event.target.value } })} placeholder="CHX/{FY}/" /></div><div className="space-y-2"><Label htmlFor="entity-invoice-start">Starting number</Label><Input id="entity-invoice-start" type="number" min="1" value={form.invoiceNumbering?.nextNumber || 1} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", padding: 4 }), nextNumber: Math.max(1, Number(event.target.value) || 1) } })} /></div><div className="space-y-2"><Label htmlFor="entity-invoice-reset">Sequence</Label><select id="entity-invoice-reset" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.invoiceNumbering?.resetPolicy || "financial_year"} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", nextNumber: 1, padding: 4 }), resetPolicy: event.target.value as "financial_year" | "never" } })}><option value="financial_year">Reset each FY</option><option value="never">Never reset</option></select></div></div>
+              <p className="text-xs text-muted-foreground">Example: {(form.invoiceNumbering?.prefix || "CHX/{FY}/").replace("{FY}", "2026-27")}{String(form.invoiceNumbering?.nextNumber || 1).padStart(form.invoiceNumbering?.padding || 4, "0")}</p>
+            </section>
             <div className="space-y-3 md:col-span-2">
               <Label htmlFor="entity-hsnSac">HSN/SAC codes</Label>
               <div className="flex gap-2"><Input id="entity-hsnSac" value={form.hsnSac} maxLength={8} inputMode="numeric" placeholder="997212" onChange={(event) => setForm({ ...form, hsnSac: event.target.value.replace(/\D/g, "").slice(0, 8) })} /><Button type="button" variant="outline" disabled={!form.hsnSac} onClick={addFormHsnCode}><Plus />Add code</Button></div>

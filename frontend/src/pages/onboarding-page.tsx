@@ -28,6 +28,7 @@ export function OnboardingPage() {
   const { setup, loading, completeSetup } = useMvpStore()
   const navigate = useNavigate()
   const [firmName, setFirmName] = useState("")
+  const [accountType, setAccountType] = useState<"ca" | "founder" | "employee" | null>(null)
   const [industry, setIndustry] = useState("")
   const [otherIndustry, setOtherIndustry] = useState("")
   const [hasGstin, setHasGstin] = useState<boolean | null>(null)
@@ -56,6 +57,10 @@ export function OnboardingPage() {
       setSaveError("Tell us whether your business has a GSTIN.")
       return
     }
+    if (accountType === null) {
+      setSaveError("Tell us how you will use ChanaX.")
+      return
+    }
     if (hasGstin && !gstinPattern.test(normalizedGstin)) {
       setSaveError("Enter a valid 15-character GSTIN, for example 27AAAAA0000A1Z5.")
       return
@@ -69,6 +74,7 @@ export function OnboardingPage() {
     try {
       await completeSetup({
         firmName: firmName.trim(),
+        accountType,
         industry: industry === "Other" ? otherIndustry.trim() : industry,
         hasGstin,
         gstin: hasGstin ? normalizedGstin : "",
@@ -117,16 +123,27 @@ export function OnboardingPage() {
                   <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === true ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
                     <input type="radio" name="hasGstin" required checked={hasGstin === true} onChange={() => { setHasGstin(true); setSaveError("") }} className="sr-only" />
                     <span className="block font-medium">Yes, I have a GSTIN</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">Your first 15 invoices and first 15 payslips are free.</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">You receive 10 provisional shared credits. GST verification unlocks 20 more.</span>
                   </label>
                   <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === false ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
                     <input type="radio" name="hasGstin" required checked={hasGstin === false} onChange={() => { setHasGstin(false); setGstin(""); setSaveError("") }} className="sr-only" />
                     <span className="block font-medium">No, I do not have a GSTIN</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">Your first 5 invoices and first 5 payslips are free.</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">You receive 10 shared credits for invoices or payslips.</span>
                   </label>
                 </div>
               </fieldset>
               {hasGstin ? <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p></div> : null}
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-medium">How will you use ChanaX?</legend>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {([
+                    ["ca", "CA / accounting firm", "Manage multiple client entities"],
+                    ["founder", "Founder / owner", "Manage your company and team"],
+                    ["employee", "Employee", "Use access assigned by an admin"],
+                  ] as const).map(([value, title, description]) => <label key={value} className={`cursor-pointer rounded-xl border p-4 transition-colors ${accountType === value ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}><input className="sr-only" type="radio" name="accountType" required checked={accountType === value} onChange={() => { setAccountType(value); setSaveError("") }} /><span className="block font-medium">{title}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span></label>)}
+                </div>
+                <p className="text-xs text-muted-foreground">The subscription owner remains the workspace admin and controls every invited member’s page permissions.</p>
+              </fieldset>
               <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
 
               <section className="space-y-4 rounded-xl border bg-muted/20 p-4">

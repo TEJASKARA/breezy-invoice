@@ -60,7 +60,7 @@ function PermissionChecklist({ selected, onChange, disabled = false }: { selecte
 
 export function WorkspaceSettingsPage() {
   const { setup, completeSetup } = useMvpStore()
-  const { user, workspace, membership, subscription, can, refresh } = useWorkspaceAccess()
+  const { user, workspace, membership, subscription, creditAccount, can, refresh } = useWorkspaceAccess()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
   const [firmName, setFirmName] = useState(setup?.firmName || workspace?.name || "")
@@ -68,6 +68,7 @@ export function WorkspaceSettingsPage() {
   const [hasGstin, setHasGstin] = useState(setup?.hasGstin ?? Boolean(setup?.gstin?.trim()))
   const [gstin, setGstin] = useState(setup?.gstin || "")
   const [mailingAddress, setMailingAddress] = useState(setup?.mailingAddress || "")
+  const [accountType, setAccountType] = useState<"ca" | "founder" | "employee">(setup?.accountType || "founder")
   const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">(setup?.leavePolicy?.period || "monthly")
   const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(setup?.leavePolicy?.allowanceDays ?? 1)
   const [inviteEmail, setInviteEmail] = useState("")
@@ -90,6 +91,7 @@ export function WorkspaceSettingsPage() {
     setHasGstin(setup?.hasGstin ?? Boolean(setup?.gstin?.trim()))
     setGstin(setup?.gstin || "")
     setMailingAddress(setup?.mailingAddress || "")
+    setAccountType(setup?.accountType || "founder")
     setLeavePeriod(setup?.leavePolicy?.period || "monthly")
     setLeaveAllowanceDays(setup?.leavePolicy?.allowanceDays ?? 1)
   }, [setup, workspace?.id, workspace?.name])
@@ -125,7 +127,7 @@ export function WorkspaceSettingsPage() {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(updateError.message)
       }
-      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
+      await completeSetup({ ...setup, accountType, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -212,7 +214,7 @@ export function WorkspaceSettingsPage() {
         </Card>
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4" />Subscription</CardTitle><CardDescription>Billing and product access for this workspace.</CardDescription></CardHeader>
-          <CardContent className="space-y-2"><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan</span><span className="font-semibold capitalize">{subscription?.plan_key || "Free"}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className="capitalize">{subscription?.status || "Active"}</Badge></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Trial ends</span><span>{readableDate(subscription?.trial_ends_at || null)}</span></div></CardContent>
+          <CardContent className="space-y-2"><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan</span><span className="font-semibold capitalize">{subscription?.plan_key || "Free"}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className="capitalize">{subscription?.status || "Active"}</Badge></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Shared credits</span><span className="font-semibold">{creditAccount ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used) + creditAccount.monthly_credits_remaining + creditAccount.topup_credits_remaining : "10 provisional"}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Trial ends</span><span>{readableDate(subscription?.trial_ends_at || null)}</span></div></CardContent>
         </Card>
       </div>
 
@@ -222,7 +224,8 @@ export function WorkspaceSettingsPage() {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveWorkspaceDetails}>
             <div className="space-y-2"><Label htmlFor="settings-firm-name">Firm or business name</Label><Input id="settings-firm-name" required value={firmName} disabled={!isOwner} onChange={(event) => setFirmName(event.target.value)} /></div>
             <div className="space-y-2"><Label htmlFor="settings-industry">Industry</Label><Input id="settings-industry" required disabled={!canManageWorkspace} value={industry} onChange={(event) => setIndustry(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="settings-gst-status">GST registration</Label><select id="settings-gst-status" disabled={!canManageWorkspace} value={hasGstin ? "yes" : "no"} onChange={(event) => { const next = event.target.value === "yes"; setHasGstin(next); if (!next) setGstin("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="yes">I have a GSTIN</option><option value="no">I do not have a GSTIN</option></select><p className="text-xs text-muted-foreground">The free plan includes {hasGstin ? "15 invoices and 15 payslips" : "5 invoices and 5 payslips"}.</p></div>
+            <div className="space-y-2"><Label htmlFor="settings-account-type">You use ChanaX as</Label><select id="settings-account-type" disabled={!canManageWorkspace} value={accountType} onChange={(event) => setAccountType(event.target.value as "ca" | "founder" | "employee")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="ca">Chartered accountant / CA practice</option><option value="founder">Founder or business owner</option><option value="employee">Employee or team member</option></select></div>
+            <div className="space-y-2"><Label htmlFor="settings-gst-status">GST registration</Label><select id="settings-gst-status" disabled={!canManageWorkspace} value={hasGstin ? "yes" : "no"} onChange={(event) => { const next = event.target.value === "yes"; setHasGstin(next); if (!next) setGstin("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="yes">I have a GSTIN</option><option value="no">I do not have a GSTIN</option></select><p className="text-xs text-muted-foreground">All new workspaces receive 10 shared credits. A verified GSTIN unlocks 20 additional free credits.</p></div>
             {hasGstin ? <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" placeholder="15-character GSTIN" /></div> : null}
             <div className="space-y-2 md:col-span-2"><Label htmlFor="settings-address">Mailing address</Label><textarea id="settings-address" required disabled={!canManageWorkspace} value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50" /></div>
             <section className="space-y-4 rounded-xl border bg-muted/20 p-4 md:col-span-2">
@@ -239,7 +242,7 @@ export function WorkspaceSettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Users className="size-4" />Team and page access</CardTitle><CardDescription>{canManageTeam ? "Add emails, assign a role, and choose exactly which pages each person can use." : "Only the workspace owner or an admin can change team access."}</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Users className="size-4" />Team and page access</CardTitle><CardDescription>{canManageTeam ? `The base plan includes 3 total accounts. ${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length} seat${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length === 1 ? " is" : "s are"} currently reserved.` : "Only the workspace owner or an admin can change team access."}</CardDescription></CardHeader>
         <CardContent className="space-y-6">
           {canManageTeam ? (
             <form onSubmit={sendInvitation} className="space-y-4 rounded-xl border bg-muted/20 p-4">

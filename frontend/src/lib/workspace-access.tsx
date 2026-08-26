@@ -9,6 +9,7 @@ import {
   type WorkspaceMembership,
   type WorkspacePermission,
   type WorkspaceSubscription,
+  type WorkspaceCreditAccount,
 } from "@/lib/workspace-access-service"
 
 type WorkspaceAccessState = {
@@ -16,6 +17,7 @@ type WorkspaceAccessState = {
   workspace: Workspace | null
   membership: WorkspaceMembership | null
   subscription: WorkspaceSubscription | null
+  creditAccount: WorkspaceCreditAccount | null
   loading: boolean
   error: string | null
   can: (permission: WorkspacePermission) => boolean
@@ -29,6 +31,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [membership, setMembership] = useState<WorkspaceMembership | null>(null)
   const [subscription, setSubscription] = useState<WorkspaceSubscription | null>(null)
+  const [creditAccount, setCreditAccount] = useState<WorkspaceCreditAccount | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,6 +41,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setWorkspace(null)
       setMembership(null)
       setSubscription(null)
+      setCreditAccount(null)
       setError(null)
       setLoading(false)
       return
@@ -48,6 +52,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setWorkspace(next.workspace)
       setMembership(next.membership)
       setSubscription(next.subscription)
+      setCreditAccount(next.creditAccount)
       setError(null)
     } catch (accessError) {
       setError(accessError instanceof Error ? accessError.message : "Workspace access could not be loaded.")
@@ -71,11 +76,12 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
     workspace,
     membership,
     subscription,
+    creditAccount,
     loading,
     error,
     can: (permission) => allowsWorkspacePermission(membership, permission),
     refresh,
-  }), [user, workspace, membership, subscription, loading, error, refresh])
+  }), [user, workspace, membership, subscription, creditAccount, loading, error, refresh])
 
   return <WorkspaceAccessContext.Provider value={value}>{children}</WorkspaceAccessContext.Provider>
 }

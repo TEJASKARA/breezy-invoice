@@ -32,8 +32,8 @@ export type TallySettings = {
   tdsPayableLedger: string
   otherDeductionLedger: string
 }
-export type Company = { id: string; companyName: string; billingAddress: string; gstin: string; pan: string; premisesAddress: string; hsnSac: string; hsnSacCodes?: string[]; tallySettings?: TallySettings }
-export type Customer = Company & { entityId: string; tallyLedgerName?: string }
+export type Company = { id: string; companyName: string; billingAddress: string; hasGstin?: boolean; gstin: string; pan: string; premisesAddress: string; hsnSac: string; hsnSacCodes?: string[]; invoiceNumbering?: InvoiceNumbering; tallySettings?: TallySettings }
+export type Customer = Company & { entityId: string; tallyLedgerName?: string; favorite?: boolean }
 export type InvoiceLineItem = {
   id: string
   description: string
@@ -105,6 +105,8 @@ export type Employee = {
   joiningDate: string
   defaultEarnings: PayrollComponent[]
   defaultDeductions: PayrollComponent[]
+  overtimeMode?: "hourly" | "daily"
+  overtimeRate?: number
   tallyLedgerName?: string
 }
 export type Payslip = {
@@ -128,6 +130,7 @@ export type Payslip = {
   workingDays: number
   payableDays: number
   attendance?: PayslipAttendance
+  extraWork?: { mode: "hourly" | "daily"; units: number; rate: number; amount: number }
   earnings: PayrollComponent[]
   deductions: PayrollComponent[]
   grossPay: number
@@ -195,6 +198,8 @@ export type InvoiceNumbering = {
   prefix: string
   nextNumber: number
   padding: number
+  resetPolicy?: "financial_year" | "never"
+  financialYear?: string
 }
 export type LeavePolicy = {
   period: "monthly" | "yearly"
@@ -210,6 +215,7 @@ export type AttendanceDraft = {
 export type Setup = {
   firmName: string
   industry: string
+  accountType?: "ca" | "founder" | "employee"
   hasGstin?: boolean
   gstin: string
   mailingAddress: string
@@ -295,6 +301,44 @@ export function nextInvoiceNumber(setup: Setup | null, invoices: Invoice[]) {
     return `${numbering.prefix}${String(numbering.nextNumber).padStart(numbering.padding, "0")}`
   }
   return nextDefaultInvoiceNumber(invoices)
+}
+
+function financialYearFor(date = new Date()) {
+  const startYear = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1
+  return `${startYear}-${String(startYear + 1).slice(-2)}`
+}
+
+function normalizedCompanyNumbering(company: Company | undefined): InvoiceNumbering | undefined {
+  const numbering = company?.invoiceNumbering
+  if (!numbering) return undefined
+  const currentFinancialYear = financialYearFor()
+  if (numbering.resetPolicy === "financial_year" && numbering.financialYear !== currentFinancialYear) {
+    return { ...numbering, nextNumber: 1, financialYear: currentFinancialYear }
+  }
+  return { ...numbering, financialYear: numbering.financialYear || currentFinancialYear }
+}
+
+function numberFromCompany(company: Company | undefined, setup: Setup | null, invoices: Invoice[]) {
+  const numbering = normalizedCompanyNumbering(company)
+  if (!numbering) return nextInvoiceNumber(setup, invoices)
+  const prefix = numbering.prefix.replaceAll("{FY}", numbering.financialYear || financialYearFor())
+  return `${prefix}${String(numbering.nextNumber).padStart(numbering.padding, "0")}`
+}
+
+function advanceCompanyNumbering(company: Company, issuedNumbers: string[]) {
+  const numbering = normalizedCompanyNumbering(company)
+  if (!numbering) return company
+  const resolvedPrefix = numbering.prefix.replaceAll("{FY}", numbering.financialYear || financialYearFor())
+  const highestIssued = issuedNumbers.reduce((highest, value) => {
+    if (!value.startsWith(resolvedPrefix)) return highest
+    const suffix = value.slice(resolvedPrefix.length)
+    if (!/^\d+$/.test(suffix)) return highest
+    return Math.max(highest, Number(suffix))
+  }, numbering.nextNumber - 1)
+  return {
+    ...company,
+    invoiceNumbering: { ...numbering, nextNumber: Math.max(numbering.nextNumber, highestIssued + 1) },
+  }
 }
 const emptyState = (): MvpState => ({ setup: null, companies: [], customers: [], invoices: [], employees: [], payslips: [], expenses: [], template: defaultTemplate() })
 function normalizeState(saved: Partial<MvpState>): MvpState {
@@ -560,21 +604,47 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     },
     addInvoice: async (invoice) => {
       const current = stateRef.current
-      const added = { ...invoice, id: id(), number: nextInvoiceNumber(current.setup, current.invoices) }
-      const nextSetup = current.setup?.invoiceNumbering?.mode === "continue"
+      const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
+      const issuedNumber = numberFromCompany(company, current.setup, current.invoices)
+      const added = { ...invoice, id: id(), number: issuedNumber }
+      const updatedCompany = company ? advanceCompanyNumbering(company, [issuedNumber]) : undefined
+      const nextCompanies = updatedCompany
+        ? current.companies.map((candidate) => candidate.id === updatedCompany.id ? updatedCompany : candidate)
+        : current.companies
+      const nextSetup = !company && current.setup?.invoiceNumbering?.mode === "continue"
         ? { ...current.setup, invoiceNumbering: { ...current.setup.invoiceNumbering, nextNumber: current.setup.invoiceNumbering.nextNumber + 1 } }
         : current.setup
       await persistAndWait(async (userId, workspaceId) => {
         if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
+        if (updatedCompany) await upsertCompanies(userId, workspaceId, [updatedCompany])
         await upsertInvoices(userId, workspaceId, [added])
       })
-      commit({ ...stateRef.current, setup: nextSetup, invoices: [added, ...stateRef.current.invoices] })
+      commit({ ...stateRef.current, setup: nextSetup, companies: nextCompanies, invoices: [added, ...stateRef.current.invoices] })
     },
     addInvoices: async (invoices) => {
       const current = stateRef.current
-      const added = invoices.map((invoice, index) => ({ ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }))
-      await persistAndWait((userId, workspaceId) => upsertInvoices(userId, workspaceId, added))
-      commit({ ...stateRef.current, invoices: [...added, ...stateRef.current.invoices] })
+      const counters = new Map<string, number>()
+      const added = invoices.map((invoice, index) => {
+        const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
+        if (!company) return { ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }
+        const numbering = normalizedCompanyNumbering(company)
+        if (!numbering) return { ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }
+        const offset = counters.get(company.id) || 0
+        counters.set(company.id, offset + 1)
+        const prefix = numbering.prefix.replaceAll("{FY}", numbering.financialYear || financialYearFor())
+        return { ...invoice, id: id(), number: `${prefix}${String(numbering.nextNumber + offset).padStart(numbering.padding, "0")}` }
+      })
+      const nextCompanies = current.companies.map((company) => {
+        const related = added.filter((invoice) => invoice.entityName === company.companyName)
+        if (!related.length) return company
+        return advanceCompanyNumbering(company, related.flatMap((invoice) => [invoice.number, invoice.sourceNumber || ""]).filter(Boolean))
+      })
+      const changedCompanies = nextCompanies.filter((company, index) => company !== current.companies[index])
+      await persistAndWait(async (userId, workspaceId) => {
+        if (changedCompanies.length) await upsertCompanies(userId, workspaceId, changedCompanies)
+        await upsertInvoices(userId, workspaceId, added)
+      })
+      commit({ ...stateRef.current, companies: nextCompanies, invoices: [...added, ...stateRef.current.invoices] })
     },
     deleteInvoice: async (invoiceId) => {
       await persistAndWait((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))

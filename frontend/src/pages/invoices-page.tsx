@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Download, Eye, LoaderCircle, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react"
+import { Download, Eye, LoaderCircle, Plus, Search, Share2, Star, Trash2, Upload, X } from "lucide-react"
 
 import { InvoicePreview } from "@/components/invoice-preview"
 import { PageHeader } from "@/components/page-header"
@@ -56,10 +56,10 @@ const invoiceColumns = [
 ]
 
 export function InvoicesPage() {
-  const { setup, companies, customers, invoices, template, addCustomers, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
-  const { can, subscription, refresh } = useWorkspaceAccess()
+  const { setup, companies, customers, invoices, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
-  const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, "invoice", invoices.length)
+  const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
   const [showForm, setShowForm] = useState(false)
   const [entityName, setEntityName] = useState("")
   const [bulkEntityName, setBulkEntityName] = useState("")
@@ -100,9 +100,12 @@ export function InvoicesPage() {
   const selectedEntity = companies.find((company) => company.companyName === entityName)
   const selectedEntityHsnCodes = entityHsnCodes(selectedEntity)
   const selectedBulkEntity = companies.find((company) => company.companyName === bulkEntityName)
-  const individualCustomers = customers.filter((customer) => customer.entityId === selectedEntity?.id)
+  const favouriteFirst = (a: Customer, b: Customer) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || a.companyName.localeCompare(b.companyName)
+  const individualCustomers = customers.filter((customer) => customer.entityId === selectedEntity?.id).sort(favouriteFirst)
   const bulkCustomers = customers.filter((customer) => customer.entityId === selectedBulkEntity?.id)
-  const visibleCustomers = customers.filter((customer) => customer.entityId === customerEntityId)
+  const visibleCustomers = customers.filter((customer) => customer.entityId === customerEntityId).sort(favouriteFirst)
+  const customerMasterEntity = companies.find((company) => company.id === customerEntityId)
+  const isGstInvoice = selectedEntity?.hasGstin ?? Boolean(selectedEntity?.gstin)
   const normalizedInvoiceSearch = invoiceSearch.trim().toLowerCase()
   const minimumInvoiceAmount = invoiceAmountMin === "" ? null : Number(invoiceAmountMin)
   const maximumInvoiceAmount = invoiceAmountMax === "" ? null : Number(invoiceAmountMax)
@@ -227,8 +230,7 @@ export function InvoicesPage() {
       setDraftFormError(error)
       return
     }
-    setPdfPreview(buildDraftInvoice())
-    setDraftFormError("")
+    setDraftFormError("For credit protection, a full document preview is available after the invoice is generated. Review the totals above before saving; previewing does not use a credit.")
   }
 
   const updateLineItem = (itemId: string, field: keyof DraftLineItem, value: string) => {
@@ -345,14 +347,14 @@ export function InvoicesPage() {
         const suppliedHsnSac = pickCell(row, "HSN/SAC", "HSN SAC")
         const suppliedBillingAddress = pickCell(row, "Billing Address")
         const suppliedPremisesAddress = pickCell(row, "Premises Address")
+        const requiresGstDetails = selectedBulkEntity?.hasGstin ?? Boolean(selectedBulkEntity?.gstin)
         const newCustomerIsValid = Boolean(
           customerName
           && suppliedBillingAddress
           && suppliedPremisesAddress
-          && gstinPattern.test(suppliedGstin)
-          && panPattern.test(suppliedPan)
-          && suppliedGstin.slice(2, 12) === suppliedPan
-          && hsnSacPattern.test(suppliedHsnSac)
+          && (requiresGstDetails
+            ? gstinPattern.test(suppliedGstin) && panPattern.test(suppliedPan) && suppliedGstin.slice(2, 12) === suppliedPan && hsnSacPattern.test(suppliedHsnSac)
+            : (!suppliedGstin || gstinPattern.test(suppliedGstin)) && (!suppliedPan || panPattern.test(suppliedPan)) && (!suppliedGstin || !suppliedPan || suppliedGstin.slice(2, 12) === suppliedPan) && (!suppliedHsnSac || hsnSacPattern.test(suppliedHsnSac)))
         )
         if (!savedCustomer && newCustomerIsValid) {
           newCustomersByName.set(customerName.trim().toLowerCase(), {
@@ -401,7 +403,7 @@ export function InvoicesPage() {
             igstAmount,
           }],
           status: parseDocumentStatus(pickCell(row, "Status")),
-          valid: Boolean(savedCustomer || newCustomerIsValid) && hsnSacPattern.test(hsnSac),
+          valid: Boolean(savedCustomer || newCustomerIsValid) && (requiresGstDetails ? hsnSacPattern.test(hsnSac) : !hsnSac || hsnSacPattern.test(hsnSac)),
         }
       }).filter((row) => row.valid && row.companyName && row.sourceNumber && row.date && Number.isFinite(row.taxableAmount) && row.taxableAmount > 0 && row.amount > 0)
         .map(({ valid: _valid, ...invoice }) => invoice)
@@ -555,6 +557,7 @@ export function InvoicesPage() {
     }
     try {
       const rows = await readSpreadsheet(file)
+      const requiresGstDetails = customerMasterEntity?.hasGstin ?? Boolean(customerMasterEntity?.gstin)
       const imported = rows.map((row) => {
         const gstin = pickCell(row, "GSTIN").toUpperCase()
         const pan = pickCell(row, "PAN").toUpperCase()
@@ -567,7 +570,9 @@ export function InvoicesPage() {
           pan,
           premisesAddress: pickCell(row, "Premises Address"),
           hsnSac,
-          valid: gstinPattern.test(gstin) && panPattern.test(pan) && gstin.slice(2, 12) === pan && hsnSacPattern.test(hsnSac),
+          valid: requiresGstDetails
+            ? gstinPattern.test(gstin) && panPattern.test(pan) && gstin.slice(2, 12) === pan && hsnSacPattern.test(hsnSac)
+            : (!gstin || gstinPattern.test(gstin)) && (!pan || panPattern.test(pan)) && (!gstin || !pan || gstin.slice(2, 12) === pan) && (!hsnSac || hsnSacPattern.test(hsnSac)),
         }
       }).filter((row) => row.companyName && row.valid)
         .map(({ valid: _valid, ...customer }) => customer)
@@ -605,19 +610,20 @@ export function InvoicesPage() {
       setManualCustomerError("Company name, billing address, and premises address are required.")
       return
     }
-    if (!gstinPattern.test(customer.gstin)) {
+    const requiresGstDetails = customerMasterEntity?.hasGstin ?? Boolean(customerMasterEntity?.gstin)
+    if (requiresGstDetails && !gstinPattern.test(customer.gstin) || !requiresGstDetails && customer.gstin && !gstinPattern.test(customer.gstin)) {
       setManualCustomerError("Enter a valid 15-character GSTIN.")
       return
     }
-    if (!panPattern.test(customer.pan)) {
+    if (requiresGstDetails && !panPattern.test(customer.pan) || !requiresGstDetails && customer.pan && !panPattern.test(customer.pan)) {
       setManualCustomerError("Enter a valid 10-character PAN.")
       return
     }
-    if (customer.gstin.slice(2, 12) !== customer.pan) {
+    if (customer.gstin && customer.pan && customer.gstin.slice(2, 12) !== customer.pan) {
       setManualCustomerError("The PAN does not match the PAN embedded in the GSTIN.")
       return
     }
-    if (!hsnSacPattern.test(customer.hsnSac)) {
+    if (requiresGstDetails && !hsnSacPattern.test(customer.hsnSac) || !requiresGstDetails && customer.hsnSac && !hsnSacPattern.test(customer.hsnSac)) {
       setManualCustomerError("HSN/SAC must contain 4, 6, or 8 digits.")
       return
     }
@@ -677,7 +683,7 @@ export function InvoicesPage() {
         ) : null}
       />
 
-      {invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Free invoice allowance:</strong> {invoiceAllowance.used} of {invoiceAllowance.limit} used · {invoiceAllowance.remaining} remaining. {invoiceAllowance.hasGstin ? "GST-registered workspace." : "Non-GST workspace."}</p> : null}
+      {invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {invoiceAllowance.remaining} remaining for invoices or payslips. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to invoices. You can search, preview, and download saved invoices, but creating, importing, or deleting records requires invoice management permission.</p> : null}
 
@@ -687,7 +693,7 @@ export function InvoicesPage() {
 
       {showForm && canManage && (
         <Card>
-          <CardHeader><CardTitle>Create individual invoice</CardTitle><CardDescription>Add multiple descriptions and tax amounts, then preview the selected template before saving or downloading.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Create individual invoice</CardTitle><CardDescription>Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation.</CardDescription></CardHeader>
           <CardContent className="space-y-6">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
@@ -712,23 +718,23 @@ export function InvoicesPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-medium">Invoice descriptions</h3>
-                  <p className="text-xs text-muted-foreground">Choose an HSN/SAC saved for the issuing entity on each line. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices.</p>
+                  <p className="text-xs text-muted-foreground">{isGstInvoice ? "Choose an HSN/SAC saved for the issuing entity on each line. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices." : "Add the description and amount. HSN/SAC is optional for this non-GST invoice."}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => setLineItems((items) => [...items, newDraftLine(selectedEntityHsnCodes[0] || "")])}><Plus />Add description</Button>
               </div>
               <div className="overflow-x-auto rounded-lg border">
-                <div className="min-w-[980px]">
-                  <div className="grid grid-cols-[2fr_110px_repeat(4,130px)_44px] gap-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground">
-                    <span>Description</span><span>HSN/SAC</span><span>Taxable amount</span><span>CGST</span><span>SGST</span><span>IGST</span><span />
+                <div className={isGstInvoice ? "min-w-[980px]" : "min-w-[620px]"}>
+                  <div className={`grid gap-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(4,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
+                    <span>Description</span><span>HSN/SAC</span><span>{isGstInvoice ? "Taxable amount" : "Amount"}</span>{isGstInvoice ? <><span>CGST</span><span>SGST</span><span>IGST</span></> : null}<span />
                   </div>
                   {lineItems.map((item, index) => (
-                    <div key={item.id} className="grid grid-cols-[2fr_110px_repeat(4,130px)_44px] gap-2 border-t p-3">
+                    <div key={item.id} className={`grid gap-2 border-t p-3 ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(4,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
                       <Input aria-label={`Description ${index + 1}`} value={item.description} onChange={(event) => updateLineItem(item.id, "description", event.target.value)} placeholder="Service or item description" />
                       {selectedEntityHsnCodes.length ? <select aria-label={`HSN/SAC ${index + 1}`} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value)}><option value="">Select code</option>{selectedEntityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN/SAC ${index + 1}`} inputMode="numeric" maxLength={8} value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value.replace(/\D/g, ""))} placeholder="998222" />}
                       <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" value={item.taxableAmount} onChange={(event) => updateLineItem(item.id, "taxableAmount", event.target.value)} placeholder="0.00" />
-                      <Input aria-label={`CGST ${index + 1}`} type="number" min="0" step="0.01" value={item.cgstAmount} onChange={(event) => updateLineItem(item.id, "cgstAmount", event.target.value)} placeholder="0.00" />
+                      {isGstInvoice ? <><Input aria-label={`CGST ${index + 1}`} type="number" min="0" step="0.01" value={item.cgstAmount} onChange={(event) => updateLineItem(item.id, "cgstAmount", event.target.value)} placeholder="0.00" />
                       <Input aria-label={`SGST ${index + 1}`} type="number" min="0" step="0.01" value={item.sgstAmount} onChange={(event) => updateLineItem(item.id, "sgstAmount", event.target.value)} placeholder="0.00" />
-                      <Input aria-label={`IGST ${index + 1}`} type="number" min="0" step="0.01" value={item.igstAmount} onChange={(event) => updateLineItem(item.id, "igstAmount", event.target.value)} placeholder="0.00" />
+                      <Input aria-label={`IGST ${index + 1}`} type="number" min="0" step="0.01" value={item.igstAmount} onChange={(event) => updateLineItem(item.id, "igstAmount", event.target.value)} placeholder="0.00" /></> : null}
                       <Button type="button" size="icon" variant="ghost" disabled={lineItems.length === 1} aria-label={`Remove description ${index + 1}`} onClick={() => setLineItems((items) => items.filter((line) => line.id !== item.id))}><Trash2 /></Button>
                     </div>
                   ))}
@@ -741,7 +747,7 @@ export function InvoicesPage() {
               <div className="space-y-2"><Label htmlFor="invoice-other-deduction">Other deduction (₹)</Label><Input id="invoice-other-deduction" type="number" min="0" step="0.01" value={otherDeduction} onChange={(event) => setOtherDeduction(event.target.value)} placeholder="0.00" /></div>
               <div className="space-y-1 text-sm md:text-right">
                 <p className="text-muted-foreground">Taxable: ₹{draftTotals.taxableAmount.toLocaleString("en-IN")}</p>
-                <p className="text-muted-foreground">Tax: ₹{(draftTotals.cgstAmount + draftTotals.sgstAmount + draftTotals.igstAmount).toLocaleString("en-IN")}</p>
+                {isGstInvoice ? <p className="text-muted-foreground">Tax: ₹{(draftTotals.cgstAmount + draftTotals.sgstAmount + draftTotals.igstAmount).toLocaleString("en-IN")}</p> : null}
                 <p className="text-lg font-semibold">Invoice total: ₹{draftTotals.amount.toLocaleString("en-IN")}</p>
                 <p className="font-medium">Net receivable: ₹{Math.max(0, draftTotals.amount - (Number(tdsAmount) || 0) - (Number(otherDeduction) || 0)).toLocaleString("en-IN")}</p>
               </div>
@@ -751,7 +757,7 @@ export function InvoicesPage() {
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={status === "Generated"} onChange={(event) => setStatus(event.target.checked ? "Generated" : "Draft")} /> Mark as generated</label>
-              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Preview invoice</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : "Save invoice"}</Button></div>
+              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Review preview policy</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : "Save invoice"}</Button></div>
             </div>
           </CardContent>
         </Card>
@@ -939,15 +945,15 @@ export function InvoicesPage() {
                   <Input id="manual-customer-name" value={manualCustomer.companyName} onChange={(event) => updateManualCustomer("companyName", event.target.value)} placeholder="ABC Customer Private Limited" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-gstin">GSTIN</Label>
+                  <Label htmlFor="manual-customer-gstin">GSTIN {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
                   <Input id="manual-customer-gstin" value={manualCustomer.gstin} onChange={(event) => updateManualCustomer("gstin", event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={15} placeholder="36ABCDE1234F1Z5" className="font-mono uppercase" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-pan">PAN</Label>
+                  <Label htmlFor="manual-customer-pan">PAN {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
                   <Input id="manual-customer-pan" value={manualCustomer.pan} onChange={(event) => updateManualCustomer("pan", event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={10} placeholder="ABCDE1234F" className="font-mono uppercase" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-hsn">Default HSN/SAC</Label>
+                  <Label htmlFor="manual-customer-hsn">Default HSN/SAC {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
                   <Input id="manual-customer-hsn" value={manualCustomer.hsnSac} onChange={(event) => updateManualCustomer("hsnSac", event.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={8} placeholder="998222" />
                 </div>
                 <div className="space-y-2 md:col-span-2">
@@ -981,15 +987,18 @@ export function InvoicesPage() {
             <TableBody>
               {visibleCustomers.length ? visibleCustomers.map((customer) => (
                 <TableRow key={customer.id}>
-                  <TableCell className="font-medium">{customer.companyName}</TableCell>
-                  <TableCell className="font-mono text-xs">{customer.gstin}</TableCell>
+                  <TableCell className="font-medium"><span className="inline-flex items-center gap-2">{customer.favorite ? <Star className="size-4 fill-current text-amber-500" aria-label="Favourite customer" /> : null}{customer.companyName}</span></TableCell>
+                  <TableCell className="font-mono text-xs">{customer.gstin || "—"}</TableCell>
                   <TableCell className="hidden font-mono text-xs md:table-cell">{customer.pan || "—"}</TableCell>
                   <TableCell className="hidden max-w-72 truncate lg:table-cell">{customer.billingAddress || "—"}</TableCell>
                   <TableCell className="text-right">
                     {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingCustomerDelete === customer.id ? (
                       <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteCustomer(customer.id); setPendingCustomerDelete(null); showNotice(`${customer.companyName} was removed from the invoice customer master.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The customer could not be deleted.", true) } }}>Confirm delete</Button></div>
                     ) : (
-                      <Button size="icon" variant="ghost" aria-label={`Delete invoice customer ${customer.companyName}`} onClick={() => setPendingCustomerDelete(customer.id)}><Trash2 /></Button>
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" aria-label={`${customer.favorite ? "Remove" : "Add"} ${customer.companyName} ${customer.favorite ? "from" : "to"} favourites`} title={customer.favorite ? "Remove from favourites" : "Add to favourites"} onClick={async () => { try { await updateCustomer(customer.id, { favorite: !customer.favorite }); showNotice(`${customer.companyName} ${customer.favorite ? "removed from" : "added to"} favourites.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The favourite could not be updated.", true) } }}><Star className={customer.favorite ? "fill-current text-amber-500" : ""} /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`Delete invoice customer ${customer.companyName}`} onClick={() => setPendingCustomerDelete(customer.id)}><Trash2 /></Button>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>

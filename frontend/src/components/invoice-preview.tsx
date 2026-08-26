@@ -74,6 +74,7 @@ export function InvoicePreview({
   const isClassic = template.preset === "classic"
   const isMinimal = template.preset === "minimal"
   const element = (id: TemplateElementId) => template.elements[id]
+  const isGstInvoice = entity?.hasGstin ?? Boolean(entity?.gstin)
 
   const startTextDrag = (event: ReactPointerEvent<HTMLDivElement>, id: string) => {
     if (!editor || !pageRef.current) return
@@ -136,7 +137,7 @@ export function InvoicePreview({
           </EditableInvoiceElement>
         </div>
         <EditableInvoiceElement id="invoiceTitle" setting={element("invoiceTitle")} editor={editor} onPointerDown={startElementDrag} className="shrink-0 text-right">
-          <h1 className="text-2xl font-bold" style={{ color: template.accentColor }}>{element("invoiceTitle").label}</h1>
+          <h1 className="text-2xl font-bold" style={{ color: template.accentColor }}>{isGstInvoice ? element("invoiceTitle").label : "INVOICE"}</h1>
           <p className="mt-2 text-sm text-zinc-500">{invoice.sourceNumber || invoice.number}</p>
           <p className="text-sm text-zinc-500">{invoice.date}</p>
         </EditableInvoiceElement>
@@ -160,7 +161,7 @@ export function InvoicePreview({
       <EditableInvoiceElement id="lineItems" setting={element("lineItems")} editor={editor} onPointerDown={startElementDrag} className="overflow-hidden border">
         <table className="w-full text-left text-xs">
           <thead style={{ backgroundColor: isMinimal || isClassic ? "#f4f4f5" : template.accentColor, color: isMinimal || isClassic ? "#18181b" : "white" }}>
-            <tr><th className="p-2.5">Description</th><th className="p-2.5">HSN/SAC</th><th className="p-2.5 text-right">Taxable</th><th className="p-2.5 text-right">CGST</th><th className="p-2.5 text-right">SGST</th><th className="p-2.5 text-right">IGST</th><th className="p-2.5 text-right">Total</th></tr>
+            <tr><th className="p-2.5">Description</th><th className="p-2.5">HSN/SAC</th><th className="p-2.5 text-right">Amount</th>{isGstInvoice ? <><th className="p-2.5 text-right">CGST</th><th className="p-2.5 text-right">SGST</th><th className="p-2.5 text-right">IGST</th></> : null}<th className="p-2.5 text-right">Total</th></tr>
           </thead>
           <tbody>
             {items.map((item) => {
@@ -170,9 +171,7 @@ export function InvoicePreview({
                   <td className="p-2.5 font-medium">{item.description}</td>
                   <td className="p-2.5 text-zinc-500">{item.hsnSac || "—"}</td>
                   <td className="whitespace-nowrap p-2.5 text-right">{money(item.taxableAmount)}</td>
-                  <td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.cgstAmount)}</td>
-                  <td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.sgstAmount)}</td>
-                  <td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.igstAmount)}</td>
+                  {isGstInvoice ? <><td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.cgstAmount)}</td><td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.sgstAmount)}</td><td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.igstAmount)}</td></> : null}
                   <td className="whitespace-nowrap p-2.5 text-right font-semibold">{money(item.taxableAmount + tax)}</td>
                 </tr>
               )
@@ -194,11 +193,11 @@ export function InvoicePreview({
             template.preset === "classic" && "border-2 border-zinc-700",
             template.preset === "minimal" && "border-x-0 border-zinc-200",
           )}>
-            <div className="grid grid-cols-2 divide-x divide-y divide-zinc-200 sm:grid-cols-4 sm:divide-y-0">
+            <div className={`grid grid-cols-2 divide-x divide-y divide-zinc-200 ${isGstInvoice ? "sm:grid-cols-4 sm:divide-y-0" : "sm:grid-cols-1 sm:divide-y-0"}`}>
               <div className="p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Taxable value</p><p className="mt-1 font-semibold">{money(totals.taxableAmount)}</p></div>
-              <div className="p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">CGST</p><p className="mt-1 font-semibold">{money(totals.cgstAmount)}</p></div>
+              {isGstInvoice ? <><div className="p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">CGST</p><p className="mt-1 font-semibold">{money(totals.cgstAmount)}</p></div>
               <div className="p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">SGST</p><p className="mt-1 font-semibold">{money(totals.sgstAmount)}</p></div>
-              <div className="p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">IGST</p><p className="mt-1 font-semibold">{money(totals.igstAmount)}</p></div>
+              <div className="p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">IGST</p><p className="mt-1 font-semibold">{money(totals.igstAmount)}</p></div></> : null}
             </div>
             <div
               className={cn(
