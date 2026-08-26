@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 type BrandMarkProps = {
   compact?: boolean
   className?: string
-  tone?: "auto" | "light"
+  tone?: "auto" | "brand" | "light"
 }
 
 export function BrandMark({ compact = false, className, tone = "auto" }: BrandMarkProps) {
@@ -23,7 +23,11 @@ export function BrandMark({ compact = false, className, tone = "auto" }: BrandMa
           compact
             ? "size-9"
             : "h-9 w-auto max-w-[142px]",
-          tone === "light" ? "brightness-0 invert" : "dark:brightness-0 dark:invert",
+          tone === "light"
+            ? "brightness-0 invert"
+            : tone === "brand"
+              ? ""
+              : "dark:brightness-0 dark:invert",
         )}
       />
     </Link>

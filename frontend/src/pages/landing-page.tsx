@@ -46,10 +46,10 @@ export function LandingPage() {
   }
 
   return (
-    <main className="min-h-svh bg-white text-[#082f5b]">
+    <main className="public-light min-h-svh bg-white text-[#082f5b]">
       <header className="sticky top-0 z-40 border-b border-[#0b3f77]/10 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
-          <BrandMark />
+          <BrandMark tone="brand" />
           <nav className="hidden items-center gap-7 text-sm text-[#0b3f77]/65 sm:flex" aria-label="Landing page navigation">
             <a href="#features" className="transition-colors hover:text-[#0b3f77]">What we do</a>
             <a href="#how-it-helps" className="transition-colors hover:text-[#0b3f77]">How it helps</a>

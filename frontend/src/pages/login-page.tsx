@@ -64,12 +64,12 @@ export function LoginPage() {
   }
   async function google() { if (!supabase) { setMessageIsError(true); setMessage("Add Supabase keys to frontend/.env first."); return }; const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/` } }); if (error) { setMessageIsError(true); setMessage(error.message) } }
   return (
-    <main className="grid min-h-svh lg:grid-cols-2">
-      <section className="relative hidden overflow-hidden bg-primary p-12 text-primary-foreground lg:flex lg:flex-col">
+    <main className="public-light grid min-h-svh bg-white text-[#171717] lg:grid-cols-2">
+      <section className="relative hidden overflow-hidden bg-[#111111] p-12 text-white lg:flex lg:flex-col">
         <div className="absolute inset-0 opacity-10 page-grid" />
         <BrandMark tone="light" className="relative" />
         <div className="relative my-auto max-w-lg">
-          <span className="mb-5 flex size-11 items-center justify-center rounded-xl bg-primary-foreground/10">
+          <span className="mb-5 flex size-11 items-center justify-center rounded-xl bg-white/10">
             <Sparkles className="size-5" />
           </span>
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">
@@ -77,24 +77,24 @@ export function LoginPage() {
             <br />
             without the busywork.
           </h1>
-          <p className="mt-5 text-base leading-relaxed text-primary-foreground/70">
+          <p className="mt-5 text-base leading-relaxed text-white/70">
             Generate invoices and payslips for every client entity, verify GST
             details, and prepare Tally-ready exports from one calm workspace.
           </p>
         </div>
-        <div className="relative flex items-center gap-2 text-xs text-primary-foreground/60">
+        <div className="relative flex items-center gap-2 text-xs text-white/60">
           <ShieldCheck className="size-4" />
           Built for CA practices and their teams
         </div>
       </section>
 
-      <section className="flex items-center justify-center p-5 sm:p-10">
+      <section className="flex items-center justify-center bg-white p-5 text-[#171717] sm:p-10">
         <div className="w-full max-w-md">
-          <BrandMark className="mb-8 lg:hidden" />
+          <BrandMark tone="brand" className="mb-8 lg:hidden" />
           <Card>
             <CardHeader>
               <CardTitle className="text-xl">Welcome back</CardTitle>
-              <CardDescription>Sign in to your BreezyInvoice workspace.</CardDescription>
+              <CardDescription>Sign in to your ChanaX workspace.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {!isPasswordRecovery ? <Button type="button" variant="outline" className="w-full" onClick={google} disabled={busy}>
@@ -107,7 +107,7 @@ export function LoginPage() {
                 <Separator className="flex-1" />
               </div> : null}
               <form onSubmit={submit} className="space-y-5">
-              {isPasswordRecovery ? <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">Choose a new password for your BreezyInvoice account.</p> : null}
+              {isPasswordRecovery ? <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">Choose a new password for your ChanaX account.</p> : null}
               {!isPasswordRecovery ? (
               <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
@@ -129,7 +129,7 @@ export function LoginPage() {
                 <ArrowRight />
               </Button>
               {!isPasswordRecovery ? <Button type="button" variant="ghost" className="w-full" onClick={() => { setIsSignUp((value) => !value); setMessage(""); setMessageIsError(false) }}>{isSignUp ? "Already have an account? Sign in" : "New here? Create an account"}</Button> : null}
-              {message && <p role={messageIsError ? "alert" : "status"} className={messageIsError ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{message}</p>}
+              {message && <p role={messageIsError ? "alert" : "status"} className={messageIsError ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{message}</p>}
               </form>
             </CardContent>
           </Card>
