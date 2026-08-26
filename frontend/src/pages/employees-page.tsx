@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type Employee, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
 import { calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultDeductions, defaultEarnings, defaultPayslipAttendance, formatSalaryMonth, indianNationalHolidays, nextSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile, downloadPayslipPdf } from "@/lib/payslip-pdf"
+import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
@@ -105,8 +106,9 @@ export function EmployeesPage() {
     updatePayslip,
     deletePayslip,
   } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, subscription, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
+  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, "payslip", payslips.length)
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
   const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(companies[0]?.id || ""))
@@ -402,6 +404,13 @@ export function EmployeesPage() {
       deductions: payslipDraft.deductions.filter((item) => item.label.trim()).map((item) => ({ ...item, label: item.label.trim(), amount: Math.max(0, item.amount) })),
       generatedAt: payslipDraft.status === "Generated" ? new Date().toISOString() : undefined,
     }
+    if (!editingPayslipId) {
+      const allowanceError = freeAllowanceError(payslipAllowance, 1)
+      if (allowanceError) {
+        setError(allowanceError)
+        return
+      }
+    }
     setSaving(true)
     try {
       if (editingPayslipId) {
@@ -409,6 +418,7 @@ export function EmployeesPage() {
         setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was updated.`)
       } else {
         await addPayslip(cleaned)
+        await refresh()
         setNotice(`${cleaned.employeeName}'s ${formatSalaryMonth(cleaned.month)} payslip was saved.`)
       }
       if (rememberStructure) await updateEmployee(cleaned.employeeId, { defaultEarnings: cloneComponents(cleaned.earnings), defaultDeductions: cloneComponents(withoutLeaveDeduction(cleaned.deductions)) })
@@ -638,6 +648,8 @@ export function EmployeesPage() {
         </>}
       />
 
+      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Free payslip allowance:</strong> {payslipAllowance.used} of {payslipAllowance.limit} used · {payslipAllowance.remaining} remaining. {payslipAllowance.hasGstin ? "GST-registered workspace." : "Non-GST workspace."}</p> : null}
+
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to employees and payslips. You can preview and download saved payslips, but record changes require payroll management permission.</p> : null}
 
       <Card>
@@ -724,7 +736,7 @@ export function EmployeesPage() {
           <CardHeader><CardTitle>Bulk payslip preview</CardTitle><CardDescription>Review the calculated totals before saving this monthly payroll batch.</CardDescription></CardHeader>
           <CardContent>
             <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Month</TableHead><TableHead>Attendance</TableHead><TableHead>Gross</TableHead><TableHead>Deductions</TableHead><TableHead>Net pay</TableHead></TableRow></TableHeader><TableBody>{bulkPreview.slice(0, 12).map((payslip) => <TableRow key={`${payslip.employeeId}-${payslip.month}`}><TableCell className="font-medium">{payslip.employeeName}</TableCell><TableCell>{formatSalaryMonth(payslip.month)}</TableCell><TableCell><p>{payslip.payableDays} payable</p><p className="text-xs text-muted-foreground">{payslip.attendance?.paidLeaveDays || 0} leave · {payslip.attendance?.excessLeaveDays || 0} excess · ₹{(payslip.attendance?.leaveDeductionAmount || 0).toLocaleString("en-IN")} LOP</p></TableCell><TableCell>₹{payslip.grossPay.toLocaleString("en-IN")}</TableCell><TableCell className="text-red-600">₹{payslip.totalDeductions.toLocaleString("en-IN")}</TableCell><TableCell className="font-semibold">₹{payslip.netPay.toLocaleString("en-IN")}</TableCell></TableRow>)}</TableBody></Table>
-            <div className="mt-4 flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => { setBulkPreview([]); setBulkPayslipsSaved(false) }}>{bulkPayslipsSaved ? "Close" : "Cancel"}</Button><Button variant="outline" disabled={bulkDownloadPending || saving} onClick={() => void downloadBulkPayslipZip()}><Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${bulkPreview.length} PDFs (ZIP)`}</Button><Button disabled={bulkPayslipsSaved || saving} onClick={async () => { const count = bulkPreview.length; setSaving(true); clearMessages(); try { await addPayslips(bulkPreview); await Promise.all(bulkPreview.map((item) => updateEmployee(item.employeeId, { defaultEarnings: cloneComponents(item.earnings), defaultDeductions: cloneComponents(withoutLeaveDeduction(item.deductions)) }))); setBulkPayslipsSaved(true); setNotice(`${count} payslips were generated and saved. You can now download the complete batch as a ZIP.`) } catch (caught) { setError(caught instanceof Error ? caught.message : "The payslip batch could not be saved.") } finally { setSaving(false) } }}>{saving ? "Saving…" : bulkPayslipsSaved ? "Payslips generated" : `Generate ${bulkPreview.length} payslips`}</Button></div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => { setBulkPreview([]); setBulkPayslipsSaved(false) }}>{bulkPayslipsSaved ? "Close" : "Cancel"}</Button><Button variant="outline" disabled={bulkDownloadPending || saving} onClick={() => void downloadBulkPayslipZip()}><Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${bulkPreview.length} PDFs (ZIP)`}</Button><Button disabled={bulkPayslipsSaved || saving} onClick={async () => { const count = bulkPreview.length; const allowanceError = freeAllowanceError(payslipAllowance, count); if (allowanceError) { setError(allowanceError); return } setSaving(true); clearMessages(); try { await addPayslips(bulkPreview); await refresh(); await Promise.all(bulkPreview.map((item) => updateEmployee(item.employeeId, { defaultEarnings: cloneComponents(item.earnings), defaultDeductions: cloneComponents(withoutLeaveDeduction(item.deductions)) }))); setBulkPayslipsSaved(true); setNotice(`${count} payslips were generated and saved. You can now download the complete batch as a ZIP.`) } catch (caught) { setError(caught instanceof Error ? caught.message : "The payslip batch could not be saved.") } finally { setSaving(false) } }}>{saving ? "Saving…" : bulkPayslipsSaved ? "Payslips generated" : `Generate ${bulkPreview.length} payslips`}</Button></div>
           </CardContent>
         </Card>
       )}

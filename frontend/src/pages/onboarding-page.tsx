@@ -30,6 +30,7 @@ export function OnboardingPage() {
   const [firmName, setFirmName] = useState("")
   const [industry, setIndustry] = useState("")
   const [otherIndustry, setOtherIndustry] = useState("")
+  const [hasGstin, setHasGstin] = useState<boolean | null>(null)
   const [gstin, setGstin] = useState("")
   const [mailingAddress, setMailingAddress] = useState("")
   const [continueExistingNumbers, setContinueExistingNumbers] = useState(false)
@@ -51,7 +52,11 @@ export function OnboardingPage() {
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     const normalizedGstin = gstin.trim().toUpperCase()
-    if (!gstinPattern.test(normalizedGstin)) {
+    if (hasGstin === null) {
+      setSaveError("Tell us whether your business has a GSTIN.")
+      return
+    }
+    if (hasGstin && !gstinPattern.test(normalizedGstin)) {
       setSaveError("Enter a valid 15-character GSTIN, for example 27AAAAA0000A1Z5.")
       return
     }
@@ -65,7 +70,8 @@ export function OnboardingPage() {
       await completeSetup({
         firmName: firmName.trim(),
         industry: industry === "Other" ? otherIndustry.trim() : industry,
-        gstin: normalizedGstin,
+        hasGstin,
+        gstin: hasGstin ? normalizedGstin : "",
         mailingAddress: mailingAddress.trim(),
         invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
         leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) },
@@ -105,7 +111,22 @@ export function OnboardingPage() {
                 {industry === "Other" && <Input required value={otherIndustry} onChange={(event) => setOtherIndustry(event.target.value)} placeholder="Enter your industry" aria-label="Other industry" />}
                 <p className="text-xs text-muted-foreground">This will help BreezyInvoice tailor templates and future reports to your business.</p>
               </div>
-              <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p></div>
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-medium">Does your business have a GSTIN?</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === true ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
+                    <input type="radio" name="hasGstin" required checked={hasGstin === true} onChange={() => { setHasGstin(true); setSaveError("") }} className="sr-only" />
+                    <span className="block font-medium">Yes, I have a GSTIN</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">Your first 15 invoices and first 15 payslips are free.</span>
+                  </label>
+                  <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === false ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
+                    <input type="radio" name="hasGstin" required checked={hasGstin === false} onChange={() => { setHasGstin(false); setGstin(""); setSaveError("") }} className="sr-only" />
+                    <span className="block font-medium">No, I do not have a GSTIN</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">Your first 5 invoices and first 5 payslips are free.</span>
+                  </label>
+                </div>
+              </fieldset>
+              {hasGstin ? <div className="space-y-2"><Label htmlFor="gstin">GSTIN</Label><Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" /><p className="text-xs text-muted-foreground">{gstin.length}/15 characters</p></div> : null}
               <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
 
               <section className="space-y-4 rounded-xl border bg-muted/20 p-4">

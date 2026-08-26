@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { downloadAttendanceExcel, downloadAttendancePdf, type AttendanceExportInput } from "@/lib/attendance-export"
+import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { type AttendanceDayRecord, type AttendanceDayStatus, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
 import { calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
@@ -49,8 +50,9 @@ function applyAttendance<T extends { month: string; earnings: PayrollComponent[]
 
 export function AttendancePage() {
   const { setup, companies, employees, payslips, template, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, subscription, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
+  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, "payslip", payslips.length)
   const initialEntityId = companies[0]?.id || ""
   const initialMonth = currentMonth()
   const initialDraft = setup?.attendanceDrafts?.[`${initialEntityId}:${initialMonth}`]
@@ -289,10 +291,16 @@ export function AttendancePage() {
 
   const savePayslips = async () => {
     if (!preview.length || saved) return
+    const allowanceError = freeAllowanceError(payslipAllowance, preview.length)
+    if (allowanceError) {
+      setError(allowanceError)
+      return
+    }
     setSaving(true)
     clearMessages()
     try {
       await addPayslips(preview)
+      await refresh()
       await Promise.all(preview.map((item) => updateEmployee(item.employeeId, {
         defaultEarnings: cloneComponents(item.earnings),
         defaultDeductions: cloneComponents(withoutLeaveDeduction(item.deductions)),
@@ -332,6 +340,8 @@ export function AttendancePage() {
         description="Maintain monthly attendance for every employee and generate leave-adjusted payslips from one register."
         actions={<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("excel")}><FileSpreadsheet />{exportingAttendance === "excel" ? "Preparing Excel…" : "Download Excel"}</Button><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("pdf")}><Download />{exportingAttendance === "pdf" ? "Preparing PDF…" : "Download PDF"}</Button><Button variant="outline" asChild><Link to="/employees"><Users />Employees & payslips</Link></Button></div>}
       />
+
+      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Free payslip allowance:</strong> {payslipAllowance.used} of {payslipAllowance.limit} used · {payslipAllowance.remaining} remaining. {payslipAllowance.hasGstin ? "GST-registered workspace." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only payroll access. Attendance changes and payslip generation require payroll management permission.</p> : null}
       {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}

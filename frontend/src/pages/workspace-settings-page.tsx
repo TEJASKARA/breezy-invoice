@@ -35,6 +35,7 @@ const editableRoles: { value: EditableRole; label: string }[] = [
   { value: "viewer", label: "Viewer" },
   { value: "custom", label: "Custom" },
 ]
+const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
 function readableDate(value: string | null) {
   if (!value) return "Not set"
@@ -64,6 +65,7 @@ export function WorkspaceSettingsPage() {
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
   const [firmName, setFirmName] = useState(setup?.firmName || workspace?.name || "")
   const [industry, setIndustry] = useState(setup?.industry || "")
+  const [hasGstin, setHasGstin] = useState(setup?.hasGstin ?? Boolean(setup?.gstin?.trim()))
   const [gstin, setGstin] = useState(setup?.gstin || "")
   const [mailingAddress, setMailingAddress] = useState(setup?.mailingAddress || "")
   const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">(setup?.leavePolicy?.period || "monthly")
@@ -85,6 +87,7 @@ export function WorkspaceSettingsPage() {
   useEffect(() => {
     setFirmName(setup?.firmName || workspace?.name || "")
     setIndustry(setup?.industry || "")
+    setHasGstin(setup?.hasGstin ?? Boolean(setup?.gstin?.trim()))
     setGstin(setup?.gstin || "")
     setMailingAddress(setup?.mailingAddress || "")
     setLeavePeriod(setup?.leavePolicy?.period || "monthly")
@@ -111,13 +114,18 @@ export function WorkspaceSettingsPage() {
   async function saveWorkspaceDetails(event: React.FormEvent) {
     event.preventDefault()
     if (!setup || !workspace) return
+    const normalizedGstin = gstin.trim().toUpperCase()
+    if (hasGstin && !gstinPattern.test(normalizedGstin)) {
+      showError(new Error("Enter a valid 15-character GSTIN."))
+      return
+    }
     setSaving(true)
     try {
       if (isOwner && workspace.name !== firmName.trim()) {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(updateError.message)
       }
-      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), gstin: gstin.trim().toUpperCase(), mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
+      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -214,7 +222,8 @@ export function WorkspaceSettingsPage() {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveWorkspaceDetails}>
             <div className="space-y-2"><Label htmlFor="settings-firm-name">Firm or business name</Label><Input id="settings-firm-name" required value={firmName} disabled={!isOwner} onChange={(event) => setFirmName(event.target.value)} /></div>
             <div className="space-y-2"><Label htmlFor="settings-industry">Industry</Label><Input id="settings-industry" required disabled={!canManageWorkspace} value={industry} onChange={(event) => setIndustry(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" /></div>
+            <div className="space-y-2"><Label htmlFor="settings-gst-status">GST registration</Label><select id="settings-gst-status" disabled={!canManageWorkspace} value={hasGstin ? "yes" : "no"} onChange={(event) => { const next = event.target.value === "yes"; setHasGstin(next); if (!next) setGstin("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="yes">I have a GSTIN</option><option value="no">I do not have a GSTIN</option></select><p className="text-xs text-muted-foreground">The free plan includes {hasGstin ? "15 invoices and 15 payslips" : "5 invoices and 5 payslips"}.</p></div>
+            {hasGstin ? <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" placeholder="15-character GSTIN" /></div> : null}
             <div className="space-y-2 md:col-span-2"><Label htmlFor="settings-address">Mailing address</Label><textarea id="settings-address" required disabled={!canManageWorkspace} value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50" /></div>
             <section className="space-y-4 rounded-xl border bg-muted/20 p-4 md:col-span-2">
               <div className="flex items-start gap-3"><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><div><h3 className="font-medium">Employee leave policy</h3><p className="text-sm text-muted-foreground">This allowance applies to every employee and can be changed by a workspace administrator.</p></div></div>

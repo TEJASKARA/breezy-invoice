@@ -210,6 +210,7 @@ export type AttendanceDraft = {
 export type Setup = {
   firmName: string
   industry: string
+  hasGstin?: boolean
   gstin: string
   mailingAddress: string
   invoiceNumbering?: InvoiceNumbering

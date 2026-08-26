@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
+import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
 import { nextInvoiceNumber, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
@@ -56,8 +57,9 @@ const invoiceColumns = [
 
 export function InvoicesPage() {
   const { setup, companies, customers, invoices, template, addCustomers, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, subscription, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
+  const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, "invoice", invoices.length)
   const [showForm, setShowForm] = useState(false)
   const [entityName, setEntityName] = useState("")
   const [bulkEntityName, setBulkEntityName] = useState("")
@@ -199,11 +201,17 @@ export function InvoicesPage() {
       setDraftFormError(error)
       return
     }
+    const allowanceError = freeAllowanceError(invoiceAllowance, 1)
+    if (allowanceError) {
+      setDraftFormError(allowanceError)
+      return
+    }
     const { id: _id, number: _number, ...invoice } = buildDraftInvoice()
     setInvoiceSaving(true)
     setDraftFormError("")
     try {
       await addInvoice(invoice)
+      await refresh()
       resetForm()
       showNotice("Invoice saved to your workspace.")
     } catch (saveError) {
@@ -669,6 +677,8 @@ export function InvoicesPage() {
         ) : null}
       />
 
+      {invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Free invoice allowance:</strong> {invoiceAllowance.used} of {invoiceAllowance.limit} used · {invoiceAllowance.remaining} remaining. {invoiceAllowance.hasGstin ? "GST-registered workspace." : "Non-GST workspace."}</p> : null}
+
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to invoices. You can search, preview, and download saved invoices, but creating, importing, or deleting records requires invoice management permission.</p> : null}
 
       {notice && <p role={noticeIsError ? "alert" : "status"} className={noticeIsError ? "rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{notice}</p>}
@@ -855,12 +865,18 @@ export function InvoicesPage() {
                 <Button disabled={bulkInvoicesSaved} onClick={async () => {
                   const count = preview.length
                   const customerCount = bulkNewCustomers.length
+                  const allowanceError = freeAllowanceError(invoiceAllowance, count)
+                  if (allowanceError) {
+                    showNotice(allowanceError, true)
+                    return
+                  }
                   try {
                     if (customerCount) {
                       await addCustomers(bulkNewCustomers)
                       setBulkNewCustomers([])
                     }
                     await addInvoices(preview)
+                    await refresh()
                     setBulkInvoicesSaved(true)
                     showNotice(`${count} invoices generated successfully${customerCount ? ` and ${customerCount} new customers were saved` : ""}. You can now download the complete batch as a ZIP.`)
                   } catch (error) {
