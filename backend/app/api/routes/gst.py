@@ -81,10 +81,45 @@ def _address(payload: dict[str, Any]) -> str:
 
 def _is_active_registration(registration_status: str) -> bool:
     normalized = registration_status.strip().lower()
-    return not any(
+    return bool(normalized) and not any(
         blocked in normalized
         for blocked in ("cancel", "suspend", "inactive", "invalid")
     )
+
+
+def _taxpayer_details(payload: dict[str, Any]) -> tuple[str, str, str]:
+    legal_name = str(
+        _find(payload, ("legal_name", "legalName", "lgnm")) or ""
+    ).strip()
+    trade_name = str(
+        _find(payload, ("trade_name", "tradeName", "tradeNam")) or ""
+    ).strip()
+    registration_status = str(
+        _find(
+            payload,
+            ("registration_status", "gstin_status", "taxpayer_status", "sts"),
+        )
+        or ""
+    ).strip()
+    return legal_name, trade_name, registration_status
+
+
+def _invalid_payload_message(payload: dict[str, Any]) -> str:
+    message = str(_find(payload, ("message", "error_description", "detail")) or "")
+    normalized = message.strip().lower()
+    if any(
+        marker in normalized
+        for marker in (
+            "invalid gst",
+            "gstin invalid",
+            "invalid request",
+            "not found",
+            "no record",
+            "does not exist",
+        )
+    ):
+        return message.strip()
+    return ""
 
 
 @router.get("/verify", response_model=GstVerificationResponse)
@@ -103,25 +138,55 @@ async def verify_gstin(
 
     gateway = SupabaseGateway(settings)
     try:
-        user = await gateway.authenticated_user(_bearer_token(authorization))
-        await gateway.assert_workspace_member(workspace_id, str(user["id"]))
+        access_token = _bearer_token(authorization)
+        await gateway.authenticated_user(access_token)
+        await gateway.assert_workspace_permission(
+            access_token, workspace_id, "entities.manage"
+        )
         data = await gateway.cached_gstin(normalized_gstin)
         cached = data is not None
+        if data is not None:
+            legal_name, trade_name, registration_status = _taxpayer_details(data)
+            if not (legal_name or trade_name) or not registration_status:
+                # Never let a stale error response in the cache permanently block a
+                # real taxpayer lookup. Older versions cached before validating.
+                data = None
+                cached = False
         if data is None:
             data = await get_whitebooks_client().verify_gstin(normalized_gstin)
+            legal_name, trade_name, registration_status = _taxpayer_details(data)
+            provider_error = _invalid_payload_message(data)
+            if provider_error or not (legal_name or trade_name):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=(
+                        "This GSTIN could not be found. Check the number and try again."
+                    ),
+                )
+            if not registration_status:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        "WhiteBooks returned incomplete GST registration details. "
+                        "Please try again."
+                    ),
+                )
             await gateway.cache_gstin(normalized_gstin, data)
-        registration_status = str(
-            _find(
-                data,
-                ("registration_status", "gstin_status", "taxpayer_status", "sts"),
+        else:
+            legal_name, trade_name, registration_status = _taxpayer_details(data)
+
+        if not _is_active_registration(registration_status):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"This GSTIN has registration status “{registration_status}”. "
+                    "Enter an active GSTIN or choose the non-GST option."
+                ),
             )
-            or ""
-        )
         workspace_verified = False
-        if _is_active_registration(registration_status):
-            workspace_verified = await gateway.verify_workspace_gstin(
-                workspace_id, normalized_gstin
-            )
+        workspace_verified = await gateway.verify_workspace_gstin(
+            workspace_id, normalized_gstin
+        )
     except SupabaseGatewayError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -140,8 +205,8 @@ async def verify_gstin(
         pan=normalized_gstin[2:12],
         cached=cached,
         workspace_verified=workspace_verified,
-        legal_name=str(_find(data, ("legal_name", "legalName", "lgnm")) or ""),
-        trade_name=str(_find(data, ("trade_name", "tradeName", "tradeNam")) or ""),
+        legal_name=legal_name,
+        trade_name=trade_name,
         registration_status=registration_status,
         billing_address=_address(data),
         premises_address=_address(data),

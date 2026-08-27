@@ -55,6 +55,80 @@ class SupabaseGateway:
         if not rows:
             raise SupabaseGatewayError("You do not have access to this workspace.")
 
+    async def assert_workspace_permission(
+        self, access_token: str, workspace_id: str, permission: str
+    ) -> None:
+        result = await self.user_rpc(
+            access_token,
+            "breezy_has_permission",
+            {
+                "target_workspace_id": workspace_id,
+                "requested_permission": permission,
+            },
+        )
+        if result is not True:
+            raise SupabaseGatewayError(
+                "You do not have permission to perform this action."
+            )
+
+    async def user_rpc(
+        self, access_token: str, function_name: str, payload: dict[str, Any]
+    ) -> Any:
+        if not self.settings.supabase_url or not self.settings.supabase_anon_key:
+            raise SupabaseGatewayError("Supabase authentication is not configured.")
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url.rstrip('/')}/rest/v1/rpc/{function_name}",
+                json=payload,
+                headers={
+                    "apikey": self.settings.supabase_anon_key,
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+            )
+        if response.is_error:
+            detail = ""
+            try:
+                detail = str(response.json().get("message") or "")
+            except (ValueError, AttributeError):
+                pass
+            raise SupabaseGatewayError(
+                detail or f"Supabase request failed ({response.status_code})."
+            )
+        if response.status_code == 204 or not response.content:
+            return None
+        return response.json()
+
+    async def send_auth_invitation(
+        self,
+        email: str,
+        redirect_to: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        headers = self._service_headers()
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url.rstrip('/')}/auth/v1/invite",
+                params={"redirect_to": redirect_to},
+                json={"email": email, "data": metadata or {}},
+                headers=headers,
+            )
+        if response.is_error:
+            detail = ""
+            try:
+                payload = response.json()
+                detail = str(
+                    payload.get("msg")
+                    or payload.get("message")
+                    or payload.get("error_description")
+                    or ""
+                )
+            except (ValueError, AttributeError):
+                pass
+            raise SupabaseGatewayError(
+                detail or "Supabase could not send the invitation email."
+            )
+
     async def cached_gstin(self, gstin: str) -> dict[str, Any] | None:
         rows = await self._get(
             "breezy_gstin_cache",
@@ -71,7 +145,7 @@ class SupabaseGateway:
             "breezy_gstin_cache",
             params={"on_conflict": "gstin"},
             json=[{"gstin": gstin, "provider": "whitebooks", "payload": payload}],
-            headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
 
     async def verify_workspace_gstin(self, workspace_id: str, gstin: str) -> bool:

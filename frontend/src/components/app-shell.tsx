@@ -95,7 +95,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { user } = useAuthUser()
-  const { workspace, membership, creditAccount, can } = useWorkspaceAccess()
+  const { workspace, membership, creditAccount, workspaceOptions, can, switchWorkspace } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
   const { setup, companies, invoices, payslips, syncError } = useMvpStore()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
@@ -256,6 +256,20 @@ export function AppShell() {
                   <Settings2 />
                   Workspace settings
                 </DropdownMenuItem>
+                {workspaceOptions.length > 1 ? <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
+                  {workspaceOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.workspace.id}
+                      onClick={() => void switchWorkspace(option.workspace.id).then(() => navigate("/workspace"))}
+                    >
+                      <Building2 />
+                      <span className="min-w-0 flex-1 truncate">{option.workspace.name}</span>
+                      {option.workspace.id === workspace?.id ? <Check className="ml-auto" /> : null}
+                    </DropdownMenuItem>
+                  ))}
+                </> : null}
                 <DropdownMenuItem onClick={signOut}>
                   <LogOut />
                   Sign out

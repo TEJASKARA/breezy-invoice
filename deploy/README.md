@@ -12,6 +12,7 @@ with the existing n8n deployment.
 3. Copy `backend/.env.example` to `backend/.env` on the VPS and set:
    - `APP_ENV=production`
    - `FRONTEND_ORIGINS=https://chanax.in,https://www.chanax.in`
+   - `FRONTEND_URL=https://chanax.in`
    - the three Supabase values
    - `WHITEBOOKS_CLIENT_ID` and `WHITEBOOKS_CLIENT_SECRET`
 4. Install the reverse-proxy configuration from
@@ -49,3 +50,11 @@ frontend changes from the same branch.
 Set `VITE_API_URL=https://api.chanax.in` for Production and Preview, then
 redeploy the frontend once. The frontend never receives the WhiteBooks client
 secret.
+
+## Team invitation email setup
+
+Run `supabase/migrations/202608270001_team_invitation_delivery.sql` in the
+Supabase SQL Editor. In Supabase Authentication → URL Configuration, allow
+`https://chanax.in/workspace` as a redirect URL. The backend uses Supabase Auth
+to email new team members; configure custom SMTP in Supabase before production
+so invitation delivery is not limited by the development mail service.

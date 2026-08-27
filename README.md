@@ -1,6 +1,6 @@
-# BreezyInvoice
+# ChanaX
 
-BreezyInvoice is a CA-centric workspace for multi-entity invoicing, payslip
+ChanaX is a CA-centric workspace for multi-entity invoicing, payslip
 generation, GSTIN verification, and Tally-ready exports.
 
 ## Project structure

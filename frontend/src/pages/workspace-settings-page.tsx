@@ -15,7 +15,6 @@ import {
   useWorkspaceAccess,
 } from "@/lib/workspace-access"
 import {
-  inviteWorkspaceUser,
   loadWorkspacePeople,
   permissionOptions,
   permissionsForRole,
@@ -26,6 +25,7 @@ import {
   type WorkspacePermission,
   type WorkspaceRole,
 } from "@/lib/workspace-access-service"
+import { sendWorkspaceInvitation } from "@/lib/team-api"
 
 type EditableRole = Exclude<WorkspaceRole, "owner">
 const editableRoles: { value: EditableRole; label: string }[] = [
@@ -138,10 +138,10 @@ export function WorkspaceSettingsPage() {
     if (!workspace) return
     setSaving(true)
     try {
-      await inviteWorkspaceUser(workspace.id, inviteEmail, inviteRole, invitePermissions)
+      const result = await sendWorkspaceInvitation(workspace.id, inviteEmail, inviteRole, invitePermissions)
       setInviteEmail("")
       await loadPeople()
-      showSuccess("Access was added. Existing BreezyInvoice users can use it immediately; new users receive access when they sign up with this email.")
+      showSuccess(result.message)
     } catch (inviteError) { showError(inviteError) } finally { setSaving(false) }
   }
 
@@ -205,7 +205,7 @@ export function WorkspaceSettingsPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><Crown className="size-4" />Workspace</CardTitle><CardDescription>Your shared BreezyInvoice account.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Crown className="size-4" />Workspace</CardTitle><CardDescription>Your shared ChanaX account.</CardDescription></CardHeader>
           <CardContent className="space-y-3"><p className="text-lg font-semibold">{workspace.name}</p><div className="flex gap-2"><Badge variant="outline">{membership.role}</Badge><Badge variant={workspace.status === "active" ? "secondary" : "destructive"}>{workspace.status}</Badge></div></CardContent>
         </Card>
         <Card>
@@ -242,7 +242,7 @@ export function WorkspaceSettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Users className="size-4" />Team and page access</CardTitle><CardDescription>{canManageTeam ? `The base plan includes 3 total accounts. ${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length} seat${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length === 1 ? " is" : "s are"} currently reserved.` : "Only the workspace owner or an admin can change team access."}</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Users className="size-4" />Team and page access</CardTitle><CardDescription>{canManageTeam ? `This workspace includes ${(subscription?.included_seats ?? 3) + (subscription?.extra_seats ?? 0)} total accounts. ${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length} seat${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length === 1 ? " is" : "s are"} currently reserved.` : "Only the workspace owner or an admin can change team access."}</CardDescription></CardHeader>
         <CardContent className="space-y-6">
           {canManageTeam ? (
             <form onSubmit={sendInvitation} className="space-y-4 rounded-xl border bg-muted/20 p-4">

@@ -56,6 +56,11 @@ export type WorkspaceCreditAccount = {
   monthly_credits_reset_at: string | null
 }
 
+export type WorkspaceOption = {
+  workspace: Workspace
+  membership: WorkspaceMembership
+}
+
 export type WorkspaceMember = WorkspaceMembership & {
   profile: { full_name: string; email: string | null; avatar_path: string | null } | null
 }
@@ -80,49 +85,58 @@ export function allowsWorkspacePermission(membership: WorkspaceMembership | null
   return false
 }
 
-export async function loadWorkspaceAccess(user: User) {
+export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: string | null) {
   if (!supabase) throw new Error("Supabase is not configured.")
-  let membershipResult = await supabase
+  let membershipsResult = await supabase
     .from("breezy_workspace_members")
     .select("id, workspace_id, user_id, role, permissions, status, joined_at")
     .eq("user_id", user.id)
     .eq("status", "active")
     .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle()
-  if (membershipResult.error) throw new Error(membershipResult.error.message)
-  if (!membershipResult.data?.workspace_id) {
+  if (membershipsResult.error) throw new Error(membershipsResult.error.message)
+  if (!membershipsResult.data?.length) {
     const ensured = await supabase.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
       throw new Error(friendlyWorkspaceError(ensured.error))
     }
-    membershipResult = await supabase
+    membershipsResult = await supabase
       .from("breezy_workspace_members")
       .select("id, workspace_id, user_id, role, permissions, status, joined_at")
       .eq("user_id", user.id)
       .eq("status", "active")
       .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    if (membershipResult.error) throw new Error(membershipResult.error.message)
+    if (membershipsResult.error) throw new Error(membershipsResult.error.message)
   }
-  const membership = membershipResult.data as WorkspaceMembership | null
-  if (!membership) return { membership: null, workspace: null, subscription: null, creditAccount: null }
+  const memberships = (membershipsResult.data || []) as WorkspaceMembership[]
+  if (!memberships.length) return { membership: null, workspace: null, subscription: null, creditAccount: null, workspaceOptions: [] }
+  const membership = memberships.find((item) => item.workspace_id === preferredWorkspaceId) || memberships.at(-1)!
 
-  const [workspaceResult, subscriptionResult, creditResult] = await Promise.all([
-    supabase.from("breezy_workspaces").select("id, owner_user_id, name, subscription_code, status, created_at").eq("id", membership.workspace_id).single(),
-    supabase.from("breezy_subscriptions").select("id, workspace_id, plan_key, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, limits").eq("workspace_id", membership.workspace_id).maybeSingle(),
+  const workspacesResult = await supabase
+    .from("breezy_workspaces")
+    .select("id, owner_user_id, name, subscription_code, status, created_at")
+    .in("id", memberships.map((item) => item.workspace_id))
+  if (workspacesResult.error) throw new Error(workspacesResult.error.message)
+  const workspaceById = new Map((workspacesResult.data || []).map((item) => [item.id, item as Workspace]))
+  const workspace = workspaceById.get(membership.workspace_id) || null
+  if (!workspace) throw new Error("The selected workspace could not be loaded.")
+  const workspaceOptions = memberships.flatMap((item) => {
+    const optionWorkspace = workspaceById.get(item.workspace_id)
+    return optionWorkspace ? [{ workspace: optionWorkspace, membership: item }] : []
+  })
+
+  const [subscriptionResult, creditResult] = await Promise.all([
+    supabase.from("breezy_subscriptions").select("id, workspace_id, plan_key, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, limits, included_seats, extra_seats").eq("workspace_id", membership.workspace_id).maybeSingle(),
     supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at").eq("workspace_id", membership.workspace_id).maybeSingle(),
   ])
-  if (workspaceResult.error) throw new Error(workspaceResult.error.message)
   if (subscriptionResult.error) throw new Error(subscriptionResult.error.message)
   const creditTableMissing = creditResult.error?.code === "42P01" || creditResult.error?.message?.includes("breezy_credit_accounts")
   if (creditResult.error && !creditTableMissing) throw new Error(creditResult.error.message)
   return {
     membership,
-    workspace: workspaceResult.data as Workspace,
+    workspace,
     subscription: subscriptionResult.data as WorkspaceSubscription | null,
     creditAccount: creditTableMissing ? null : creditResult.data as WorkspaceCreditAccount | null,
+    workspaceOptions,
   }
 }
 
@@ -166,12 +180,6 @@ export async function loadWorkspacePeople(workspaceId: string) {
   const profiles = new Map((profilesResult.data || []).map((profile) => [profile.id, profile]))
   const members = (membersResult.data || []).map((member) => ({ ...member, profile: profiles.get(member.user_id) || null }) as WorkspaceMember)
   return { members, invitations: (invitationsResult.data || []) as WorkspaceInvitation[] }
-}
-
-export async function inviteWorkspaceUser(workspaceId: string, email: string, role: Exclude<WorkspaceRole, "owner">, permissions: WorkspacePermission[]) {
-  if (!supabase) throw new Error("Supabase is not configured.")
-  const { error } = await supabase.rpc("breezy_invite_workspace_user", { target_workspace_id: workspaceId, target_email: email, target_role: role, target_permissions: permissions })
-  if (error) throw new Error(error.message)
 }
 
 export async function updateWorkspaceMember(workspaceId: string, userId: string, role: Exclude<WorkspaceRole, "owner">, permissions: WorkspacePermission[], status: "active" | "disabled") {

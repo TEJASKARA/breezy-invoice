@@ -10,6 +10,7 @@ import {
   type WorkspacePermission,
   type WorkspaceSubscription,
   type WorkspaceCreditAccount,
+  type WorkspaceOption,
 } from "@/lib/workspace-access-service"
 
 type WorkspaceAccessState = {
@@ -18,10 +19,12 @@ type WorkspaceAccessState = {
   membership: WorkspaceMembership | null
   subscription: WorkspaceSubscription | null
   creditAccount: WorkspaceCreditAccount | null
+  workspaceOptions: WorkspaceOption[]
   loading: boolean
   error: string | null
   can: (permission: WorkspacePermission) => boolean
   refresh: () => Promise<void>
+  switchWorkspace: (workspaceId: string) => Promise<void>
 }
 
 const WorkspaceAccessContext = createContext<WorkspaceAccessState | null>(null)
@@ -32,27 +35,33 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   const [membership, setMembership] = useState<WorkspaceMembership | null>(null)
   const [subscription, setSubscription] = useState<WorkspaceSubscription | null>(null)
   const [creditAccount, setCreditAccount] = useState<WorkspaceCreditAccount | null>(null)
+  const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const hydrate = useCallback(async (nextUser: User | null) => {
+  const hydrate = useCallback(async (nextUser: User | null, preferredWorkspaceId?: string | null) => {
     setUser(nextUser)
     if (!nextUser) {
       setWorkspace(null)
       setMembership(null)
       setSubscription(null)
       setCreditAccount(null)
+      setWorkspaceOptions([])
       setError(null)
       setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const next = await loadWorkspaceAccess(nextUser)
+      const storageKey = `chanax-active-workspace:${nextUser.id}`
+      const preferred = preferredWorkspaceId ?? window.localStorage.getItem(storageKey)
+      const next = await loadWorkspaceAccess(nextUser, preferred)
       setWorkspace(next.workspace)
       setMembership(next.membership)
       setSubscription(next.subscription)
       setCreditAccount(next.creditAccount)
+      setWorkspaceOptions(next.workspaceOptions)
+      if (next.workspace?.id) window.localStorage.setItem(storageKey, next.workspace.id)
       setError(null)
     } catch (accessError) {
       setError(accessError instanceof Error ? accessError.message : "Workspace access could not be loaded.")
@@ -71,17 +80,23 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   }, [hydrate])
 
   const refresh = useCallback(async () => { await hydrate(user) }, [hydrate, user])
+  const switchWorkspace = useCallback(async (workspaceId: string) => {
+    if (!user) return
+    await hydrate(user, workspaceId)
+  }, [hydrate, user])
   const value = useMemo<WorkspaceAccessState>(() => ({
     user,
     workspace,
     membership,
     subscription,
     creditAccount,
+    workspaceOptions,
     loading,
     error,
     can: (permission) => allowsWorkspacePermission(membership, permission),
     refresh,
-  }), [user, workspace, membership, subscription, creditAccount, loading, error, refresh])
+    switchWorkspace,
+  }), [user, workspace, membership, subscription, creditAccount, workspaceOptions, loading, error, refresh, switchWorkspace])
 
   return <WorkspaceAccessContext.Provider value={value}>{children}</WorkspaceAccessContext.Provider>
 }

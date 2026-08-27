@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "ChanaX API"
     api_v1_prefix: str = "/api/v1"
     frontend_origins: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:5173"
 
     supabase_url: str = ""
     supabase_anon_key: str = ""
@@ -35,6 +36,10 @@ class Settings(BaseSettings):
             for origin in self.frontend_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def team_invite_redirect_url(self) -> str:
+        return f"{self.frontend_url.rstrip('/')}/workspace"
 
     @property
     def whitebooks_is_configured(self) -> bool:

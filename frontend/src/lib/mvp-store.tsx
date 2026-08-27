@@ -218,7 +218,12 @@ export type Setup = {
   accountType?: "ca" | "founder" | "employee"
   hasGstin?: boolean
   gstin: string
+  pan?: string
+  legalName?: string
+  tradeName?: string
+  gstRegistrationStatus?: string
   mailingAddress: string
+  premisesAddress?: string
   invoiceNumbering?: InvoiceNumbering
   leavePolicy?: LeavePolicy
   attendanceDrafts?: Record<string, AttendanceDraft>
