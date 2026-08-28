@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     whitebooks_base_url: str = "https://api.whitebooks.in"
     whitebooks_client_id: str = ""
     whitebooks_client_secret: str = ""
-    whitebooks_token_path: str = "/oauth/token"
+    whitebooks_token_path: str = "/gst/oauth/token"
     whitebooks_gstin_path: str = "/gst/api/v1/gstin/{gstin}"
     whitebooks_timeout_seconds: float = 20
 
