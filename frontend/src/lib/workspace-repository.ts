@@ -1,10 +1,12 @@
 import { supabase } from "@/lib/supabase"
 import { friendlyWorkspaceError } from "@/lib/workspace-errors"
-import type { Company, Customer, Employee, Expense, Invoice, MvpState, Payslip, Setup, TemplateSettings } from "@/lib/mvp-store"
+import type { Company, Customer, Employee, EmployeeLetter, Expense, Invoice, MvpState, Payslip, Proforma, Setup, TemplateSettings } from "@/lib/mvp-store"
 
 type PayloadRow = { id: string; payload: Record<string, unknown> }
 type RelatedPayloadRow = PayloadRow & { entity_id: string }
 type PayslipPayloadRow = RelatedPayloadRow & { employee_id: string | null }
+type ProformaPayloadRow = RelatedPayloadRow & { customer_id: string | null }
+type LetterPayloadRow = RelatedPayloadRow & { employee_id: string; letter_type: "offer" | "termination" }
 
 function client() {
   if (!supabase) throw new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.")
@@ -24,6 +26,11 @@ function isMissingExpensesTable(error: { code?: string; message: string } | null
   return error.code === "PGRST205" || error.message.includes("breezy_expenses") && error.message.includes("schema cache")
 }
 
+function isMissingOptionalTable(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return error.code === "PGRST205" || error.code === "42P01" || error.message.includes("schema cache")
+}
+
 export type WorkspaceLoadResult = Partial<MvpState> & { workspaceId: string; hasData: boolean }
 
 export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult | null> {
@@ -40,16 +47,20 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult
   }
   const workspaceId = String(membershipResult.data?.workspace_id || "")
   if (!workspaceId) return null
-  const [settingsResult, entitiesResult, customersResult, invoicesResult, employeesResult, payslipsResult, expensesResult] = await Promise.all([
+  const [settingsResult, entitiesResult, customersResult, invoicesResult, proformasResult, employeesResult, payslipsResult, expensesResult, lettersResult] = await Promise.all([
     db.from("breezy_workspace_settings").select("setup, template").eq("workspace_id", workspaceId).maybeSingle(),
     db.from("breezy_entities").select("id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_customers").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_invoices").select("id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_proformas").select("id, entity_id, customer_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_employees").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_payslips").select("id, entity_id, employee_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_expenses").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_employee_letters").select("id, entity_id, employee_id, letter_type, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
   ])
   ;[settingsResult, entitiesResult, customersResult, invoicesResult, employeesResult, payslipsResult].forEach((result) => throwIfError(result.error))
+  if (!isMissingOptionalTable(proformasResult.error)) throwIfError(proformasResult.error)
+  if (!isMissingOptionalTable(lettersResult.error)) throwIfError(lettersResult.error)
   if (!isMissingExpensesTable(expensesResult.error)) throwIfError(expensesResult.error)
   const hasData = membershipResult.data?.role !== "owner" || Boolean(
     settingsResult.data
@@ -68,6 +79,7 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult
     companies: ((entitiesResult.data || []) as PayloadRow[]).map((row) => ({ ...row.payload, id: row.id }) as Company),
     customers: ((customersResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Customer),
     invoices: ((invoicesResult.data || []) as PayloadRow[]).map((row) => ({ ...row.payload, id: row.id }) as Invoice),
+    proformas: ((proformasResult.error ? [] : proformasResult.data || []) as ProformaPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id, customerId: row.customer_id || undefined }) as Proforma),
     employees: ((employeesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Employee),
     payslips: ((payslipsResult.data || []) as PayslipPayloadRow[]).map((row) => ({
       ...row.payload,
@@ -80,6 +92,7 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult
       id: row.id,
       entityId: row.entity_id,
     }) as Expense),
+    employeeLetters: ((lettersResult.error ? [] : lettersResult.data || []) as LetterPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id, employeeId: row.employee_id, letterType: row.letter_type }) as EmployeeLetter),
   }
 }
 
@@ -143,6 +156,21 @@ export async function deleteInvoiceRow(workspaceId: string, invoiceId: string) {
   throwIfError(error)
 }
 
+export async function upsertProformas(userId: string, workspaceId: string, proformas: Proforma[]) {
+  if (!proformas.length) return
+  const { error } = await client().from("breezy_proformas").upsert(proformas.map((proforma) => ({
+    id: proforma.id, user_id: userId, workspace_id: workspaceId, entity_id: proforma.entityId || null,
+    customer_id: proforma.customerId || null,
+    payload: withoutKeys(proforma as unknown as Record<string, unknown>, ["id", "entityId", "customerId"]),
+  })))
+  throwIfError(error)
+}
+
+export async function deleteProformaRow(workspaceId: string, proformaId: string) {
+  const { error } = await client().from("breezy_proformas").delete().eq("workspace_id", workspaceId).eq("id", proformaId)
+  throwIfError(error)
+}
+
 export async function upsertEmployees(userId: string, workspaceId: string, employees: Employee[]) {
   if (!employees.length) return
   const { error } = await client().from("breezy_employees").upsert(employees.map((employee) => ({
@@ -157,6 +185,21 @@ export async function upsertEmployees(userId: string, workspaceId: string, emplo
 
 export async function deleteEmployeeRow(workspaceId: string, employeeId: string) {
   const { error } = await client().from("breezy_employees").delete().eq("workspace_id", workspaceId).eq("id", employeeId)
+  throwIfError(error)
+}
+
+export async function upsertEmployeeLetters(userId: string, workspaceId: string, letters: EmployeeLetter[]) {
+  if (!letters.length) return
+  const { error } = await client().from("breezy_employee_letters").upsert(letters.map((letter) => ({
+    id: letter.id, user_id: userId, workspace_id: workspaceId, entity_id: letter.entityId,
+    employee_id: letter.employeeId, letter_type: letter.letterType,
+    payload: withoutKeys(letter as unknown as Record<string, unknown>, ["id", "entityId", "employeeId", "letterType"]),
+  })))
+  throwIfError(error)
+}
+
+export async function deleteEmployeeLetterRow(workspaceId: string, letterId: string) {
+  const { error } = await client().from("breezy_employee_letters").delete().eq("workspace_id", workspaceId).eq("id", letterId)
   throwIfError(error)
 }
 
@@ -201,7 +244,9 @@ export async function saveFullWorkspace(userId: string, workspaceId: string, sta
   await Promise.all([
     upsertCustomers(userId, workspaceId, state.customers),
     upsertInvoices(userId, workspaceId, state.invoices),
+    upsertProformas(userId, workspaceId, state.proformas),
     upsertEmployees(userId, workspaceId, state.employees),
+    upsertEmployeeLetters(userId, workspaceId, state.employeeLetters),
   ])
   await upsertPayslips(userId, workspaceId, state.payslips)
   await upsertExpenses(userId, workspaceId, state.expenses)

@@ -1,9 +1,12 @@
 import {
+  AlertTriangle,
   Building2,
   CalendarCheck2,
   Check,
   ChevronDown,
   FileText,
+  FileSignature,
+  FilePlus2,
   FileOutput,
   CircleHelp,
   Coins,
@@ -24,6 +27,7 @@ import { BrandMark } from "@/components/brand-mark"
 import { FirstLoginTour } from "@/components/first-login-tour"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,7 +60,9 @@ const navigation = [
   { label: "Overview", href: "/workspace", icon: LayoutDashboard, end: true, permission: null },
   { label: "Entities", href: "/entities", icon: Building2, permission: "entities.read" },
   { label: "Invoices", href: "/invoices", icon: ReceiptText, permission: "invoices.read" },
+  { label: "Proformas", href: "/proformas", icon: FilePlus2, permission: "invoices.read" },
   { label: "Employees", href: "/employees", icon: Users, permission: "payslips.read" },
+  { label: "Employee letters", href: "/employees/letters", icon: FileSignature, permission: "payslips.read" },
   { label: "Attendance", href: "/attendance", icon: CalendarCheck2, permission: "payslips.read" },
   { label: "Expenses", href: "/expenses", icon: WalletCards, permission: "expenses.read" },
   { label: "Data Export", href: "/tally-export", icon: FileOutput, permission: "data_export.read" },
@@ -95,9 +101,9 @@ export function AppShell() {
   const navigate = useNavigate()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { user } = useAuthUser()
-  const { workspace, membership, creditAccount, workspaceOptions, can, switchWorkspace } = useWorkspaceAccess()
+  const { workspace, membership, creditAccount, workspaceOptions, can, refresh, switchWorkspace } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
-  const { setup, companies, invoices, payslips, syncError } = useMvpStore()
+  const { setup, companies, invoices, proformas, payslips, syncError } = useMvpStore()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
   const avatarUrl = String(user?.user_metadata.avatar_url || user?.user_metadata.picture || "")
   const initials = fullName.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()
@@ -108,7 +114,7 @@ export function AppShell() {
     ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used)
       + creditAccount.monthly_credits_remaining
       + creditAccount.topup_credits_remaining
-    : Math.max(0, 10 - invoices.length - payslips.length)
+    : Math.max(0, 10 - invoices.length - proformas.length - payslips.length)
   useEffect(() => {
     if (!user) return
     const storageKey = `breezyinvoice-product-tour:${user.id}`
@@ -127,6 +133,7 @@ export function AppShell() {
     setTourOpen(false)
   }
   async function signOut() { await supabase?.auth.signOut(); navigate("/login") }
+  if (workspace?.status === "suspended") return <SuspendedWorkspaceScreen workspaceId={workspace.id} workspaceName={workspace.name} onRestored={() => void refresh()} />
   return (
     <div className="min-h-svh bg-muted/30">
       <FirstLoginTour
@@ -292,4 +299,51 @@ export function AppShell() {
       </div>
     </div>
   )
+}
+
+function SuspendedWorkspaceScreen({ workspaceId, workspaceName, onRestored }: { workspaceId: string; workspaceName: string; onRestored: () => void }) {
+  const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
+  const [purgeAfter, setPurgeAfter] = useState("")
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (!supabase) return
+    void supabase.from("breezy_account_deletion_requests").select("purge_after").eq("status", "pending").maybeSingle().then(({ data }) => setPurgeAfter(String(data?.purge_after || "")))
+  }, [])
+
+  async function restoreAccount() {
+    if (!supabase) return
+    setSaving(true)
+    const { error: restoreError } = await supabase.rpc("breezy_cancel_account_deletion", { target_workspace_id: workspaceId })
+    if (restoreError) {
+      setError(restoreError.message)
+      setSaving(false)
+      return
+    }
+    await onRestored()
+  }
+
+  async function signOut() {
+    await supabase?.auth.signOut()
+    navigate("/login")
+  }
+
+  return <main className="flex min-h-svh items-center justify-center bg-muted/30 p-5">
+    <Card className="w-full max-w-xl">
+      <CardHeader>
+        <div className="mb-3 flex size-11 items-center justify-center rounded-full bg-amber-100 text-amber-700"><AlertTriangle /></div>
+        <CardTitle>Account deletion is scheduled</CardTitle>
+        <CardDescription>{workspaceName} is deactivated. Your operational data and credits are unavailable while deletion is pending.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="rounded-lg border bg-muted/50 p-3 text-sm">{purgeAfter ? <>Permanent deletion is scheduled after <strong>{new Intl.DateTimeFormat("en-IN", { dateStyle: "long" }).format(new Date(purgeAfter))}</strong>.</> : "Your 30-day recovery period is active."}</p>
+        {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button disabled={saving} onClick={() => void restoreAccount()}>{saving ? "Restoring…" : "Cancel deletion and restore account"}</Button>
+          <Button variant="outline" onClick={() => void signOut()}>Sign out</Button>
+        </div>
+      </CardContent>
+    </Card>
+  </main>
 }

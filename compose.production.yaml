@@ -15,3 +15,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+  deletion-purger:
+    image: curlimages/curl:8.12.1
+    env_file:
+      - ./backend/.env
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - while true; do curl --fail --silent --show-error -X POST -H "X-ChanaX-Cron-Secret:$${ACCOUNT_DELETION_CRON_SECRET}" http://api:8000/api/v1/maintenance/purge-deletions; sleep 86400; done
+    restart: unless-stopped

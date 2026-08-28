@@ -6,6 +6,8 @@ import {
   deleteEmployeeRow,
   deleteExpenseRow,
   deleteInvoiceRow,
+  deleteProformaRow,
+  deleteEmployeeLetterRow,
   deletePayslipRow,
   loadWorkspace,
   saveFullWorkspace,
@@ -15,6 +17,8 @@ import {
   upsertEmployees,
   upsertExpenses,
   upsertInvoices,
+  upsertProformas,
+  upsertEmployeeLetters,
   upsertPayslips,
 } from "@/lib/workspace-repository"
 
@@ -64,6 +68,7 @@ export type Invoice = {
   lineItems?: InvoiceLineItem[]
   status: "Draft" | "Generated"
 }
+export type Proforma = Invoice & { entityId: string; validUntil?: string; convertedInvoiceId?: string }
 export type PayrollComponent = { id: string; label: string; amount: number }
 export type AttendanceHoliday = { id: string; date: string; name: string }
 export type AttendanceDayStatus = "present" | "half_day" | "paid_leave" | "unpaid_leave"
@@ -108,6 +113,20 @@ export type Employee = {
   overtimeMode?: "hourly" | "daily"
   overtimeRate?: number
   tallyLedgerName?: string
+}
+export type EmployeeLetter = {
+  id: string
+  entityId: string
+  employeeId: string
+  letterType: "offer" | "termination"
+  title: string
+  issueDate: string
+  effectiveDate: string
+  subject: string
+  body: string
+  status: "Draft" | "Issued"
+  signatureName?: string
+  issuedAt?: string
 }
 export type Payslip = {
   id: string
@@ -228,7 +247,7 @@ export type Setup = {
   leavePolicy?: LeavePolicy
   attendanceDrafts?: Record<string, AttendanceDraft>
 }
-export type MvpState = { setup: Setup | null; companies: Company[]; customers: Customer[]; invoices: Invoice[]; employees: Employee[]; payslips: Payslip[]; expenses: Expense[]; template: TemplateSettings }
+export type MvpState = { setup: Setup | null; companies: Company[]; customers: Customer[]; invoices: Invoice[]; proformas: Proforma[]; employees: Employee[]; employeeLetters: EmployeeLetter[]; payslips: Payslip[]; expenses: Expense[]; template: TemplateSettings }
 type MvpStore = MvpState & {
   loading: boolean
   syncStatus: "local" | "loading" | "saving" | "synced" | "error"
@@ -244,10 +263,16 @@ type MvpStore = MvpState & {
   addInvoice: (invoice: Omit<Invoice, "id" | "number">) => Promise<void>
   addInvoices: (invoices: Omit<Invoice, "id" | "number">[]) => Promise<void>
   deleteInvoice: (invoiceId: string) => Promise<void>
+  addProforma: (proforma: Omit<Proforma, "id" | "number">) => Promise<void>
+  updateProforma: (proformaId: string, changes: Partial<Omit<Proforma, "id">>) => Promise<void>
+  deleteProforma: (proformaId: string) => Promise<void>
   addEmployee: (employee: Omit<Employee, "id">) => Promise<string>
   addEmployees: (employees: Omit<Employee, "id">[]) => Promise<void>
   updateEmployee: (employeeId: string, changes: Partial<Omit<Employee, "id">>) => Promise<void>
   deleteEmployee: (employeeId: string) => Promise<void>
+  addEmployeeLetter: (letter: Omit<EmployeeLetter, "id">) => Promise<void>
+  updateEmployeeLetter: (letterId: string, changes: Partial<Omit<EmployeeLetter, "id">>) => Promise<void>
+  deleteEmployeeLetter: (letterId: string) => Promise<void>
   addPayslip: (payslip: Omit<Payslip, "id">) => Promise<void>
   addPayslips: (payslips: Omit<Payslip, "id">[]) => Promise<void>
   updatePayslip: (payslipId: string, changes: Partial<Omit<Payslip, "id">>) => Promise<void>
@@ -345,7 +370,7 @@ function advanceCompanyNumbering(company: Company, issuedNumbers: string[]) {
     invoiceNumbering: { ...numbering, nextNumber: Math.max(numbering.nextNumber, highestIssued + 1) },
   }
 }
-const emptyState = (): MvpState => ({ setup: null, companies: [], customers: [], invoices: [], employees: [], payslips: [], expenses: [], template: defaultTemplate() })
+const emptyState = (): MvpState => ({ setup: null, companies: [], customers: [], invoices: [], proformas: [], employees: [], employeeLetters: [], payslips: [], expenses: [], template: defaultTemplate() })
 function normalizeState(saved: Partial<MvpState>): MvpState {
   const restored = {
     ...emptyState(),
@@ -369,6 +394,8 @@ function normalizeState(saved: Partial<MvpState>): MvpState {
       hsnSacCodes: [...new Set([...(company.hsnSacCodes || []), company.hsnSac].filter(Boolean))],
     })),
     expenses: restored.expenses || [],
+    proformas: restored.proformas || [],
+    employeeLetters: restored.employeeLetters || [],
     customers: restored.customers.map((customer) => ({ ...customer, entityId: customer.entityId || fallbackEntityId })),
     employees: (restored.employees || []).map((employee) => ({
       ...employee,
@@ -655,6 +682,28 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       await persistAndWait((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))
       commit({ ...stateRef.current, invoices: stateRef.current.invoices.filter((invoice) => invoice.id !== invoiceId) })
     },
+    addProforma: async (proforma) => {
+      const current = stateRef.current
+      const prefix = `PI-${new Date().getFullYear()}-`
+      const highest = current.proformas.reduce((value, item) => {
+        const sequence = item.entityId === proforma.entityId && item.number.startsWith(prefix) ? Number(item.number.slice(prefix.length)) : 0
+        return Number.isSafeInteger(sequence) ? Math.max(value, sequence) : value
+      }, 0)
+      const added: Proforma = { ...proforma, id: id(), number: `${prefix}${String(highest + 1).padStart(4, "0")}` }
+      await persistAndWait((userId, workspaceId) => upsertProformas(userId, workspaceId, [added]))
+      commit({ ...stateRef.current, proformas: [added, ...stateRef.current.proformas] })
+    },
+    updateProforma: async (proformaId, changes) => {
+      const existing = stateRef.current.proformas.find((item) => item.id === proformaId)
+      if (!existing) return
+      const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertProformas(userId, workspaceId, [updated]))
+      commit({ ...stateRef.current, proformas: stateRef.current.proformas.map((item) => item.id === proformaId ? updated : item) })
+    },
+    deleteProforma: async (proformaId) => {
+      await persistAndWait((_userId, workspaceId) => deleteProformaRow(workspaceId, proformaId))
+      commit({ ...stateRef.current, proformas: stateRef.current.proformas.filter((item) => item.id !== proformaId) })
+    },
     addEmployee: async (employee) => {
       const employeeId = id()
       const added = { ...employee, id: employeeId }
@@ -677,6 +726,22 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     deleteEmployee: async (employeeId) => {
       await persistAndWait((_userId, workspaceId) => deleteEmployeeRow(workspaceId, employeeId))
       commit({ ...stateRef.current, employees: stateRef.current.employees.filter((employee) => employee.id !== employeeId) })
+    },
+    addEmployeeLetter: async (letter) => {
+      const added: EmployeeLetter = { ...letter, id: id() }
+      await persistAndWait((userId, workspaceId) => upsertEmployeeLetters(userId, workspaceId, [added]))
+      commit({ ...stateRef.current, employeeLetters: [added, ...stateRef.current.employeeLetters] })
+    },
+    updateEmployeeLetter: async (letterId, changes) => {
+      const existing = stateRef.current.employeeLetters.find((letter) => letter.id === letterId)
+      if (!existing) return
+      const updated = { ...existing, ...changes }
+      await persistAndWait((userId, workspaceId) => upsertEmployeeLetters(userId, workspaceId, [updated]))
+      commit({ ...stateRef.current, employeeLetters: stateRef.current.employeeLetters.map((letter) => letter.id === letterId ? updated : letter) })
+    },
+    deleteEmployeeLetter: async (letterId) => {
+      await persistAndWait((_userId, workspaceId) => deleteEmployeeLetterRow(workspaceId, letterId))
+      commit({ ...stateRef.current, employeeLetters: stateRef.current.employeeLetters.filter((letter) => letter.id !== letterId) })
     },
     addPayslip: async (payslip) => {
       const added = { ...payslip, id: id() }

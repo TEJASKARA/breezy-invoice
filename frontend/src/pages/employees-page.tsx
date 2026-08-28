@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react"
-import { CalendarCheck2, Copy, Download, Eye, Pencil, Plus, Share2, Trash2, Upload, UserPlus, X } from "lucide-react"
+import { CalendarCheck2, Copy, Download, Eye, FileSignature, Pencil, Plus, Share2, Trash2, Upload, UserPlus, X } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { AttendanceEditor } from "@/components/attendance-editor"
@@ -105,6 +105,7 @@ export function EmployeesPage() {
     employees,
     payslips,
     invoices,
+    proformas,
     template,
     addEmployee,
     addEmployees,
@@ -117,7 +118,7 @@ export function EmployeesPage() {
   } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
-  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
+  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + proformas.length + payslips.length)
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
   const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(companies[0]?.id || ""))
@@ -659,12 +660,13 @@ export function EmployeesPage() {
         description="Add employees separately or through Excel, reuse last month’s salary, and generate individual or bulk payslips."
         actions={<>
           <Button variant="outline" asChild><Link to="/attendance"><CalendarCheck2 />Attendance</Link></Button>
+          <Button variant="outline" asChild><Link to="/employees/letters"><FileSignature />Employee letters</Link></Button>
           {canManage ? <Button variant="outline" onClick={() => { setEmployeeDraft(blankEmployee(selectedEntityId)); setEditingEmployeeId(null); setShowEmployeeForm(true); clearMessages() }}><UserPlus />Add employee</Button> : null}
           {canManage ? <Button onClick={() => openPayslipForm()}><Plus />Create payslip</Button> : null}
         </>}
       />
 
-      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {payslipAllowance.remaining} remaining for invoices or payslips. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
+      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {payslipAllowance.remaining} remaining for invoices, proformas or payslips. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to employees and payslips. You can preview and download saved payslips, but record changes require payroll management permission.</p> : null}
 

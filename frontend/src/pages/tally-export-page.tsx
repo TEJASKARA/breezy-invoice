@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Download, FileCode2, Save, Search, Upload } from "lucide-react"
+import { Archive, Download, FileCode2, Loader2, Save, Search, Upload } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type TallySettings, useMvpStore } from "@/lib/mvp-store"
 import { pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { createTallyPayrollXml, createTallySalesXml, downloadXml } from "@/lib/tally-xml"
+import { downloadCompleteDataExport, type ExportCategory } from "@/lib/data-export"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -40,7 +41,7 @@ function defaultTallySettings(companyName: string): TallySettings {
 }
 
 export function TallyExportPage() {
-  const { companies, customers, invoices, employees, payslips, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
+  const { companies, customers, invoices, proformas, employees, payslips, expenses, setup, template, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
   const { can } = useWorkspaceAccess()
   const canManage = can("data_export.manage")
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
@@ -51,6 +52,8 @@ export function TallyExportPage() {
   const [settings, setSettings] = useState<TallySettings>(defaultTallySettings(companies[0]?.companyName || ""))
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
+  const [exportingArchive, setExportingArchive] = useState(false)
+  const [archiveCategories, setArchiveCategories] = useState<ExportCategory[]>(["invoices", "expenses", "employees", "attendance", "payslips"])
   const customerMappingInput = useRef<HTMLInputElement>(null)
   const employeeMappingInput = useRef<HTMLInputElement>(null)
 
@@ -72,6 +75,8 @@ export function TallyExportPage() {
     const recordDate = payslip.paymentDate || `${payslip.month}-01`
     return payslip.entityId === selectedEntityId && payslip.status === "Generated" && recordDate >= dateFrom && recordDate <= dateTo
   }), [payslips, selectedEntityId, dateFrom, dateTo])
+  const selectedProformas = useMemo(() => proformas.filter((item) => item.entityId === selectedEntityId && item.date >= dateFrom && item.date <= dateTo), [proformas, selectedEntityId, dateFrom, dateTo])
+  const selectedExpenses = useMemo(() => expenses.filter((item) => item.entityId === selectedEntityId && item.date >= dateFrom && item.date <= dateTo), [expenses, selectedEntityId, dateFrom, dateTo])
 
   const visibleCustomers = entityCustomers.filter((customer) => [customer.companyName, customer.gstin, customer.tallyLedgerName || ""].some((value) => value.toLowerCase().includes(customerSearch.trim().toLowerCase())))
   const visibleEmployees = entityEmployees.filter((employee) => [employee.employeeName, employee.employeeCode, employee.tallyLedgerName || ""].some((value) => value.toLowerCase().includes(employeeSearch.trim().toLowerCase())))
@@ -116,7 +121,7 @@ export function TallyExportPage() {
     const worksheet = XLSX.utils.json_to_sheet(rows)
     worksheet["!cols"] = [{ wch: 38 }, { wch: 34 }, { wch: 18 }, { wch: 34 }]
     XLSX.utils.book_append_sheet(workbook, worksheet, "Customer Ledgers")
-    XLSX.writeFile(workbook, `BreezyInvoice-${safeFileName(entity?.companyName || "")}-customer-ledgers.xlsx`, { compression: true })
+    XLSX.writeFile(workbook, `ChanaX-${safeFileName(entity?.companyName || "")}-customer-ledgers.xlsx`, { compression: true })
   }
 
   const downloadEmployeeMapping = async () => {
@@ -132,7 +137,7 @@ export function TallyExportPage() {
     const worksheet = XLSX.utils.json_to_sheet(rows)
     worksheet["!cols"] = [{ wch: 38 }, { wch: 18 }, { wch: 30 }, { wch: 34 }]
     XLSX.utils.book_append_sheet(workbook, worksheet, "Employee Ledgers")
-    XLSX.writeFile(workbook, `BreezyInvoice-${safeFileName(entity?.companyName || "")}-employee-ledgers.xlsx`, { compression: true })
+    XLSX.writeFile(workbook, `ChanaX-${safeFileName(entity?.companyName || "")}-employee-ledgers.xlsx`, { compression: true })
   }
 
   const importCustomerMapping = async (file: File) => {
@@ -201,10 +206,39 @@ export function TallyExportPage() {
     setNotice(`${generatedPayslips.length} payroll journal voucher${generatedPayslips.length === 1 ? "" : "s"} exported for Tally.`)
   }
 
+  const exportCompleteArchive = async () => {
+    clearMessages()
+    if (!canManage) { setError("You do not have permission to create data exports."); return }
+    if (!entity || !archiveCategories.length) { setError("Select at least one export category."); return }
+    setExportingArchive(true)
+    try {
+      const fileCount = await downloadCompleteDataExport({
+        entity,
+        customers: entityCustomers,
+        employees: entityEmployees,
+        invoices: generatedInvoices,
+        proformas: selectedProformas,
+        payslips: generatedPayslips,
+        expenses: selectedExpenses,
+        setup,
+        template,
+        tallySettings: settings,
+        categories: archiveCategories,
+        dateFrom,
+        dateTo,
+      })
+      setNotice(`Complete export prepared with ${fileCount} file${fileCount === 1 ? "" : "s"}.`)
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : "The complete export could not be prepared.")
+    } finally {
+      setExportingArchive(false)
+    }
+  }
+
   if (!companies.length) return <Card><CardHeader><CardTitle>Add an entity first</CardTitle><CardDescription>Tally exports require an entity with invoices or payslips.</CardDescription></CardHeader></Card>
 
   return <div className="space-y-7">
-    <PageHeader eyebrow="Accounting export" title="Data Export" description="Map BreezyInvoice names to existing Tally ledgers and export generated invoices and payslips as importable voucher XML." />
+    <PageHeader eyebrow="Accounting export" title="Data Export" description="Map ChanaX names to existing Tally ledgers and export generated invoices and payslips as importable voucher XML." />
 
     {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access. Ledger edits, mapping uploads, and XML generation require Data Export management permission.</p> : null}
 
@@ -219,6 +253,31 @@ export function TallyExportPage() {
 
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p>}
+
+    <Card>
+      <CardHeader><CardTitle>Complete workspace export</CardTitle><CardDescription>Choose the records you need. ChanaX will create one ZIP containing an Excel workbook, available PDFs, Tally XML, and stored expense bills for this entity and date range.</CardDescription></CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {([
+            ["invoices", "Invoices", `${generatedInvoices.length} generated`],
+            ["proformas", "Proforma invoices", `${selectedProformas.length} saved`],
+            ["expenses", "Expenses & bills", `${selectedExpenses.length} expenses`],
+            ["employees", "Employee master", `${entityEmployees.length} employees`],
+            ["attendance", "Attendance", "Daily records in Excel"],
+            ["payslips", "Payslips", `${generatedPayslips.length} generated`],
+          ] as [ExportCategory, string, string][]).map(([value, label, detail]) => {
+            const checked = archiveCategories.includes(value)
+            return <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${checked ? "border-primary bg-primary/5" : "hover:bg-muted/40"}`}>
+              <input className="mt-1 size-4" type="checkbox" checked={checked} onChange={() => setArchiveCategories((current) => checked ? current.filter((item) => item !== value) : [...current, value])} />
+              <span><span className="block text-sm font-medium">{label}</span><span className="text-xs text-muted-foreground">{detail}</span></span>
+            </label>
+          })}
+        </div>
+        <Button className="w-full sm:w-auto" disabled={!canManage || exportingArchive || !archiveCategories.length} onClick={() => void exportCompleteArchive()}>
+          {exportingArchive ? <Loader2 className="animate-spin" /> : <Archive />} {exportingArchive ? "Preparing ZIP…" : "Download selected data as ZIP"}
+        </Button>
+      </CardContent>
+    </Card>
 
     <Card>
       <CardHeader><CardTitle>Tally company and ledger settings</CardTitle><CardDescription>These names must exactly match masters that already exist inside Tally. Settings are saved separately for each entity.</CardDescription></CardHeader>
@@ -302,7 +361,7 @@ function LedgerMappingCard({ title, description, mapped, total, search, setSearc
         <Button variant="outline" onClick={() => inputRef.current?.click()}><Upload />Upload mapping Excel</Button>
       </div>
       <div className="max-h-96 overflow-auto rounded-lg border">{children}</div>
-      <p className="text-xs text-muted-foreground">To change one ledger separately, edit its field and press Enter or click outside it. If no custom mapping is saved, BreezyInvoice uses the current customer or employee name.</p>
+      <p className="text-xs text-muted-foreground">To change one ledger separately, edit its field and press Enter or click outside it. If no custom mapping is saved, ChanaX uses the current customer or employee name.</p>
     </CardContent>
   </Card>
 }

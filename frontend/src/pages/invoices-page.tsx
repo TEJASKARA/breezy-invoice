@@ -57,10 +57,10 @@ const invoiceColumns = [
 ]
 
 export function InvoicesPage() {
-  const { setup, companies, customers, invoices, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const { setup, companies, customers, invoices, proformas, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
-  const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
+  const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + proformas.length + payslips.length)
   const [showForm, setShowForm] = useState(false)
   const [entityName, setEntityName] = useState("")
   const [bulkEntityName, setBulkEntityName] = useState("")
@@ -712,7 +712,7 @@ export function InvoicesPage() {
         ) : null}
       />
 
-      {invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {invoiceAllowance.remaining} remaining for invoices or payslips. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
+      {invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {invoiceAllowance.remaining} remaining for invoices, proformas or payslips. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to invoices. You can search, preview, and download saved invoices, but creating, importing, or deleting records requires invoice management permission.</p> : null}
 

@@ -49,10 +49,10 @@ function applyAttendance<T extends { month: string; earnings: PayrollComponent[]
 }
 
 export function AttendancePage() {
-  const { setup, companies, employees, invoices, payslips, template, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
+  const { setup, companies, employees, invoices, proformas, payslips, template, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
-  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
+  const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + proformas.length + payslips.length)
   const initialEntityId = companies[0]?.id || ""
   const initialMonth = currentMonth()
   const initialDraft = setup?.attendanceDrafts?.[`${initialEntityId}:${initialMonth}`]
@@ -341,7 +341,7 @@ export function AttendancePage() {
         actions={<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("excel")}><FileSpreadsheet />{exportingAttendance === "excel" ? "Preparing Excel…" : "Download Excel"}</Button><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("pdf")}><Download />{exportingAttendance === "pdf" ? "Preparing PDF…" : "Download PDF"}</Button><Button variant="outline" asChild><Link to="/employees"><Users />Employees & payslips</Link></Button></div>}
       />
 
-      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {payslipAllowance.remaining} remaining for invoices or payslips. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
+      {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Shared document credits:</strong> {payslipAllowance.remaining} remaining for invoices, proformas or payslips. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks 20 additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only payroll access. Attendance changes and payslip generation require payroll management permission.</p> : null}
       {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}

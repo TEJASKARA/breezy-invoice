@@ -31,6 +31,12 @@ export async function downloadExpenseBill(path: string, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
+export async function getExpenseBillFile(path: string) {
+  const { data, error } = await storage().download(path)
+  if (error) throw new Error(error.message)
+  return new Uint8Array(await data.arrayBuffer())
+}
+
 export async function removeExpenseBill(path: string) {
   const { error } = await storage().remove([path])
   if (error) throw new Error(error.message)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { CalendarDays, Check, Clipboard, Crown, KeyRound, MailPlus, Save, ShieldCheck, UserCog, Users } from "lucide-react"
+import { AlertTriangle, CalendarDays, Check, Clipboard, Coins, CreditCard, Crown, KeyRound, MailPlus, Save, ShieldCheck, Trash2, UserCog, Users } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -36,6 +36,11 @@ const editableRoles: { value: EditableRole; label: string }[] = [
   { value: "custom", label: "Custom" },
 ]
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+const previewPlans = [
+  { name: "Starter", price: "₹499", credits: 50, seats: 3, description: "For small teams getting started with monthly documents." },
+  { name: "Growth", price: "₹1,499", credits: 200, seats: 5, description: "For active businesses and accounting teams.", recommended: true },
+  { name: "CA Practice", price: "₹2,999", credits: 500, seats: 10, description: "For firms managing several client entities." },
+]
 
 function readableDate(value: string | null) {
   if (!value) return "Not set"
@@ -80,6 +85,9 @@ export function WorkspaceSettingsPage() {
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
+  const [deletionStage, setDeletionStage] = useState<0 | 1 | 2>(0)
+  const [deletionConfirmation, setDeletionConfirmation] = useState("")
+  const [deletionRequest, setDeletionRequest] = useState<{ status: string; purge_after: string } | null>(null)
 
   const canManageTeam = can("team.manage")
   const canManageWorkspace = can("workspace.manage")
@@ -109,6 +117,11 @@ export function WorkspaceSettingsPage() {
   }, [workspace, canManageTeam])
 
   useEffect(() => { void loadPeople() }, [loadPeople])
+
+  useEffect(() => {
+    if (!workspace || !isOwner || !supabase) return
+    void supabase.from("breezy_account_deletion_requests").select("status, purge_after").eq("workspace_id", workspace.id).eq("status", "pending").maybeSingle().then(({ data }) => setDeletionRequest(data))
+  }, [workspace, isOwner])
 
   function showSuccess(message: string) { setNotice(message); setError("") }
   function showError(value: unknown) { setError(value instanceof Error ? value.message : "The change could not be saved."); setNotice("") }
@@ -194,6 +207,32 @@ export function WorkspaceSettingsPage() {
     }
   }
 
+  async function requestDeletion() {
+    if (!workspace || deletionConfirmation !== "DELETE CHANAX ACCOUNT") return
+    setSaving(true)
+    try {
+      const { data, error: requestError } = await supabase!.rpc("breezy_request_account_deletion", { target_workspace_id: workspace.id })
+      if (requestError) throw new Error(requestError.message)
+      setDeletionRequest(data as { status: string; purge_after: string })
+      setDeletionStage(0)
+      setDeletionConfirmation("")
+      await supabase!.auth.signOut({ scope: "global" })
+      window.location.assign("/login?deletion=requested")
+    } catch (requestError) { showError(requestError) } finally { setSaving(false) }
+  }
+
+  async function cancelDeletion() {
+    if (!workspace) return
+    setSaving(true)
+    try {
+      const { error: cancelError } = await supabase!.rpc("breezy_cancel_account_deletion", { target_workspace_id: workspace.id })
+      if (cancelError) throw new Error(cancelError.message)
+      setDeletionRequest(null)
+      await refresh()
+      showSuccess("Account deletion cancelled. Workspace and team access have been restored.")
+    } catch (cancelError) { showError(cancelError) } finally { setSaving(false) }
+  }
+
   if (!workspace || !membership) return <p className="text-sm text-muted-foreground">Loading workspace settings…</p>
 
   return (
@@ -219,6 +258,11 @@ export function WorkspaceSettingsPage() {
       </div>
 
       <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Subscription plans</CardTitle><CardDescription>Preview pricing for the planned ChanaX subscriptions. Amounts can be changed before Razorpay checkout is connected.</CardDescription></CardHeader>
+        <CardContent><div className="grid gap-4 lg:grid-cols-3">{previewPlans.map((plan) => <div key={plan.name} className={`relative rounded-xl border p-5 ${plan.recommended ? "border-primary ring-1 ring-primary" : ""}`}>{plan.recommended ? <Badge className="absolute right-4 top-4">Recommended</Badge> : null}<h3 className="text-lg font-semibold">{plan.name}</h3><p className="mt-3 text-3xl font-bold">{plan.price}<span className="text-sm font-normal text-muted-foreground"> / month</span></p><p className="mt-2 text-sm text-muted-foreground">{plan.description}</p><div className="mt-5 space-y-2 text-sm"><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> shared credits/month</p><p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p><p className="flex items-center gap-2"><Check className="size-4" />Invoices, proformas and payslips</p><p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p></div><Button className="mt-5 w-full" variant={plan.recommended ? "default" : "outline"} disabled>Choose plan · Razorpay coming soon</Button></div>)}</div><div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Preview prices only. No payment will be collected until you approve the final plans and Razorpay is enabled.</p><p>Additional team accounts will be available as a recurring monthly add-on; its price will be finalised with the payment plans.</p></div></CardContent>
+      </Card>
+
+      <Card>
         <CardHeader><CardTitle>Business details</CardTitle><CardDescription>These details are shared across this workspace and used on generated documents.</CardDescription></CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveWorkspaceDetails}>
@@ -241,6 +285,9 @@ export function WorkspaceSettingsPage() {
         </CardContent>
       </Card>
 
+
+      {isOwner ? <Card className="ring-red-200 dark:ring-red-900"><CardHeader><CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-300"><AlertTriangle className="size-4" />Account and data</CardTitle><CardDescription>Deletion has a 30-day recovery period. It affects this entire workspace and every team member.</CardDescription></CardHeader><CardContent>{deletionRequest ? <div className="flex flex-col gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold">Deletion scheduled</p><p className="mt-1 text-sm">Permanent deletion is scheduled after {readableDate(deletionRequest.purge_after)}. Credits are frozen until this request is cancelled.</p></div><Button variant="outline" disabled={saving} onClick={() => void cancelDeletion()}>Cancel deletion</Button></div> : <div className="flex flex-col gap-4 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-medium">Delete this ChanaX account</p><p className="mt-1 text-sm text-muted-foreground">Access is disabled immediately. After 30 days, workspace data is deleted or anonymised and unused credits are permanently forfeited.</p><p className="mt-1 text-xs text-muted-foreground">Only records required for tax, fraud prevention, security or accounting may be retained. Encrypted backups expire on their normal rotation schedule.</p></div><Button variant="destructive" onClick={() => setDeletionStage(1)}><Trash2 />Delete account</Button></div>}</CardContent></Card> : null}
+
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Users className="size-4" />Team and page access</CardTitle><CardDescription>{canManageTeam ? `This workspace includes ${(subscription?.included_seats ?? 3) + (subscription?.extra_seats ?? 0)} total accounts. ${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length} seat${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length === 1 ? " is" : "s are"} currently reserved.` : "Only the workspace owner or an admin can change team access."}</CardDescription></CardHeader>
         <CardContent className="space-y-6">
@@ -251,7 +298,7 @@ export function WorkspaceSettingsPage() {
                 <div className="space-y-2"><Label htmlFor="invite-email">Email address</Label><Input id="invite-email" type="email" required value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="employee@company.com" /></div>
                 <div className="space-y-2"><Label htmlFor="invite-role">Role</Label><select id="invite-role" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={inviteRole} onChange={(event) => { const role = event.target.value as EditableRole; setInviteRole(role); setInvitePermissions(permissionsForRole(role)) }}>{editableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></div>
               </div>
-              {inviteRole === "admin" ? <p className="rounded-lg border bg-background p-3 text-sm">Admins can access and manage every BreezyInvoice page.</p> : <PermissionChecklist selected={invitePermissions} onChange={setInvitePermissions} />}
+              {inviteRole === "admin" ? <p className="rounded-lg border bg-background p-3 text-sm">Admins can access and manage every ChanaX page.</p> : <PermissionChecklist selected={invitePermissions} onChange={setInvitePermissions} />}
               <div className="flex justify-end"><Button type="submit" disabled={saving}><MailPlus />Add access</Button></div>
             </form>
           ) : null}
@@ -272,6 +319,7 @@ export function WorkspaceSettingsPage() {
       </Card>
 
       {editingMember ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Edit team member access"><Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto"><CardHeader><CardTitle>Edit access</CardTitle><CardDescription>{editingMember.profile?.full_name || editingMember.profile?.email}</CardDescription></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="edit-member-role">Role</Label><select id="edit-member-role" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={editRole} onChange={(event) => { const role = event.target.value as EditableRole; setEditRole(role); setEditPermissions(permissionsForRole(role)) }}>{editableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></div>{editRole === "admin" ? <p className="rounded-lg border bg-muted/30 p-3 text-sm">Admins can access and manage every page.</p> : <PermissionChecklist selected={editPermissions} onChange={setEditPermissions} />}<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setEditingMember(null)}>Cancel</Button><Button disabled={saving} onClick={() => void saveMember()}><Check />Save access</Button></div></CardContent></Card></div> : null}
+      {deletionStage ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="Confirm account deletion"><Card className="w-full max-w-xl"><CardHeader><CardTitle className="text-red-700">{deletionStage === 1 ? "First warning: workspace access will stop" : "Final warning: permanent deletion is scheduled"}</CardTitle><CardDescription>{deletionStage === 1 ? "Every team member will lose access immediately. Credits will be frozen and all documents will become unavailable." : "You have 30 days to cancel. After that, unused credits are lost and data is deleted or anonymised. Legally required records may be retained and encrypted backups expire on their normal schedule."}</CardDescription></CardHeader><CardContent className="space-y-4">{deletionStage === 2 ? <div className="space-y-2"><Label htmlFor="delete-confirmation">Type DELETE CHANAX ACCOUNT</Label><Input id="delete-confirmation" autoComplete="off" value={deletionConfirmation} onChange={(event) => setDeletionConfirmation(event.target.value)} /></div> : null}<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => { setDeletionStage(0); setDeletionConfirmation("") }}>Cancel</Button>{deletionStage === 1 ? <Button variant="destructive" onClick={() => setDeletionStage(2)}>I understand, continue</Button> : <Button variant="destructive" disabled={saving || deletionConfirmation !== "DELETE CHANAX ACCOUNT"} onClick={() => void requestDeletion()}><Trash2 />Schedule deletion</Button>}</div></CardContent></Card></div> : null}
     </div>
   )
 }

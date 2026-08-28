@@ -165,15 +165,124 @@ class SupabaseGateway:
             "POST",
             "breezy_credit_accounts",
             params={"on_conflict": "workspace_id"},
-            json=[{
-                "workspace_id": workspace_id,
-                "gst_status": "verified",
-                "verified_gstin": gstin,
-                "free_credits_granted": 30,
-            }],
+            json=[
+                {
+                    "workspace_id": workspace_id,
+                    "gst_status": "verified",
+                    "verified_gstin": gstin,
+                    "free_credits_granted": 30,
+                }
+            ],
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
         return True
+
+    async def due_account_deletions(self) -> list[dict[str, Any]]:
+        return await self._get(
+            "breezy_account_deletion_requests",
+            {
+                "select": "workspace_id,requested_by,purge_after",
+                "status": "eq.pending",
+                "purge_after": "lte.now()",
+            },
+        )
+
+    async def permanently_delete_workspace(
+        self, workspace_id: str, owner_user_id: str
+    ) -> None:
+        headers = self._service_headers()
+        expense_rows = await self._get(
+            "breezy_expenses",
+            {"select": "payload", "workspace_id": f"eq.{workspace_id}"},
+        )
+        expense_bill_paths = [
+            str(payload.get("billPath"))
+            for row in expense_rows
+            if isinstance((payload := row.get("payload")), dict)
+            and payload.get("billPath")
+        ]
+        await self._delete_storage_objects("expense-bills", expense_bill_paths)
+        # Also clean older uploads created before expenses were workspace-scoped.
+        await self._delete_storage_prefix("expense-bills", owner_user_id)
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.delete(
+                f"{self.settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{owner_user_id}",
+                headers=headers,
+            )
+        if response.status_code == 404:
+            await self._request(
+                "DELETE",
+                "breezy_workspaces",
+                params={
+                    "id": f"eq.{workspace_id}",
+                    "owner_user_id": f"eq.{owner_user_id}",
+                },
+                headers={"Prefer": "return=minimal"},
+            )
+            return
+        if response.is_error:
+            raise SupabaseGatewayError(
+                "The authentication account could not be removed "
+                f"({response.status_code})."
+            )
+
+    async def _delete_storage_prefix(self, bucket: str, root_prefix: str) -> None:
+        files: list[str] = []
+        headers = self._service_headers()
+
+        async def collect(prefix: str) -> None:
+            offset = 0
+            while True:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    response = await client.post(
+                        f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/list/{bucket}",
+                        json={"prefix": prefix, "limit": 100, "offset": offset},
+                        headers=headers,
+                    )
+                if response.status_code == 404:
+                    return
+                if response.is_error:
+                    raise SupabaseGatewayError(
+                        "Stored account files could not be enumerated for deletion."
+                    )
+                rows = response.json()
+                if not isinstance(rows, list) or not rows:
+                    return
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    name = str(row.get("name") or "")
+                    if not name:
+                        continue
+                    path = f"{prefix.rstrip('/')}/{name}"
+                    if row.get("id"):
+                        files.append(path)
+                    else:
+                        await collect(path)
+                if len(rows) < 100:
+                    return
+                offset += len(rows)
+
+        await collect(root_prefix)
+        await self._delete_storage_objects(bucket, files)
+
+    async def _delete_storage_objects(self, bucket: str, files: list[str]) -> None:
+        if not files:
+            return
+        headers = self._service_headers()
+        unique_files = list(dict.fromkeys(files))
+        for start in range(0, len(unique_files), 100):
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.request(
+                    "DELETE",
+                    f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/{bucket}",
+                    json={"prefixes": unique_files[start : start + 100]},
+                    headers=headers,
+                )
+            if response.is_error and response.status_code != 404:
+                raise SupabaseGatewayError(
+                    "Stored account files could not be permanently deleted."
+                )
 
     async def _get(self, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
         response = await self._request("GET", table, params=params)

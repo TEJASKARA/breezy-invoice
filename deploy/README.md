@@ -15,6 +15,8 @@ with the existing n8n deployment.
    - `FRONTEND_URL=https://chanax.in`
    - the three Supabase values
    - `WHITEBOOKS_CLIENT_ID` and `WHITEBOOKS_CLIENT_SECRET`
+   - a long random `ACCOUNT_DELETION_CRON_SECRET` (for example, generate one
+     with `openssl rand -hex 32`)
 4. Install the reverse-proxy configuration from
    `deploy/nginx/api.chanax.in.conf` only if the VPS already uses Nginx. If n8n
    uses Traefik or Caddy, add the equivalent route there instead.
@@ -44,6 +46,10 @@ private key in Git. They belong only in the VPS `.env` or GitHub secrets.
 After the first setup, a push to `main` that changes backend/deployment files
 runs tests and then updates the VPS automatically. Vercel continues deploying
 frontend changes from the same branch.
+
+The production Compose project also starts a small daily deletion worker. It
+permanently removes workspaces whose 30-day recovery period has expired. Keep
+`ACCOUNT_DELETION_CRON_SECRET` only in the VPS environment file.
 
 ## Vercel production variable
 

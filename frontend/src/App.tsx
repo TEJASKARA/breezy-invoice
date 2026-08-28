@@ -16,6 +16,8 @@ const EmployeesPage = lazy(() => import("@/pages/employees-page").then((module) 
 const EntitiesPage = lazy(() => import("@/pages/entities-page").then((module) => ({ default: module.EntitiesPage })))
 const ExpensesPage = lazy(() => import("@/pages/expenses-page").then((module) => ({ default: module.ExpensesPage })))
 const InvoicesPage = lazy(() => import("@/pages/invoices-page").then((module) => ({ default: module.InvoicesPage })))
+const ProformasPage = lazy(() => import("@/pages/proformas-page").then((module) => ({ default: module.ProformasPage })))
+const EmployeeLettersPage = lazy(() => import("@/pages/employee-letters-page").then((module) => ({ default: module.EmployeeLettersPage })))
 const OnboardingPage = lazy(() => import("@/pages/onboarding-page").then((module) => ({ default: module.OnboardingPage })))
 const TemplatesPage = lazy(() => import("@/pages/templates-page").then((module) => ({ default: module.TemplatesPage })))
 const TallyExportPage = lazy(() => import("@/pages/tally-export-page").then((module) => ({ default: module.TallyExportPage })))
@@ -28,7 +30,7 @@ function PageFallback() {
 function Protected({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   useEffect(() => { if (!supabase) { setSession(null); return }; supabase.auth.getSession().then(({ data }) => setSession(data.session)); const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => setSession(next)); return () => listener.subscription.unsubscribe() }, [])
-  if (session === undefined) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading BreezyInvoice…</div>
+  if (session === undefined) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading ChanaX…</div>
   return session ? <>{children}</> : <Navigate to="/login" replace />
 }
 function SetupGate({ children }: { children: React.ReactNode }) {
@@ -75,7 +77,9 @@ function App() {
           <Route path="/workspace" element={<DashboardPage />} />
           <Route path="/entities" element={<PermissionGate permission="entities.read"><EntitiesPage /></PermissionGate>} />
           <Route path="/invoices" element={<PermissionGate permission="invoices.read"><InvoicesPage /></PermissionGate>} />
+          <Route path="/proformas" element={<PermissionGate permission="invoices.read"><ProformasPage /></PermissionGate>} />
           <Route path="/employees" element={<PermissionGate permission="payslips.read"><EmployeesPage /></PermissionGate>} />
+          <Route path="/employees/letters" element={<PermissionGate permission="payslips.read"><EmployeeLettersPage /></PermissionGate>} />
           <Route path="/attendance" element={<PermissionGate permission="payslips.read"><AttendancePage /></PermissionGate>} />
           <Route path="/expenses" element={<PermissionGate permission="expenses.read"><ExpensesPage /></PermissionGate>} />
           <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />

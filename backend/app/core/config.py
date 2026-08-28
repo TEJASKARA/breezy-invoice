@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    account_deletion_cron_secret: str = ""
 
     whitebooks_base_url: str = "https://api.whitebooks.in"
     whitebooks_client_id: str = ""

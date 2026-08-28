@@ -62,6 +62,8 @@ migrations in the Supabase SQL Editor in order:
 ```text
 supabase/migrations/202607290001_auth_profiles.sql
 supabase/migrations/202607290002_workspace_data.sql
+...
+supabase/migrations/202608280001_remaining_product_features.sql
 ```
 
 The migrations create user-owned tables and Row Level Security policies. The
