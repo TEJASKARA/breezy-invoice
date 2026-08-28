@@ -40,7 +40,7 @@ function formatMonth(value: string) {
 
 export function ExpensesPage() {
   const { user } = useAuthUser()
-  const { companies, invoices, payslips, expenses, addExpense, deleteExpense } = useMvpStore()
+  const { companies, invoices, proformas, payslips, expenses, addExpense, deleteExpense } = useMvpStore()
   const { can } = useWorkspaceAccess()
   const canManage = can("expenses.manage")
   const [selectedEntityId, setSelectedEntityId] = useState("all")
@@ -73,6 +73,10 @@ export function ExpensesPage() {
     const entityMatches = selectedEntityId === "all" || invoice.entityName === selectedEntity?.companyName
     return entityMatches && (!dateFrom || invoice.date >= dateFrom) && (!dateTo || invoice.date <= dateTo)
   }), [dateFrom, dateTo, invoices, selectedEntity?.companyName, selectedEntityId])
+  const visibleProformas = useMemo(() => proformas.filter((proforma) => {
+    const entityMatches = selectedEntityId === "all" || proforma.entityId === selectedEntityId
+    return entityMatches && (!dateFrom || proforma.date >= dateFrom) && (!dateTo || proforma.date <= dateTo)
+  }), [dateFrom, dateTo, proformas, selectedEntityId])
   const visiblePayslips = useMemo(() => payslips.filter((payslip) => {
     const entityMatches = selectedEntityId === "all" || payslip.entityId === selectedEntityId
     const month = payslip.month || payslip.paymentDate.slice(0, 7)
@@ -183,7 +187,7 @@ export function ExpensesPage() {
       <PageHeader
         eyebrow="Expense management"
         title="Expenses"
-        description="Track invoices, payroll and your own categorized business expenses in one place."
+        description="Track invoices, proformas, payroll and your own categorized business expenses in one place."
         actions={canManage ? <Button onClick={openExpenseForm} disabled={!companies.length}><Plus />Add expense</Button> : null}
       />
 
@@ -227,7 +231,7 @@ export function ExpensesPage() {
       </section>
 
       <Suspense fallback={<div className="grid h-72 place-items-center rounded-xl border text-sm text-muted-foreground">Loading expense analytics…</div>}>
-        <ExpenseAnalytics companies={companies} invoices={visibleInvoices} payslips={visiblePayslips} expenses={visibleExpenses} />
+        <ExpenseAnalytics companies={companies} invoices={visibleInvoices} proformas={visibleProformas} payslips={visiblePayslips} expenses={visibleExpenses} />
       </Suspense>
 
       <Card>
@@ -250,7 +254,7 @@ export function ExpensesPage() {
         <Card><CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Payroll expenses</CardTitle><CardDescription>Gross salary cost from generated and draft payslips.</CardDescription></div><Button variant="outline" size="sm" asChild><Link to="/employees">Manage</Link></Button></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Pay period</TableHead><TableHead className="hidden sm:table-cell">Status</TableHead><TableHead className="text-right">Gross pay</TableHead></TableRow></TableHeader><TableBody>{visiblePayslips.length ? visiblePayslips.map((payslip) => <TableRow key={payslip.id}><TableCell><p className="font-medium">{payslip.employeeName}</p><p className="text-xs text-muted-foreground">{payslip.employeeCode}</p></TableCell><TableCell>{formatMonth(payslip.month)}</TableCell><TableCell className="hidden sm:table-cell"><Badge variant={payslip.status === "Draft" ? "secondary" : "outline"}>{payslip.status}</Badge></TableCell><TableCell className="text-right font-medium">{currency.format(payslip.grossPay)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} className="h-32 text-center text-muted-foreground">No payslips found for this selection.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
       </section>
 
-      {!visibleInvoices.length && !visiblePayslips.length && !visibleExpenses.length ? <Card className="border-dashed"><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><span className="flex size-11 items-center justify-center rounded-xl bg-muted"><FileText className="size-5 text-muted-foreground" /></span><div><p className="font-medium">No expense records yet</p><p className="mt-1 text-sm text-muted-foreground">Add an expense, invoice or payslip and it will appear here automatically.</p></div></CardContent></Card> : null}
+      {!visibleInvoices.length && !visibleProformas.length && !visiblePayslips.length && !visibleExpenses.length ? <Card className="border-dashed"><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><span className="flex size-11 items-center justify-center rounded-xl bg-muted"><FileText className="size-5 text-muted-foreground" /></span><div><p className="font-medium">No expense records yet</p><p className="mt-1 text-sm text-muted-foreground">Add an expense, invoice, proforma or payslip and it will appear here automatically.</p></div></CardContent></Card> : null}
     </div>
   )
 }

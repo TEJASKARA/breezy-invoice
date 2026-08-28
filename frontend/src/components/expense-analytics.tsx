@@ -17,7 +17,7 @@ import {
 } from "recharts"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import type { Company, Expense, Invoice, Payslip } from "@/lib/mvp-store"
+import type { Company, Expense, Invoice, Payslip, Proforma } from "@/lib/mvp-store"
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -39,6 +39,11 @@ function valueFromTooltip(value: number | string | readonly (number | string)[] 
   return currency.format(Number(numericValue || 0))
 }
 
+function countFromTooltip(value: number | string | readonly (number | string)[] | undefined) {
+  const numericValue = typeof value === "object" ? value[0] : value
+  return `${Number(numericValue || 0)} document${Number(numericValue || 0) === 1 ? "" : "s"}`
+}
+
 function EmptyChart({ message }: { message: string }) {
   return <div className="grid h-72 place-items-center rounded-lg border border-dashed text-center text-sm text-muted-foreground">{message}</div>
 }
@@ -46,11 +51,12 @@ function EmptyChart({ message }: { message: string }) {
 type ExpenseAnalyticsProps = {
   companies: Company[]
   invoices: Invoice[]
+  proformas: Proforma[]
   payslips: Payslip[]
   expenses: Expense[]
 }
 
-export function ExpenseAnalytics({ companies, invoices, payslips, expenses }: ExpenseAnalyticsProps) {
+export function ExpenseAnalytics({ companies, invoices, proformas, payslips, expenses }: ExpenseAnalyticsProps) {
   const analytics = useMemo(() => {
     const months = new Map<string, { month: string; payroll: number; other: number; revenue: number }>()
     const ensureMonth = (month: string) => {
@@ -92,8 +98,29 @@ export function ExpenseAnalytics({ companies, invoices, payslips, expenses }: Ex
       .filter((item) => item.payroll + item.other > 0)
       .sort((left, right) => (right.payroll + right.other) - (left.payroll + left.other))
 
-    return { monthly, categories, entities }
-  }, [companies, expenses, invoices, payslips])
+    const documentMonths = new Map<string, { month: string; proformas: number; converted: number; proformaValue: number; invoiceValue: number }>()
+    const ensureDocumentMonth = (month: string) => {
+      const existing = documentMonths.get(month)
+      if (existing) return existing
+      const added = { month, proformas: 0, converted: 0, proformaValue: 0, invoiceValue: 0 }
+      documentMonths.set(month, added)
+      return added
+    }
+    for (const proforma of proformas) {
+      const item = ensureDocumentMonth(proforma.date.slice(0, 7))
+      item.proformas += 1
+      item.proformaValue += proforma.amount
+      if (proforma.convertedInvoiceId) item.converted += 1
+    }
+    for (const invoice of invoices) {
+      ensureDocumentMonth(invoice.date.slice(0, 7)).invoiceValue += invoice.amount
+    }
+    const documents = [...documentMonths.values()]
+      .sort((left, right) => left.month.localeCompare(right.month))
+      .map((item) => ({ ...item, label: monthLabel(item.month) }))
+
+    return { monthly, categories, entities, documents }
+  }, [companies, expenses, invoices, payslips, proformas])
 
   return (
     <section className="grid gap-5 xl:grid-cols-2" aria-label="Expense analytics">
@@ -122,6 +149,54 @@ export function ExpenseAnalytics({ companies, invoices, payslips, expenses }: Ex
               </ResponsiveContainer>
             </div>
           ) : <EmptyChart message="Add a payslip or expense to see the monthly trend." />}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Proforma conversion</CardTitle>
+          <CardDescription>Proformas generated and how many were converted into tax invoices, grouped by proforma issue month.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {analytics.documents.some((item) => item.proformas > 0) ? (
+            <div className="h-72" role="img" aria-label="Bar chart comparing generated proformas with converted proformas">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analytics.documents} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} accessibilityLayer>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={34} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+                  <Tooltip formatter={countFromTooltip} contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--popover-foreground)" }} />
+                  <Legend />
+                  <Bar dataKey="proformas" name="Proformas generated" fill="var(--chart-1)" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="converted" name="Converted to invoice" fill="var(--chart-2)" radius={[5, 5, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : <EmptyChart message="Generate a proforma to see its conversion performance." />}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Proforma versus tax-invoice value</CardTitle>
+          <CardDescription>Total proforma value compared with generated tax-invoice value for each month.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {analytics.documents.some((item) => item.proformaValue > 0 || item.invoiceValue > 0) ? (
+            <div className="h-72" role="img" aria-label="Bar chart comparing proforma value with tax invoice value">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analytics.documents} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} accessibilityLayer>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} width={54} tickFormatter={(value) => compactNumber.format(value)} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+                  <Tooltip formatter={valueFromTooltip} contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--popover-foreground)" }} />
+                  <Legend />
+                  <Bar dataKey="proformaValue" name="Proforma value" fill="var(--chart-1)" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="invoiceValue" name="Tax-invoice value" fill="var(--chart-3)" radius={[5, 5, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : <EmptyChart message="Generate a proforma or tax invoice to compare document values." />}
         </CardContent>
       </Card>
 
