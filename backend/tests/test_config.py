@@ -1,19 +1,35 @@
+import asyncio
+
+import httpx
+
 from app.core.config import Settings
+from app.services.whitebooks import WhiteBooksClient
 
 
-def test_whitebooks_production_urls_include_gst_prefix() -> None:
-    settings = Settings(_env_file=None)
+def test_whitebooks_uses_public_taxpayer_search_contract() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/public/search"
+        assert request.url.params["email"] == "developer@example.com"
+        assert request.url.params["gstin"] == "29AAAAA0000A1Z5"
+        assert request.headers["client_id"] == "client-id"
+        assert request.headers["client_secret"] == "client-secret"
+        assert "authorization" not in request.headers
+        return httpx.Response(
+            200,
+            json={
+                "status_cd": "1",
+                "data": '{"lgnm":"Example Private Limited","sts":"Active"}',
+            },
+        )
 
-    token_url = (
-        f"{settings.whitebooks_base_url.rstrip('/')}"
-        f"{settings.whitebooks_token_path}"
+    settings = Settings(
+        _env_file=None,
+        whitebooks_client_id="client-id",
+        whitebooks_client_secret="client-secret",
+        whitebooks_email="developer@example.com",
     )
-    gstin_url = (
-        f"{settings.whitebooks_base_url.rstrip('/')}"
-        f"{settings.whitebooks_gstin_path.format(gstin='29AAAAA0000A1Z5')}"
-    )
+    client = WhiteBooksClient(settings, transport=httpx.MockTransport(handler))
 
-    assert token_url == "https://api.whitebooks.in/gst/oauth/token"
-    assert gstin_url == (
-        "https://api.whitebooks.in/gst/api/v1/gstin/29AAAAA0000A1Z5"
-    )
+    result = asyncio.run(client.verify_gstin("29AAAAA0000A1Z5"))
+
+    assert result["data"]["lgnm"] == "Example Private Limited"

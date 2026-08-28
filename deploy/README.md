@@ -14,7 +14,8 @@ with the existing n8n deployment.
    - `FRONTEND_ORIGINS=https://chanax.in,https://www.chanax.in`
    - `FRONTEND_URL=https://chanax.in`
    - the three Supabase values
-   - `WHITEBOOKS_CLIENT_ID` and `WHITEBOOKS_CLIENT_SECRET`
+   - `WHITEBOOKS_CLIENT_ID`, `WHITEBOOKS_CLIENT_SECRET`, and
+     `WHITEBOOKS_EMAIL` (the email used for the WhiteBooks API account)
    - a long random `ACCOUNT_DELETION_CRON_SECRET` (for example, generate one
      with `openssl rand -hex 32`)
 4. Install the reverse-proxy configuration from

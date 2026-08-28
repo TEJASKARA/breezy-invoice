@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     whitebooks_base_url: str = "https://api.whitebooks.in"
     whitebooks_client_id: str = ""
     whitebooks_client_secret: str = ""
-    whitebooks_token_path: str = "/gst/oauth/token"
-    whitebooks_gstin_path: str = "/gst/api/v1/gstin/{gstin}"
+    whitebooks_email: str = ""
+    whitebooks_gstin_path: str = "/public/search"
     whitebooks_timeout_seconds: float = 20
 
     redis_url: str = "redis://localhost:6379/0"
@@ -48,6 +48,7 @@ class Settings(BaseSettings):
             self.whitebooks_base_url
             and self.whitebooks_client_id
             and self.whitebooks_client_secret
+            and self.whitebooks_email
         )
 
 

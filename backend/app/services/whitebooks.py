@@ -1,5 +1,4 @@
-import asyncio
-import time
+import json
 from functools import lru_cache
 from typing import Any
 
@@ -19,78 +18,41 @@ class WhiteBooksRequestError(RuntimeError):
 
 
 class WhiteBooksClient:
-    """Small OAuth client for WhiteBooks' production GST API."""
+    """Client for WhiteBooks' credential-authenticated taxpayer search API."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.settings = settings
-        self._access_token = ""
-        self._token_expires_at = 0.0
-        self._token_lock = asyncio.Lock()
-
-    async def _token(self) -> str:
-        if self._access_token and time.monotonic() < self._token_expires_at:
-            return self._access_token
-        async with self._token_lock:
-            if self._access_token and time.monotonic() < self._token_expires_at:
-                return self._access_token
-            if not self.settings.whitebooks_is_configured:
-                raise WhiteBooksConfigurationError(
-                    "WhiteBooks production credentials have not been configured."
-                )
-            url = (
-                f"{self.settings.whitebooks_base_url.rstrip('/')}"
-                f"{self.settings.whitebooks_token_path}"
-            )
-            try:
-                async with httpx.AsyncClient(
-                    timeout=self.settings.whitebooks_timeout_seconds
-                ) as client:
-                    response = await client.post(
-                        url,
-                        json={
-                            "grant_type": "client_credentials",
-                            "client_id": self.settings.whitebooks_client_id,
-                            "client_secret": self.settings.whitebooks_client_secret,
-                        },
-                        headers={"Accept": "application/json"},
-                    )
-            except httpx.TimeoutException as exc:
-                raise WhiteBooksRequestError(
-                    "WhiteBooks authentication timed out.", status_code=504
-                ) from exc
-            except httpx.HTTPError as exc:
-                raise WhiteBooksRequestError(
-                    "ChanaX could not reach WhiteBooks authentication."
-                ) from exc
-            if response.is_error:
-                raise WhiteBooksRequestError(
-                    _response_error(response, "WhiteBooks authentication failed."),
-                    status_code=502,
-                )
-            payload = response.json()
-            token = str(payload.get("access_token") or "")
-            if not token:
-                raise WhiteBooksRequestError(
-                    "WhiteBooks did not return an access token."
-                )
-            expires_in = max(60, int(payload.get("expires_in") or 3600))
-            self._access_token = token
-            refresh_margin = min(60, expires_in // 4)
-            self._token_expires_at = time.monotonic() + expires_in - refresh_margin
-            return token
+        self.transport = transport
 
     async def verify_gstin(self, gstin: str) -> dict[str, Any]:
-        token = await self._token()
-        path = self.settings.whitebooks_gstin_path.format(gstin=gstin)
-        url = f"{self.settings.whitebooks_base_url.rstrip('/')}{path}"
+        if not self.settings.whitebooks_is_configured:
+            raise WhiteBooksConfigurationError(
+                "WhiteBooks production credentials and account email have not "
+                "been configured."
+            )
+
+        url = (
+            f"{self.settings.whitebooks_base_url.rstrip('/')}"
+            f"{self.settings.whitebooks_gstin_path}"
+        )
         try:
             async with httpx.AsyncClient(
-                timeout=self.settings.whitebooks_timeout_seconds
+                timeout=self.settings.whitebooks_timeout_seconds,
+                transport=self.transport,
             ) as client:
                 response = await client.get(
                     url,
+                    params={
+                        "email": self.settings.whitebooks_email,
+                        "gstin": gstin,
+                    },
                     headers={
-                        "Authorization": f"Bearer {token}",
+                        "client_id": self.settings.whitebooks_client_id,
+                        "client_secret": self.settings.whitebooks_client_secret,
                         "Accept": "application/json",
                     },
                 )
@@ -102,9 +64,7 @@ class WhiteBooksClient:
             raise WhiteBooksRequestError(
                 "ChanaX could not reach WhiteBooks GSTIN verification."
             ) from exc
-        if response.status_code == 401:
-            self._access_token = ""
-            self._token_expires_at = 0
+
         if response.is_error:
             raise WhiteBooksRequestError(
                 _response_error(
@@ -112,16 +72,56 @@ class WhiteBooksClient:
                 ),
                 status_code=response.status_code,
             )
-        payload = response.json()
-        return payload if isinstance(payload, dict) else {"result": payload}
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise WhiteBooksRequestError(
+                "WhiteBooks returned an invalid response."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise WhiteBooksRequestError("WhiteBooks returned an invalid response.")
+        if str(payload.get("status_cd") or "") == "0":
+            raise WhiteBooksRequestError(
+                _payload_error(
+                    payload, "WhiteBooks rejected the GSTIN verification request."
+                )
+            )
+        return _decode_data(payload)
 
 
 @lru_cache
 def get_whitebooks_client() -> WhiteBooksClient:
-    """Keep one client per API process so OAuth tokens are reused until expiry."""
     from app.core.config import get_settings
 
     return WhiteBooksClient(get_settings())
+
+
+def _decode_data(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data")
+    if not isinstance(data, str):
+        return payload
+    try:
+        decoded = json.loads(data)
+    except ValueError:
+        return payload
+    if isinstance(decoded, dict):
+        return {**payload, "data": decoded}
+    return payload
+
+
+def _payload_error(payload: dict[str, Any], fallback: str) -> str:
+    for key in ("status_desc", "message", "error_description", "detail"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    error = payload.get("error")
+    if isinstance(error, dict):
+        for key in ("message", "desc", "error_cd"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return fallback
 
 
 def _response_error(response: httpx.Response, fallback: str) -> str:
@@ -129,9 +129,4 @@ def _response_error(response: httpx.Response, fallback: str) -> str:
         payload = response.json()
     except ValueError:
         return fallback
-    if isinstance(payload, dict):
-        for key in ("message", "error_description", "error", "detail"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    return fallback
+    return _payload_error(payload, fallback) if isinstance(payload, dict) else fallback
