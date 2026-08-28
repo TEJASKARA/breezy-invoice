@@ -63,7 +63,7 @@ alter table public.breezy_account_deletion_requests enable row level security;
 
 -- A suspended workspace must immediately lose operational data access, even
 -- while an already-issued access token is still valid during its short TTL.
-create or replace function public.breezy_has_permission(target_workspace_id uuid, requested_permission text)
+create or replace function public.breezy_has_permission(target_workspace_id uuid, required_permission text)
 returns boolean
 language sql
 stable
@@ -80,8 +80,8 @@ as $$
       and member.status = 'active'
       and (
         member.role in ('owner', 'admin')
-        or requested_permission = any(member.permissions)
-        or (requested_permission like '%.read' and replace(requested_permission, '.read', '.manage') = any(member.permissions))
+        or required_permission = any(member.permissions)
+        or (required_permission like '%.read' and replace(required_permission, '.read', '.manage') = any(member.permissions))
       )
   );
 $$;
