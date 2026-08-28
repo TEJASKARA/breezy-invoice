@@ -63,7 +63,7 @@ class SupabaseGateway:
             "breezy_has_permission",
             {
                 "target_workspace_id": workspace_id,
-                "requested_permission": permission,
+                "required_permission": permission,
             },
         )
         if result is not True:
