@@ -26,6 +26,15 @@ import {
   type WorkspaceRole,
 } from "@/lib/workspace-access-service"
 import { sendWorkspaceInvitation } from "@/lib/team-api"
+import {
+  createBillingOrder,
+  loadBillingHistory,
+  loadRazorpayCheckout,
+  openRazorpayCheckout,
+  verifyBillingPayment,
+  type BillingPayment,
+  type BillingPlanKey,
+} from "@/lib/billing-api"
 
 type EditableRole = Exclude<WorkspaceRole, "owner">
 const editableRoles: { value: EditableRole; label: string }[] = [
@@ -37,9 +46,9 @@ const editableRoles: { value: EditableRole; label: string }[] = [
 ]
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const previewPlans = [
-  { name: "Quarterly", price: "₹1,500", term: "3 months", credits: 300, seats: 3, description: "A flexible three-month plan for regular document generation." },
-  { name: "Half-yearly", price: "₹3,000", term: "6 months", credits: 900, seats: 3, description: "More credits for active businesses and accounting teams.", recommended: true },
-  { name: "Annual", price: "₹4,500", term: "12 months", credits: 1500, seats: 3, description: "The best-value plan for year-round business operations." },
+  { key: "quarterly" as const, name: "Quarterly", price: "₹1,500", term: "3 months", credits: 300, seats: 3, description: "A flexible three-month plan for regular document generation." },
+  { key: "half_yearly" as const, name: "Half-yearly", price: "₹3,000", term: "6 months", credits: 900, seats: 3, description: "More credits for active businesses and accounting teams.", recommended: true },
+  { key: "annual" as const, name: "Annual", price: "₹4,500", term: "12 months", credits: 1500, seats: 3, description: "The best-value plan for year-round business operations." },
 ]
 
 function readableDate(value: string | null) {
@@ -88,6 +97,8 @@ export function WorkspaceSettingsPage() {
   const [deletionStage, setDeletionStage] = useState<0 | 1 | 2>(0)
   const [deletionConfirmation, setDeletionConfirmation] = useState("")
   const [deletionRequest, setDeletionRequest] = useState<{ status: string; purge_after: string } | null>(null)
+  const [billingPayments, setBillingPayments] = useState<BillingPayment[]>([])
+  const [purchasingPlan, setPurchasingPlan] = useState<BillingPlanKey | null>(null)
 
   const canManageTeam = can("team.manage")
   const canManageWorkspace = can("workspace.manage")
@@ -122,6 +133,19 @@ export function WorkspaceSettingsPage() {
     if (!workspace || !isOwner || !supabase) return
     void supabase.from("breezy_account_deletion_requests").select("status, purge_after").eq("workspace_id", workspace.id).eq("status", "pending").maybeSingle().then(({ data }) => setDeletionRequest(data))
   }, [workspace, isOwner])
+
+  const refreshBillingHistory = useCallback(async () => {
+    if (!workspace || !isOwner) return
+    try {
+      setBillingPayments(await loadBillingHistory(workspace.id))
+    } catch {
+      // The migration may not have been run yet. Checkout reports a clear
+      // error if the owner attempts a purchase before billing is available.
+      setBillingPayments([])
+    }
+  }, [workspace, isOwner])
+
+  useEffect(() => { void refreshBillingHistory() }, [refreshBillingHistory])
 
   function showSuccess(message: string) { setNotice(message); setError("") }
   function showError(value: unknown) { setError(value instanceof Error ? value.message : "The change could not be saved."); setNotice("") }
@@ -207,6 +231,53 @@ export function WorkspaceSettingsPage() {
     }
   }
 
+  async function purchasePlan(planKey: BillingPlanKey) {
+    if (!workspace || !isOwner) return
+    setPurchasingPlan(planKey)
+    setNotice("")
+    setError("")
+    try {
+      const [order] = await Promise.all([
+        createBillingOrder(workspace.id, planKey),
+        loadRazorpayCheckout(),
+      ])
+      await new Promise<void>((resolve, reject) => {
+        openRazorpayCheckout({
+          key: order.key_id,
+          amount: order.amount,
+          currency: order.currency,
+          name: "ChanaX",
+          description: `${order.plan_name} plan · ${order.credits} credits`,
+          order_id: order.order_id,
+          prefill: {
+            name: String(user?.user_metadata?.full_name || ""),
+            email: user?.email || "",
+          },
+          theme: { color: "#0f172a" },
+          handler: async (payment) => {
+            try {
+              const result = await verifyBillingPayment(workspace.id, payment)
+              await Promise.all([refresh(), refreshBillingHistory()])
+              showSuccess(result.already_processed
+                ? "Payment was already confirmed. Your subscription is active."
+                : `Payment confirmed. ${result.credits_added} credits were added.`)
+              resolve()
+            } catch (verificationError) {
+              reject(verificationError)
+            }
+          },
+          modal: {
+            ondismiss: () => reject(new Error("Payment checkout was closed. No credits were added.")),
+          },
+        })
+      })
+    } catch (purchaseError) {
+      showError(purchaseError)
+    } finally {
+      setPurchasingPlan(null)
+    }
+  }
+
   async function requestDeletion() {
     if (!workspace || deletionConfirmation !== "DELETE CHANAX ACCOUNT") return
     setSaving(true)
@@ -258,9 +329,14 @@ export function WorkspaceSettingsPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Subscription plans</CardTitle><CardDescription>Preview pricing for the planned ChanaX subscriptions. Amounts can be changed before Razorpay checkout is connected.</CardDescription></CardHeader>
-        <CardContent><div className="grid gap-4 lg:grid-cols-3">{previewPlans.map((plan) => <div key={plan.name} className={`relative rounded-xl border p-5 ${plan.recommended ? "border-primary ring-1 ring-primary" : ""}`}>{plan.recommended ? <Badge className="absolute right-4 top-4">Recommended</Badge> : null}<h3 className="text-lg font-semibold">{plan.name}</h3><p className="mt-3 text-3xl font-bold">{plan.price}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p><p className="mt-2 text-sm text-muted-foreground">{plan.description}</p><div className="mt-5 space-y-2 text-sm"><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> shared credits for the plan</p><p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p><p className="flex items-center gap-2"><Check className="size-4" />Invoices, proformas and payslips</p><p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p></div><Button className="mt-5 w-full" variant={plan.recommended ? "default" : "outline"} disabled>Choose plan · Razorpay coming soon</Button></div>)}</div><div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Preview prices only. No payment will be collected until you approve the final plans and Razorpay is enabled.</p><p>Additional team accounts will be available as a recurring monthly add-on; its price will be finalised with the payment plans.</p></div></CardContent>
+        <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Subscription plans</CardTitle><CardDescription>Purchase a prepaid ChanaX plan securely through Razorpay. Only the workspace owner can make payments.</CardDescription></CardHeader>
+        <CardContent><div className="grid gap-4 lg:grid-cols-3">{previewPlans.map((plan) => <div key={plan.name} className={`relative rounded-xl border p-5 ${plan.recommended ? "border-primary ring-1 ring-primary" : ""}`}>{plan.recommended ? <Badge className="absolute right-4 top-4">Recommended</Badge> : null}<h3 className="text-lg font-semibold">{plan.name}</h3><p className="mt-3 text-3xl font-bold">{plan.price}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p><p className="mt-2 text-sm text-muted-foreground">{plan.description}</p><div className="mt-5 space-y-2 text-sm"><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> shared credits for the plan</p><p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p><p className="flex items-center gap-2"><Check className="size-4" />Invoices, proformas and payslips</p><p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p></div><Button className="mt-5 w-full" variant={plan.recommended ? "default" : "outline"} disabled={!isOwner || purchasingPlan !== null} onClick={() => void purchasePlan(plan.key)}>{purchasingPlan === plan.key ? "Opening Razorpay…" : isOwner ? `Choose ${plan.name}` : "Owner payment only"}</Button></div>)}</div><div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Payments are processed by Razorpay. Credits are added only after secure server verification.</p><p>Additional team accounts will be available as a recurring monthly add-on after its price is finalised.</p></div></CardContent>
       </Card>
+
+      {billingPayments.length ? <Card>
+        <CardHeader><CardTitle>Payment history</CardTitle><CardDescription>Your latest Razorpay plan purchases.</CardDescription></CardHeader>
+        <CardContent><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Plan</TableHead><TableHead>Credits</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{billingPayments.map((payment) => <TableRow key={payment.id}><TableCell>{readableDate(payment.paid_at || payment.created_at)}</TableCell><TableCell className="capitalize">{payment.plan_key.replace("_", "-")}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(payment.amount_paise / 100)}</TableCell><TableCell><Badge variant={payment.status === "paid" ? "secondary" : payment.status === "failed" ? "destructive" : "outline"} className="capitalize">{payment.status}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent>
+      </Card> : null}
 
       <Card>
         <CardHeader><CardTitle>Business details</CardTitle><CardDescription>These details are shared across this workspace and used on generated documents.</CardDescription></CardHeader>

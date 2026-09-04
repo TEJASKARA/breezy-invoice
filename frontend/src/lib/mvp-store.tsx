@@ -98,6 +98,7 @@ export type Employee = {
   entityId: string
   employeeCode: string
   employeeName: string
+  email?: string
   designation: string
   department: string
   pan: string

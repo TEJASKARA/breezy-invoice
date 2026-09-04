@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { createEmployeeLetterPdf, employeeLetterFileName } from "@/lib/employee-letter-pdf"
+import { sendEmployeeLetterEmail } from "@/lib/document-email-api"
 import { useMvpStore, type EmployeeLetter } from "@/lib/mvp-store"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -21,7 +22,7 @@ const templateBody = (type: EmployeeLetter["letterType"], name: string, effectiv
 
 export function EmployeeLettersPage() {
   const { companies, employees, employeeLetters, template, addEmployeeLetter, deleteEmployeeLetter } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, workspace } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
   const [employeeId, setEmployeeId] = useState(employees[0]?.id || "")
   const employee = employees.find((item) => item.id === employeeId)
@@ -57,7 +58,29 @@ export function EmployeeLettersPage() {
   }
   async function download(letter: EmployeeLetter) { const { doc, employee: target } = await documentFor(letter); doc.save(employeeLetterFileName(letter, target)) }
   async function share(letter: EmployeeLetter) { const target = employees.find((item) => item.id === letter.employeeId); if (!target) return; await sharePdfViaWhatsApp({ title: letter.title, message: `${letter.title} for ${target.employeeName}.`, createFile: async () => { const { doc } = await documentFor(letter); return { name: employeeLetterFileName(letter, target), data: new Uint8Array(doc.output("arraybuffer")) } } }) }
-  function email(letter: EmployeeLetter) { const target = employees.find((item) => item.id === letter.employeeId); window.location.href = `mailto:?subject=${encodeURIComponent(`${letter.title} - ${target?.employeeName || "Employee"}`)}&body=${encodeURIComponent("Please find your employment letter attached. Download the PDF from ChanaX and attach it to this email.")}` }
+  async function email(letter: EmployeeLetter) {
+    setError(""); setNotice("")
+    const target = employees.find((item) => item.id === letter.employeeId)
+    if (!target?.email) return setError(`Add an email address to ${target?.employeeName || "this employee"}'s profile before sending the email.`)
+    if (!workspace?.id) return setError("Your workspace is still loading. Please try again.")
+    try {
+      const { doc } = await documentFor(letter)
+      const fileName = employeeLetterFileName(letter, target)
+      const result = await sendEmployeeLetterEmail({
+        workspaceId: workspace.id,
+        toEmail: target.email,
+        employeeName: target.employeeName,
+        subject: `${letter.title} - ${target.employeeName}`,
+        message: `Hello ${target.employeeName},\n\nPlease find your employment letter attached.\n\nRegards,\n${entity?.companyName || "ChanaX"}`,
+        filename: fileName,
+        pdf: new Uint8Array(doc.output("arraybuffer")),
+      })
+      setNotice(result)
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return
+      setError(caught instanceof Error ? caught.message : "The employee letter email could not be prepared.")
+    }
+  }
 
   return <div className="space-y-7">
     <PageHeader eyebrow="Employee documents" title="Offer and termination letters" description="Create reusable employee letters with your saved company branding and signature." />
@@ -70,6 +93,6 @@ export function EmployeeLettersPage() {
       <div className="space-y-2"><Label htmlFor="letter-signatory">Signatory name (optional)</Label><Input id="letter-signatory" value={signatureName} onChange={(event) => setSignatureName(event.target.value)} placeholder={`For ${entity?.companyName || "company"}`} /></div>
       <div className="flex justify-end"><Button disabled={!canManage || !employee} onClick={() => void save()}><Plus />Save issued letter</Button></div>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>Employee letter history</CardTitle><CardDescription>Letters remain attached to the selected employee profile.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Letter</TableHead><TableHead>Issue date</TableHead><TableHead>Effective date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{visibleLetters.length ? visibleLetters.map((letter) => <TableRow key={letter.id}><TableCell><p className="font-medium">{letter.title}</p><p className="text-xs text-muted-foreground">{letter.subject}</p></TableCell><TableCell>{letter.issueDate}</TableCell><TableCell>{letter.effectiveDate}</TableCell><TableCell><Badge variant="outline">{letter.status}</Badge></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download PDF" aria-label="Download employee letter" onClick={() => void download(letter)}><Download /></Button><Button size="icon" variant="ghost" title="Share via WhatsApp" aria-label="Share employee letter via WhatsApp" onClick={() => void share(letter)}><MessageCircle /></Button><Button size="icon" variant="ghost" title="Prepare email" aria-label="Prepare employee letter email" onClick={() => email(letter)}><Mail /></Button><Button size="icon" variant="ghost" title="Delete letter" aria-label="Delete employee letter" disabled={!canManage} onClick={() => void deleteEmployeeLetter(letter.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No letters saved for this employee.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    <Card><CardHeader><CardTitle>Employee letter history</CardTitle><CardDescription>Letters remain attached to the selected employee profile and can be emailed with their generated PDF.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Letter</TableHead><TableHead>Issue date</TableHead><TableHead>Effective date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{visibleLetters.length ? visibleLetters.map((letter) => <TableRow key={letter.id}><TableCell><p className="font-medium">{letter.title}</p><p className="text-xs text-muted-foreground">{letter.subject}</p></TableCell><TableCell>{letter.issueDate}</TableCell><TableCell>{letter.effectiveDate}</TableCell><TableCell><Badge variant="outline">{letter.status}</Badge></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download PDF" aria-label="Download employee letter" onClick={() => void download(letter)}><Download /></Button><Button size="icon" variant="ghost" title="Share via WhatsApp" aria-label="Share employee letter via WhatsApp" onClick={() => void share(letter)}><MessageCircle /></Button><Button size="icon" variant="ghost" title="Email PDF" aria-label="Email employee letter PDF" onClick={() => void email(letter)}><Mail /></Button><Button size="icon" variant="ghost" title="Delete letter" aria-label="Delete employee letter" disabled={!canManage} onClick={() => void deleteEmployeeLetter(letter.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No letters saved for this employee.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
   </div>
 }

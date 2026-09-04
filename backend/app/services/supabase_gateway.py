@@ -55,6 +55,40 @@ class SupabaseGateway:
         if not rows:
             raise SupabaseGatewayError("You do not have access to this workspace.")
 
+    async def assert_workspace_owner(self, workspace_id: str, user_id: str) -> None:
+        rows = await self._get(
+            "breezy_workspaces",
+            {
+                "select": "id",
+                "id": f"eq.{workspace_id}",
+                "owner_user_id": f"eq.{user_id}",
+                "status": "eq.active",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            raise SupabaseGatewayError(
+                "Only the workspace owner can purchase a subscription."
+            )
+
+    async def assert_workspace_employee_email(
+        self, workspace_id: str, email: str
+    ) -> None:
+        rows = await self._get(
+            "breezy_employees",
+            {"select": "payload", "workspace_id": f"eq.{workspace_id}"},
+        )
+        normalized_email = email.strip().lower()
+        if not any(
+            isinstance(row.get("payload"), dict)
+            and str(row["payload"].get("email") or "").strip().lower()
+            == normalized_email
+            for row in rows
+        ):
+            raise SupabaseGatewayError(
+                "This email address is not saved on an employee in this workspace."
+            )
+
     async def assert_workspace_permission(
         self, access_token: str, workspace_id: str, permission: str
     ) -> None:
@@ -71,6 +105,124 @@ class SupabaseGateway:
                 "You do not have permission to perform this action."
             )
 
+    async def create_payment_order(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        provider_order_id: str,
+        plan_key: str,
+        amount_paise: int,
+        credits: int,
+        duration_months: int,
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            "breezy_payment_orders",
+            json=[
+                {
+                    "workspace_id": workspace_id,
+                    "requested_by": user_id,
+                    "provider_order_id": provider_order_id,
+                    "plan_key": plan_key,
+                    "amount_paise": amount_paise,
+                    "currency": "INR",
+                    "credits": credits,
+                    "duration_months": duration_months,
+                }
+            ],
+            headers={"Prefer": "return=representation"},
+        )
+        rows = response.json()
+        if not isinstance(rows, list) or not rows:
+            raise SupabaseGatewayError("The ChanaX payment order could not be saved.")
+        return rows[0]
+
+    async def payment_order(self, provider_order_id: str) -> dict[str, Any]:
+        rows = await self._get(
+            "breezy_payment_orders",
+            {
+                "select": "*",
+                "provider_order_id": f"eq.{provider_order_id}",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            raise SupabaseGatewayError("The payment order could not be found.")
+        return rows[0]
+
+    async def payment_order_by_payment_id(
+        self, provider_payment_id: str
+    ) -> dict[str, Any]:
+        rows = await self._get(
+            "breezy_payment_orders",
+            {
+                "select": "*",
+                "provider_payment_id": f"eq.{provider_payment_id}",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            raise SupabaseGatewayError("The payment order could not be found.")
+        return rows[0]
+
+    async def payment_history(
+        self, workspace_id: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        return await self._get(
+            "breezy_payment_orders",
+            {
+                "select": (
+                    "id,plan_key,amount_paise,currency,credits,duration_months,"
+                    "status,provider_order_id,provider_payment_id,paid_at,created_at"
+                ),
+                "workspace_id": f"eq.{workspace_id}",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+        )
+
+    async def apply_razorpay_payment(
+        self,
+        *,
+        provider_order_id: str,
+        provider_payment_id: str,
+        event_id: str | None = None,
+        event_type: str = "payment.captured",
+    ) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_apply_razorpay_payment",
+            {
+                "target_provider_order_id": provider_order_id,
+                "target_provider_payment_id": provider_payment_id,
+                "target_event_id": event_id,
+                "target_event_type": event_type,
+            },
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("The payment could not be applied to ChanaX.")
+        return result
+
+    async def record_razorpay_event(
+        self,
+        *,
+        provider_order_id: str,
+        provider_payment_id: str,
+        event_id: str,
+        event_type: str,
+        amount_paise: int = 0,
+    ) -> None:
+        await self.service_rpc(
+            "breezy_record_razorpay_event",
+            {
+                "target_provider_order_id": provider_order_id,
+                "target_provider_payment_id": provider_payment_id,
+                "target_event_id": event_id,
+                "target_event_type": event_type,
+                "target_amount_paise": amount_paise,
+            },
+        )
+
     async def user_rpc(
         self, access_token: str, function_name: str, payload: dict[str, Any]
     ) -> Any:
@@ -85,6 +237,26 @@ class SupabaseGateway:
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                 },
+            )
+        if response.is_error:
+            detail = ""
+            try:
+                detail = str(response.json().get("message") or "")
+            except (ValueError, AttributeError):
+                pass
+            raise SupabaseGatewayError(
+                detail or f"Supabase request failed ({response.status_code})."
+            )
+        if response.status_code == 204 or not response.content:
+            return None
+        return response.json()
+
+    async def service_rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url.rstrip('/')}/rest/v1/rpc/{function_name}",
+                json=payload,
+                headers=self._service_headers(),
             )
         if response.is_error:
             detail = ""

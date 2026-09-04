@@ -77,6 +77,7 @@ const blankEmployee = (entityId = ""): Omit<Employee, "id"> => ({
   entityId,
   employeeCode: "",
   employeeName: "",
+  email: "",
   designation: "",
   department: "",
   pan: "",
@@ -178,12 +179,16 @@ export function EmployeesPage() {
       setError("Select an entity and enter the employee name and employee code.")
       return
     }
+    if (employeeDraft.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employeeDraft.email.trim())) {
+      setError("Enter a valid employee email address or leave it blank.")
+      return
+    }
     const duplicate = employees.some((employee) => employee.entityId === employeeDraft.entityId && employee.employeeCode.toUpperCase() === employeeCode && employee.id !== editingEmployeeId)
     if (duplicate) {
       setError("This employee code already exists for the selected entity.")
       return
     }
-    const normalized = { ...employeeDraft, employeeName, employeeCode, pan: employeeDraft.pan.trim().toUpperCase(), ifsc: employeeDraft.ifsc.trim().toUpperCase() }
+    const normalized = { ...employeeDraft, employeeName, employeeCode, email: employeeDraft.email?.trim().toLowerCase(), pan: employeeDraft.pan.trim().toUpperCase(), ifsc: employeeDraft.ifsc.trim().toUpperCase() }
     setSaving(true)
     try {
       if (editingEmployeeId) {
@@ -246,10 +251,15 @@ export function EmployeesPage() {
           return
         }
         const pan = pickCell(row, "PAN", "PAN Number").toUpperCase()
+        const email = pickCell(row, "Email", "Email Address").trim().toLowerCase()
         const ifsc = pickCell(row, "IFSC", "IFSC Code").toUpperCase()
         const joiningDate = pickCell(row, "Joining Date", "Date of Joining")
         if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
           problems.push(`Row ${rowNumber}: PAN must use a valid format such as ABCDE1234F.`)
+          return
+        }
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          problems.push(`Row ${rowNumber}: enter a valid email address or leave it blank.`)
           return
         }
         if (ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
@@ -266,6 +276,7 @@ export function EmployeesPage() {
           entityId: selectedEntityId,
           employeeCode,
           employeeName,
+          email,
           designation: pickCell(row, "Designation", "Job Title"),
           department: pickCell(row, "Department"),
           pan,
@@ -824,6 +835,7 @@ function EmployeeForm({ draft, setDraft, editing, saving, onCancel, onSave }: { 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2"><Label htmlFor="employee-code">Employee code *</Label><Input id="employee-code" value={draft.employeeCode} onChange={(event) => field("employeeCode", event.target.value)} placeholder="EMP-001" /></div>
           <div className="space-y-2"><Label htmlFor="employee-name">Employee name *</Label><Input id="employee-name" value={draft.employeeName} onChange={(event) => field("employeeName", event.target.value)} placeholder="Rahul Sharma" /></div>
+          <div className="space-y-2"><Label htmlFor="employee-email">Email address</Label><Input id="employee-email" type="email" value={draft.email || ""} onChange={(event) => field("email", event.target.value)} placeholder="rahul@company.com" /></div>
           <div className="space-y-2"><Label htmlFor="employee-status">Employment status</Label><select id="employee-status" className={selectClass} value={draft.employmentStatus} onChange={(event) => field("employmentStatus", event.target.value)}><option>Regular Full-time</option><option>Part-time</option><option>Contract</option><option>Intern</option></select></div>
           <div className="space-y-2"><Label htmlFor="designation">Designation</Label><Input id="designation" value={draft.designation} onChange={(event) => field("designation", event.target.value)} placeholder="Accounts Executive" /></div>
           <div className="space-y-2"><Label htmlFor="department">Department</Label><Input id="department" value={draft.department} onChange={(event) => field("department", event.target.value)} placeholder="Finance" /></div>

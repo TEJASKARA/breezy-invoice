@@ -15,5 +15,23 @@ export async function readSpreadsheet(file: File) {
 
 export const parseMoney = (value: string) => Number(value.replace(/[₹,\s]/g, ""))
 
+export function normalizeSpreadsheetDate(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+
+  const separated = trimmed.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/)
+  if (separated) {
+    const [, day, month, suppliedYear] = separated
+    const year = suppliedYear.length === 2 ? `20${suppliedYear}` : suppliedYear
+    const candidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
+    const parsed = new Date(`${candidate}T00:00:00Z`)
+    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate) return candidate
+  }
+
+  const parsed = new Date(trimmed)
+  return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString().slice(0, 10)
+}
+
 export const parseDocumentStatus = (value: string): "Draft" | "Generated" =>
   value.toLowerCase() === "generated" ? "Generated" : "Draft"

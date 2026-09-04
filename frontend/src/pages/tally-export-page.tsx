@@ -131,6 +131,7 @@ export function TallyExportPage() {
       "Employee ID": employee.id,
       "Employee Code": employee.employeeCode,
       "Employee Name": employee.employeeName,
+      "Email": employee.email || "",
       "Tally Ledger Name": employee.tallyLedgerName || employee.employeeName,
     }))
     const workbook = XLSX.utils.book_new()

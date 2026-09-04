@@ -32,9 +32,7 @@ def test_formats_whitebooks_principal_address() -> None:
         }
     }
 
-    assert _address(payload) == (
-        "12, Business Tower, Hyderabad, Telangana, 500001"
-    )
+    assert _address(payload) == ("12, Business Tower, Hyderabad, Telangana, 500001")
 
 
 def test_inactive_registration_is_not_eligible_for_verified_credits() -> None:

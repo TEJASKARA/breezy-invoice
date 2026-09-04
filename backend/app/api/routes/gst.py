@@ -14,9 +14,7 @@ from app.services.whitebooks import (
 
 router = APIRouter()
 
-GSTIN_PATTERN = re.compile(
-    r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
-)
+GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 def _bearer_token(authorization: str) -> str:
@@ -88,9 +86,7 @@ def _is_active_registration(registration_status: str) -> bool:
 
 
 def _taxpayer_details(payload: dict[str, Any]) -> tuple[str, str, str]:
-    legal_name = str(
-        _find(payload, ("legal_name", "legalName", "lgnm")) or ""
-    ).strip()
+    legal_name = str(_find(payload, ("legal_name", "legalName", "lgnm")) or "").strip()
     trade_name = str(
         _find(payload, ("trade_name", "tradeName", "tradeNam")) or ""
     ).strip()

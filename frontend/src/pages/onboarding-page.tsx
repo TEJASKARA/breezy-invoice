@@ -85,6 +85,10 @@ export function OnboardingPage() {
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     const normalizedGstin = gstin.trim().toUpperCase()
+    if (!industry || (industry === "Other" && !otherIndustry.trim())) {
+      setSaveError("Select your industry or enter it under Other.")
+      return
+    }
     if (hasGstin === null) {
       setSaveError("Tell us whether your business has a GSTIN.")
       return
@@ -171,7 +175,7 @@ export function OnboardingPage() {
         <Card>
           <CardHeader><CardTitle>Your business details</CardTitle><CardDescription>Verify your GSTIN to securely fill the registered business details. Non-GST businesses can continue without it.</CardDescription></CardHeader>
           <CardContent>
-            <form onSubmit={submit} className="space-y-6">
+            <form onSubmit={submit} noValidate className="space-y-6">
               {saveError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{saveError}</p>}
               <div className="space-y-2">
                 <Label htmlFor="industry">Industry</Label>

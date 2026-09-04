@@ -16,6 +16,10 @@ with the existing n8n deployment.
    - the three Supabase values
    - `WHITEBOOKS_CLIENT_ID`, `WHITEBOOKS_CLIENT_SECRET`, and
      `WHITEBOOKS_EMAIL` (the email used for the WhiteBooks API account)
+   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and a verified
+     `SMTP_FROM_EMAIL` so employee letters can be sent with their PDF attachment
+   - `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and a separate random
+     `RAZORPAY_WEBHOOK_SECRET`
    - a long random `ACCOUNT_DELETION_CRON_SECRET` (for example, generate one
      with `openssl rand -hex 32`)
 4. Install the reverse-proxy configuration from
@@ -65,3 +69,16 @@ Supabase SQL Editor. In Supabase Authentication → URL Configuration, allow
 `https://chanax.in/workspace` as a redirect URL. The backend uses Supabase Auth
 to email new team members; configure custom SMTP in Supabase before production
 so invitation delivery is not limited by the development mail service.
+
+The employee-letter sender uses the SMTP values in `backend/.env`. If Resend is
+also your Supabase custom SMTP provider, use the same Resend SMTP host,
+username and API-key password, plus a sender address on your verified domain.
+
+## Razorpay billing setup
+
+Run `supabase/migrations/202609040001_razorpay_billing.sql` before enabling
+checkout. Configure the Razorpay webhook URL as
+`https://api.chanax.in/api/v1/billing/webhook` and enter exactly the same
+webhook secret saved on the VPS. Enable `payment.captured`, `payment.failed`,
+`order.paid`, and `refund.processed`. Test Mode and Live Mode should use
+separate API keys and separate webhook secrets.

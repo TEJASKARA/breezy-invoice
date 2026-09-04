@@ -14,7 +14,7 @@ import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-documen
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
 import { nextInvoiceNumber, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
-import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
+import { normalizeSpreadsheetDate, parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -118,7 +118,7 @@ export function InvoicesPage() {
       .join(" ")
       .toLowerCase()
     if (normalizedInvoiceSearch && !searchableText.includes(normalizedInvoiceSearch)) return false
-    if (invoiceDateFilter && invoice.date !== invoiceDateFilter) return false
+    if (invoiceDateFilter && normalizeSpreadsheetDate(invoice.date) !== invoiceDateFilter) return false
     if (minimumInvoiceAmount !== null && Number.isFinite(minimumInvoiceAmount) && invoice.amount < minimumInvoiceAmount) return false
     if (maximumInvoiceAmount !== null && Number.isFinite(maximumInvoiceAmount) && invoice.amount > maximumInvoiceAmount) return false
     return true
@@ -411,7 +411,7 @@ export function InvoicesPage() {
           customerId: savedCustomer?.id,
           companyName: customerName,
           sourceNumber: pickCell(row, "Invoice Number"),
-          date: pickCell(row, "Invoice Date"),
+          date: normalizeSpreadsheetDate(pickCell(row, "Invoice Date")),
           description: pickCell(row, "Description"),
           hsnSac,
           taxableAmount,

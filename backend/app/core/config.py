@@ -15,6 +15,19 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     account_deletion_cron_secret: str = ""
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "ChanaX"
+    smtp_use_tls: bool = True
+
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
+    razorpay_mode: str = "test"
+
     whitebooks_base_url: str = "https://api.whitebooks.in"
     whitebooks_client_id: str = ""
     whitebooks_client_secret: str = ""
@@ -49,6 +62,23 @@ class Settings(BaseSettings):
             and self.whitebooks_client_id
             and self.whitebooks_client_secret
             and self.whitebooks_email
+        )
+
+    @property
+    def smtp_is_configured(self) -> bool:
+        return bool(
+            self.smtp_host
+            and self.smtp_username
+            and self.smtp_password
+            and self.smtp_from_email
+        )
+
+    @property
+    def razorpay_is_configured(self) -> bool:
+        return bool(
+            self.razorpay_key_id
+            and self.razorpay_key_secret
+            and self.razorpay_webhook_secret
         )
 
 
