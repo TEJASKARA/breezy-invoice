@@ -17,6 +17,7 @@ import {
   Moon,
   ReceiptText,
   Settings2,
+  ShieldCheck,
   Sun,
   Users,
   WalletCards,
@@ -52,6 +53,7 @@ import { getSetupProgress } from "@/lib/setup-progress"
 import { type Theme, useTheme } from "@/lib/theme"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import type { WorkspacePermission } from "@/lib/workspace-access-service"
+import { loadPlatformAdminAccess } from "@/lib/platform-admin-api"
 import { useEffect, useState } from "react"
 
 const PRODUCT_TOUR_VERSION = 1
@@ -103,6 +105,7 @@ export function AppShell() {
   const { user } = useAuthUser()
   const { workspace, membership, creditAccount, workspaceOptions, can, refresh, switchWorkspace } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const { setup, companies, invoices, proformas, payslips, syncError } = useMvpStore()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
   const avatarUrl = String(user?.user_metadata.avatar_url || user?.user_metadata.picture || "")
@@ -126,6 +129,14 @@ export function AppShell() {
     const savedVersion = Number(user.user_metadata.product_tour_version || 0)
     const locallyCompleted = window.localStorage.getItem(storageKey) === String(PRODUCT_TOUR_VERSION)
     if (savedVersion < PRODUCT_TOUR_VERSION && !locallyCompleted) setTourOpen(true)
+  }, [user])
+  useEffect(() => {
+    if (!user) { setIsPlatformAdmin(false); return }
+    let active = true
+    void loadPlatformAdminAccess()
+      .then((allowed) => { if (active) setIsPlatformAdmin(allowed) })
+      .catch(() => { if (active) setIsPlatformAdmin(false) })
+    return () => { active = false }
   }, [user])
 
   async function completeProductTour() {
@@ -279,6 +290,10 @@ export function AppShell() {
                   <Settings2 />
                   Workspace settings
                 </DropdownMenuItem>
+                {isPlatformAdmin ? <DropdownMenuItem onClick={() => navigate("/platform-admin")}>
+                  <ShieldCheck />
+                  Platform administration
+                </DropdownMenuItem> : null}
                 {workspaceOptions.length > 1 ? <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>

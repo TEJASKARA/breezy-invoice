@@ -25,3 +25,28 @@ async def test_permission_rpc_uses_deployed_parameter_names() -> None:
             "required_permission": "entities.manage",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_special_credit_grant_records_platform_admin_actor() -> None:
+    gateway = SupabaseGateway(Settings())
+    gateway.service_rpc = AsyncMock(  # type: ignore[method-assign]
+        return_value={"workspace_id": "workspace-id"}
+    )
+
+    await gateway.grant_special_credits(
+        subscription_code=" chx-test ",
+        credit_amount=25,
+        reason=" Customer support adjustment ",
+        actor_user_id="00000000-0000-0000-0000-000000000001",
+    )
+
+    gateway.service_rpc.assert_awaited_once_with(
+        "breezy_grant_special_credits",
+        {
+            "target_subscription_code": "CHX-TEST",
+            "credit_amount": 25,
+            "adjustment_reason": "Customer support adjustment",
+            "target_actor_user_id": "00000000-0000-0000-0000-000000000001",
+        },
+    )

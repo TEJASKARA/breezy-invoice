@@ -22,6 +22,7 @@ const OnboardingPage = lazy(() => import("@/pages/onboarding-page").then((module
 const TemplatesPage = lazy(() => import("@/pages/templates-page").then((module) => ({ default: module.TemplatesPage })))
 const TallyExportPage = lazy(() => import("@/pages/tally-export-page").then((module) => ({ default: module.TallyExportPage })))
 const WorkspaceSettingsPage = lazy(() => import("@/pages/workspace-settings-page").then((module) => ({ default: module.WorkspaceSettingsPage })))
+const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then((module) => ({ default: module.PlatformAdminPage })))
 
 function PageFallback() {
   return <div className="grid min-h-72 place-items-center text-sm text-muted-foreground">Loading page…</div>
@@ -85,6 +86,7 @@ function App() {
           <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />
           <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />
           <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
+          <Route path="/platform-admin" element={<PlatformAdminPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

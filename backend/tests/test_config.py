@@ -25,6 +25,17 @@ def test_razorpay_requires_all_backend_secrets() -> None:
     assert complete.razorpay_is_configured is True
 
 
+def test_platform_admin_ids_are_normalized_and_exact() -> None:
+    settings = Settings(
+        _env_file=None,
+        platform_admin_user_ids=" USER-ONE ,user-two, ",
+    )
+
+    assert settings.is_platform_admin("user-one") is True
+    assert settings.is_platform_admin("USER-TWO") is True
+    assert settings.is_platform_admin("user") is False
+
+
 def test_whitebooks_uses_public_taxpayer_search_contract() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/public/search"

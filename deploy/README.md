@@ -22,6 +22,9 @@ with the existing n8n deployment.
      `RAZORPAY_WEBHOOK_SECRET`
    - a long random `ACCOUNT_DELETION_CRON_SECRET` (for example, generate one
      with `openssl rand -hex 32`)
+   - `PLATFORM_ADMIN_USER_IDS` containing your Supabase Authentication user
+     UUID. Multiple platform owners can be comma-separated. Use UUIDs rather
+     than email addresses so changing an email cannot transfer this access.
 4. Install the reverse-proxy configuration from
    `deploy/nginx/api.chanax.in.conf` only if the VPS already uses Nginx. If n8n
    uses Traefik or Caddy, add the equivalent route there instead.
@@ -85,3 +88,17 @@ the Razorpay webhook URL as
 webhook secret saved on the VPS. Enable `payment.captured`, `payment.failed`,
 `order.paid`, and `refund.processed`. Test Mode and Live Mode should use
 separate API keys and separate webhook secrets.
+
+## Private platform administration
+
+Run `supabase/migrations/202609050002_private_super_admin.sql` after the
+quotation-credit migration. Find your own user UUID under **Supabase →
+Authentication → Users**, add it to `PLATFORM_ADMIN_USER_IDS` in the VPS
+`backend/.env`, and rebuild the backend container. After signing in, the profile
+menu will show **Platform administration** only for an approved UUID.
+
+The page searches by exact subscription code. Every allocation adds the same
+number of document and quotation top-up credits, requires a confirmation and
+reason, and records the authenticated platform administrator in the credit
+adjustment audit table. The service-role key and administrator UUID list remain
+backend-only and must never be placed in Vercel variables.

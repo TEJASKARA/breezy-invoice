@@ -182,6 +182,85 @@ class SupabaseGateway:
             },
         )
 
+    async def admin_workspace_by_subscription_code(
+        self, subscription_code: str
+    ) -> dict[str, Any]:
+        normalized_code = subscription_code.strip().upper()
+        rows = await self._get(
+            "breezy_workspaces",
+            {
+                "select": "id,name,subscription_code,status",
+                "subscription_code": f"eq.{normalized_code}",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            raise SupabaseGatewayError(
+                "No workspace matches that subscription code."
+            )
+        workspace = rows[0]
+        credit_rows = await self._get(
+            "breezy_credit_accounts",
+            {
+                "select": (
+                    "free_credits_granted,free_credits_used,"
+                    "monthly_credits_remaining,topup_credits_remaining,"
+                    "free_quotation_credits_granted,"
+                    "free_quotation_credits_used,"
+                    "monthly_quotation_credits_remaining,"
+                    "topup_quotation_credits_remaining"
+                ),
+                "workspace_id": f"eq.{workspace['id']}",
+                "limit": "1",
+            },
+        )
+        account = credit_rows[0] if credit_rows else {}
+        document_credits = max(
+            0,
+            int(account.get("free_credits_granted") or 0)
+            - int(account.get("free_credits_used") or 0),
+        ) + int(account.get("monthly_credits_remaining") or 0) + int(
+            account.get("topup_credits_remaining") or 0
+        )
+        quotation_credits = max(
+            0,
+            int(account.get("free_quotation_credits_granted") or 0)
+            - int(account.get("free_quotation_credits_used") or 0),
+        ) + int(account.get("monthly_quotation_credits_remaining") or 0) + int(
+            account.get("topup_quotation_credits_remaining") or 0
+        )
+        return {
+            "workspace_id": str(workspace["id"]),
+            "name": str(workspace.get("name") or "Unnamed workspace"),
+            "subscription_code": str(workspace.get("subscription_code") or ""),
+            "status": str(workspace.get("status") or "active"),
+            "document_credits_remaining": document_credits,
+            "quotation_credits_remaining": quotation_credits,
+        }
+
+    async def grant_special_credits(
+        self,
+        *,
+        subscription_code: str,
+        credit_amount: int,
+        reason: str,
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_grant_special_credits",
+            {
+                "target_subscription_code": subscription_code.strip().upper(),
+                "credit_amount": credit_amount,
+                "adjustment_reason": reason.strip(),
+                "target_actor_user_id": actor_user_id,
+            },
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError(
+                "Supabase returned an invalid credit-allocation result."
+            )
+        return result
+
     async def apply_razorpay_payment(
         self,
         *,

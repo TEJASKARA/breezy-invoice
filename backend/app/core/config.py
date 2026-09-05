@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
     account_deletion_cron_secret: str = ""
+    platform_admin_user_ids: str = ""
 
     smtp_host: str = ""
     smtp_port: int = 587
@@ -72,6 +73,17 @@ class Settings(BaseSettings):
             and self.smtp_password
             and self.smtp_from_email
         )
+
+    @property
+    def platform_admin_ids(self) -> set[str]:
+        return {
+            user_id.strip().lower()
+            for user_id in self.platform_admin_user_ids.split(",")
+            if user_id.strip()
+        }
+
+    def is_platform_admin(self, user_id: str) -> bool:
+        return user_id.strip().lower() in self.platform_admin_ids
 
     @property
     def razorpay_is_configured(self) -> bool:
