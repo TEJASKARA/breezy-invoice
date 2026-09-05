@@ -9,6 +9,7 @@ export type PlatformWorkspace = {
   status: "active" | "suspended" | "closed"
   document_credits_remaining: number
   quotation_credits_remaining: number
+  matched_email: string | null
 }
 
 export type CreditGrantResult = {
@@ -48,10 +49,11 @@ export function loadPlatformAdminAccess() {
     .then((result) => result.is_super_admin)
 }
 
-export function findPlatformWorkspace(subscriptionCode: string) {
-  return adminRequest<PlatformWorkspace>(
-    `/api/v1/admin/workspaces/${encodeURIComponent(subscriptionCode.trim())}`,
-  )
+export function findPlatformWorkspaces(identifier: string) {
+  const query = new URLSearchParams({ query: identifier.trim() })
+  return adminRequest<{ workspaces: PlatformWorkspace[] }>(
+    `/api/v1/admin/workspaces?${query}`,
+  ).then((result) => result.workspaces)
 }
 
 export function grantPlatformCredits(subscriptionCode: string, creditAmount: number, reason: string) {

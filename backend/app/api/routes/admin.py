@@ -1,12 +1,13 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.api.routes.gst import _bearer_token
 from app.core.config import Settings, get_settings
 from app.schemas.admin import (
     PlatformAdminAccessResponse,
     PlatformWorkspaceResponse,
+    PlatformWorkspaceSearchResponse,
     SpecialCreditGrantRequest,
     SpecialCreditGrantResponse,
 )
@@ -41,6 +42,26 @@ async def platform_admin_access(
         ) from exc
     return PlatformAdminAccessResponse(
         is_super_admin=_is_platform_admin_user(user, settings)
+    )
+
+
+@router.get("/workspaces", response_model=PlatformWorkspaceSearchResponse)
+async def search_platform_workspaces(
+    query: Annotated[str, Query(min_length=3, max_length=320)],
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PlatformWorkspaceSearchResponse:
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        workspaces = await gateway.admin_workspaces_by_identifier(query)
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return PlatformWorkspaceSearchResponse(
+        workspaces=[PlatformWorkspaceResponse(**item) for item in workspaces]
     )
 
 

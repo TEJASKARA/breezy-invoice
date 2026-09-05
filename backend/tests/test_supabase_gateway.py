@@ -50,3 +50,21 @@ async def test_special_credit_grant_records_platform_admin_actor() -> None:
             "target_actor_user_id": "00000000-0000-0000-0000-000000000001",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_admin_workspace_search_accepts_email_or_subscription_code() -> None:
+    gateway = SupabaseGateway(Settings())
+    gateway.service_rpc = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"workspace_id": "workspace-id"}]
+    )
+
+    result = await gateway.admin_workspaces_by_identifier(
+        " owner@example.com "
+    )
+
+    assert result == [{"workspace_id": "workspace-id"}]
+    gateway.service_rpc.assert_awaited_once_with(
+        "breezy_admin_find_workspaces",
+        {"search_identifier": "owner@example.com"},
+    )

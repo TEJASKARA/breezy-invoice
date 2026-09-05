@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
-import { Coins, Search, ShieldCheck } from "lucide-react"
+import { Coins, Mail, Search, ShieldCheck } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
-  findPlatformWorkspace,
+  findPlatformWorkspaces,
   grantPlatformCredits,
   loadPlatformAdminAccess,
   type PlatformWorkspace,
@@ -17,7 +17,8 @@ import {
 
 export function PlatformAdminPage() {
   const [access, setAccess] = useState<"loading" | "allowed" | "denied">("loading")
-  const [subscriptionCode, setSubscriptionCode] = useState("")
+  const [subscriberQuery, setSubscriberQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<PlatformWorkspace[]>([])
   const [workspace, setWorkspace] = useState<PlatformWorkspace | null>(null)
   const [creditAmount, setCreditAmount] = useState("")
   const [reason, setReason] = useState("")
@@ -36,14 +37,18 @@ export function PlatformAdminPage() {
   }, [])
 
   async function findWorkspace() {
-    if (!subscriptionCode.trim()) return
+    if (!subscriberQuery.trim()) return
     setSearching(true)
     setError("")
     setSuccess("")
     setWorkspace(null)
+    setSearchResults([])
     setConfirmed(false)
     try {
-      setWorkspace(await findPlatformWorkspace(subscriptionCode))
+      const results = await findPlatformWorkspaces(subscriberQuery)
+      setSearchResults(results)
+      if (results.length === 1) setWorkspace(results[0])
+      if (results.length === 0) setError("No workspace matches that email address or subscription code.")
     } catch (lookupError) {
       setError(lookupError instanceof Error ? lookupError.message : "The workspace could not be found.")
     } finally {
@@ -60,7 +65,9 @@ export function PlatformAdminPage() {
     try {
       const result = await grantPlatformCredits(workspace.subscription_code, amount, reason)
       setSuccess(`${result.credits_added} document credits and ${result.quotation_credits_added} quotation credits were granted to ${workspace.name}.`)
-      setWorkspace(await findPlatformWorkspace(workspace.subscription_code))
+      const refreshed = await findPlatformWorkspaces(workspace.subscription_code)
+      setWorkspace(refreshed[0] || null)
+      setSearchResults(refreshed)
       setCreditAmount("")
       setReason("")
       setConfirmed(false)
@@ -90,7 +97,7 @@ export function PlatformAdminPage() {
     <PageHeader
       eyebrow="Private platform controls"
       title="ChanaX administration"
-      description="Find a subscriber by subscription code and make an audited special-credit allocation. This area is restricted to approved platform administrators."
+      description="Find a subscriber by email address or subscription code and make an audited special-credit allocation. This area is restricted to approved platform administrators."
     />
 
     {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
@@ -99,26 +106,36 @@ export function PlatformAdminPage() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Search className="size-4" />Find subscriber</CardTitle>
-        <CardDescription>Use the exact subscription code shown in the customer's workspace settings.</CardDescription>
+        <CardDescription>Enter the subscriber's email address or their subscription code.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={(event) => { event.preventDefault(); void findWorkspace() }}>
           <div className="flex-1 space-y-2">
-            <Label htmlFor="admin-subscription-code">Subscription code</Label>
+            <Label htmlFor="admin-subscriber-query">Email or subscription code</Label>
             <Input
-              id="admin-subscription-code"
+              id="admin-subscriber-query"
               autoComplete="off"
-              value={subscriptionCode}
-              onChange={(event) => setSubscriptionCode(event.target.value.toUpperCase())}
-              placeholder="Enter subscription code"
+              value={subscriberQuery}
+              onChange={(event) => setSubscriberQuery(event.target.value)}
+              placeholder="customer@company.com or subscription code"
             />
           </div>
-          <Button className="self-end" disabled={searching || !subscriptionCode.trim()} type="submit">
+          <Button className="self-end" disabled={searching || !subscriberQuery.trim()} type="submit">
             {searching ? "Searching…" : "Find workspace"}
           </Button>
         </form>
       </CardContent>
     </Card>
+
+    {searchResults.length > 1 && !workspace ? <Card>
+      <CardHeader>
+        <CardTitle>Select a workspace</CardTitle>
+        <CardDescription>This email has access to more than one workspace. Select the intended subscriber before granting credits.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2">
+        {searchResults.map((result) => <button key={result.workspace_id} type="button" className="rounded-xl border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setWorkspace(result); setConfirmed(false) }}><span className="font-semibold">{result.name}</span><span className="mt-1 block font-mono text-xs text-muted-foreground">{result.subscription_code}</span>{result.matched_email ? <span className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Mail className="size-3.5" />{result.matched_email}</span> : null}</button>)}
+      </CardContent>
+    </Card> : null}
 
     {workspace ? <Card>
       <CardHeader>
@@ -126,6 +143,7 @@ export function PlatformAdminPage() {
           <div>
             <CardTitle>{workspace.name}</CardTitle>
             <CardDescription className="mt-1 font-mono">{workspace.subscription_code}</CardDescription>
+            {workspace.matched_email ? <CardDescription className="mt-1 flex items-center gap-1.5"><Mail className="size-3.5" />{workspace.matched_email}</CardDescription> : null}
           </div>
           <Badge variant={workspace.status === "active" ? "secondary" : "destructive"} className="capitalize">{workspace.status}</Badge>
         </div>

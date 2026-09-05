@@ -108,8 +108,11 @@ Authentication → Users**, add it to `PLATFORM_ADMIN_USER_IDS` in the VPS
 `backend/.env`, and rebuild the backend container. After signing in, the profile
 menu will show **Platform administration** only for an approved UUID.
 
-The page searches by exact subscription code. Every allocation adds the same
-number of document and quotation top-up credits, requires a confirmation and
-reason, and records the authenticated platform administrator in the credit
-adjustment audit table. The service-role key and administrator UUID list remain
-backend-only and must never be placed in Vercel variables.
+Run `supabase/migrations/202609050005_admin_email_credit_grants.sql` to let the
+private administration page find subscriptions by owner, active member or
+pending-invitation email as well as subscription code. The migration also stores
+a subscription-code snapshot and the exact entered reason with every credit
+adjustment, so the allocation remains auditable in Supabase. Every allocation
+adds the same number of document and quotation top-up credits and records the
+authenticated platform administrator. The service-role key and administrator
+UUID list remain backend-only and must never be placed in Vercel variables.

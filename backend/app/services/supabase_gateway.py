@@ -244,6 +244,22 @@ class SupabaseGateway:
             "quotation_credits_remaining": quotation_credits,
         }
 
+    async def admin_workspaces_by_identifier(
+        self, identifier: str
+    ) -> list[dict[str, Any]]:
+        normalized_identifier = identifier.strip()
+        result = await self.service_rpc(
+            "breezy_admin_find_workspaces",
+            {"search_identifier": normalized_identifier},
+        )
+        if not isinstance(result, list) or not all(
+            isinstance(item, dict) for item in result
+        ):
+            raise SupabaseGatewayError(
+                "Supabase returned an invalid workspace-search result."
+            )
+        return result
+
     async def grant_special_credits(
         self,
         *,

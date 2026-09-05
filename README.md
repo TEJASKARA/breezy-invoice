@@ -69,6 +69,7 @@ supabase/migrations/202609050001_separate_quotation_credits.sql
 supabase/migrations/202609050002_private_super_admin.sql
 supabase/migrations/202609050003_custom_subscription_plans.sql
 supabase/migrations/202609050004_fixed_subscription_plans.sql
+supabase/migrations/202609050005_admin_email_credit_grants.sql
 ```
 
 The migrations create user-owned tables and Row Level Security policies. The

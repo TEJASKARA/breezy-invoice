@@ -14,6 +14,11 @@ class PlatformWorkspaceResponse(BaseModel):
     status: Literal["active", "suspended", "closed"]
     document_credits_remaining: int
     quotation_credits_remaining: int
+    matched_email: str | None = None
+
+
+class PlatformWorkspaceSearchResponse(BaseModel):
+    workspaces: list[PlatformWorkspaceResponse]
 
 
 class SpecialCreditGrantRequest(BaseModel):
