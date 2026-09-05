@@ -549,7 +549,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
           setStorageKey(workspaceCacheKey)
         } else {
           commit(cachedState)
-          throw new Error("No active BreezyInvoice workspace was found for this account.")
+          throw new Error("No active ChanaX workspace was found for this account.")
         }
         if (!hasOwnData && legacyData) localStorage.removeItem(legacyStorageKey)
         setSyncStatus("synced")

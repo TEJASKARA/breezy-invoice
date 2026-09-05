@@ -224,7 +224,7 @@ export function EntitiesPage() {
       <PageHeader
         eyebrow="Master data"
         title="Managed entities"
-        description="Add the businesses or legal entities managed under this BreezyInvoice workspace."
+        description="Add the businesses or legal entities managed under this ChanaX workspace."
         actions={
           canManage ? <Button onClick={() => setShowForm((value) => !value)}><Plus />Add entity</Button> : null
         }

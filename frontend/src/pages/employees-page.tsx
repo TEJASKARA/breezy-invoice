@@ -216,8 +216,8 @@ export function EmployeesPage() {
 
   const downloadEmployeeTemplate = () => {
     const link = document.createElement("a")
-    link.href = "/templates/BreezyInvoice-employee-import-template.xlsx"
-    link.download = "BreezyInvoice-employee-import-template.xlsx"
+    link.href = "/templates/ChanaX-employee-import-template.xlsx"
+    link.download = "ChanaX-employee-import-template.xlsx"
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -299,7 +299,7 @@ export function EmployeesPage() {
         })
       })
       if (!imported.length) {
-        setError(problems.length ? problems.slice(0, 6).join(" ") : "No employee rows were found. Use the downloadable BreezyInvoice employee template.")
+        setError(problems.length ? problems.slice(0, 6).join(" ") : "No employee rows were found. Use the downloadable ChanaX employee template.")
         return
       }
       setEmployeeImportPreview(imported)
@@ -534,7 +534,7 @@ export function EmployeesPage() {
     const worksheet = XLSX.utils.json_to_sheet(rows)
     worksheet["!cols"] = Object.keys(rows[0]).map((heading) => ({ wch: Math.max(14, heading.length + 2) }))
     XLSX.utils.book_append_sheet(workbook, worksheet, "Monthly Payslips")
-    XLSX.writeFile(workbook, `BreezyInvoice-payslips-${bulkMonth}.xlsx`, { compression: true })
+    XLSX.writeFile(workbook, `ChanaX-payslips-${bulkMonth}.xlsx`, { compression: true })
   }
 
   const importBulkFile = async (file: File) => {
@@ -725,7 +725,7 @@ export function EmployeesPage() {
 
       {canManage && showPayslipForm && payslipDraft && (
         <Card>
-          <CardHeader><CardTitle>{editingPayslipId ? "Edit payslip" : "Create individual payslip"}</CardTitle><CardDescription>Select an employee and month. BreezyInvoice automatically starts with the most recent saved salary structure.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{editingPayslipId ? "Edit payslip" : "Create individual payslip"}</CardTitle><CardDescription>Select an employee and month. ChanaX automatically starts with the most recent saved salary structure.</CardDescription></CardHeader>
           <CardContent className="space-y-6">
             <div className="grid gap-4 md:grid-cols-4">
               <div className="space-y-2 md:col-span-2"><Label htmlFor="payslip-employee">Employee</Label><select id="payslip-employee" disabled={Boolean(editingPayslipId)} className={selectClass} value={payslipDraft.employeeId} onChange={(event) => selectPayslipEmployee(event.target.value)}>{entityEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeCode} — {employee.employeeName}</option>)}</select></div>

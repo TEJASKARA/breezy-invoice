@@ -3,7 +3,7 @@ export function friendlyWorkspaceError(error: { code?: string; message: string }
   const missingInvitationDependency = error.message.includes("breezy_accept_pending_invitations")
 
   if (missingWorkspaceFunction || missingInvitationDependency) {
-    return "Your workspace needs a small database update. Please ask the BreezyInvoice administrator to run the latest workspace recovery migration."
+    return "Your workspace needs a small database update. Please ask the ChanaX administrator to run the latest workspace recovery migration."
   }
 
   return error.message

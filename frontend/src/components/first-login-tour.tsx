@@ -25,7 +25,7 @@ type TourStep = {
 
 const tourSteps: TourStep[] = [
   {
-    title: "Welcome to BreezyInvoice",
+    title: "Welcome to ChanaX",
     description: "Your invoicing and payroll workspace is ready.",
     detail: "This short tour explains where everything lives. You can replay it anytime from your account menu.",
     icon: Sparkles,
@@ -153,7 +153,7 @@ export function FirstLoginTour({ open, fullName, can, onComplete }: FirstLoginTo
                 else setStepIndex((current) => current + 1)
               }}
             >
-              {isLastStep ? "Start using BreezyInvoice" : "Next"}
+              {isLastStep ? "Start using ChanaX" : "Next"}
             </Button>
           </div>
         </DialogPrimitive.Content>

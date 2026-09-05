@@ -364,7 +364,7 @@ export function InvoicesPage() {
       const rows = await readSpreadsheet(file)
       if (!rows.length) {
         setBulkImportHasError(true)
-        setBulkImportMessage("The first worksheet has no invoice rows. Use the downloaded BreezyInvoice template and keep Invoice Upload as the first sheet.")
+        setBulkImportMessage("The first worksheet has no invoice rows. Use the downloaded ChanaX template and keep Invoice Upload as the first sheet.")
         return
       }
       const newCustomersByName = new Map<string, ImportCustomer>()
@@ -546,7 +546,7 @@ export function InvoicesPage() {
     worksheet["!freeze"] = { xSplit: 1, ySplit: 1 }
 
     const instructions = XLSX.utils.aoa_to_sheet([
-      ["BreezyInvoice - Bulk Invoice Upload"],
+      ["ChanaX - Bulk Invoice Upload"],
       ["Selected entity", bulkEntityName],
       ["Template type", mode === "existing" ? "Existing customers" : "New customers"],
       [],
@@ -570,7 +570,7 @@ export function InvoicesPage() {
     const link = document.createElement("a")
     const safeEntityName = bulkEntityName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase()
     link.href = url
-    link.download = `breezyinvoice-${safeEntityName}-${mode}-customers.xlsx`
+    link.download = `chanax-${safeEntityName}-${mode}-customers.xlsx`
     document.body.appendChild(link)
     link.click()
     link.remove()
