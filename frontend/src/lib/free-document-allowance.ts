@@ -1,7 +1,7 @@
 import type { Setup } from "@/lib/mvp-store"
 import type { WorkspaceCreditAccount, WorkspaceSubscription } from "@/lib/workspace-access-service"
 
-export type FreeDocumentKind = "invoice" | "payslip"
+export type FreeDocumentKind = "invoice" | "payslip" | "quotation"
 
 export type FreeDocumentAllowance = {
   kind: FreeDocumentKind
@@ -13,7 +13,8 @@ export type FreeDocumentAllowance = {
 }
 
 function savedUsage(subscription: WorkspaceSubscription, kind: FreeDocumentKind) {
-  const value = Number(subscription.limits[kind === "invoice" ? "invoiceUsage" : "payslipUsage"])
+  const key = kind === "invoice" ? "invoiceUsage" : kind === "payslip" ? "payslipUsage" : "quotationUsage"
+  const value = Number(subscription.limits[key])
   return Number.isFinite(value) && value >= 0 ? value : 0
 }
 
@@ -29,9 +30,13 @@ export function getFreeDocumentAllowance(
   recordsCurrentlySaved: number,
 ): FreeDocumentAllowance | null {
   if (creditAccount) {
-    const limit = creditAccount.free_credits_granted + creditAccount.monthly_credits_remaining + creditAccount.topup_credits_remaining
-    const used = creditAccount.free_credits_used
-    const remaining = Math.max(0, creditAccount.free_credits_granted - used) + creditAccount.monthly_credits_remaining + creditAccount.topup_credits_remaining
+    const quotation = kind === "quotation"
+    const freeGranted = quotation ? creditAccount.free_quotation_credits_granted ?? creditAccount.free_credits_granted : creditAccount.free_credits_granted
+    const used = quotation ? creditAccount.free_quotation_credits_used ?? 0 : creditAccount.free_credits_used
+    const monthlyRemaining = quotation ? creditAccount.monthly_quotation_credits_remaining ?? creditAccount.monthly_credits_remaining : creditAccount.monthly_credits_remaining
+    const topupRemaining = quotation ? creditAccount.topup_quotation_credits_remaining ?? creditAccount.topup_credits_remaining : creditAccount.topup_credits_remaining
+    const limit = freeGranted + monthlyRemaining + topupRemaining
+    const remaining = Math.max(0, freeGranted - used) + monthlyRemaining + topupRemaining
     return { kind, limit, used, remaining, hasGstin: creditAccount.gst_status === "verified", gstStatus: creditAccount.gst_status }
   }
   if (!subscription || subscription.plan_key !== "free") return null
@@ -43,6 +48,7 @@ export function getFreeDocumentAllowance(
 
 export function freeAllowanceError(allowance: FreeDocumentAllowance | null, requested: number) {
   if (!allowance || requested <= allowance.remaining) return null
-  const documentName = allowance.kind === "invoice" ? "invoice" : "payslip"
-  return `Your workspace has ${allowance.remaining} shared document credit${allowance.remaining === 1 ? "" : "s"} remaining, so this request for ${requested} ${documentName}${requested === 1 ? "" : "s"} cannot be saved.`
+  const documentName = allowance.kind === "invoice" ? "invoice" : allowance.kind === "payslip" ? "payslip" : "quotation"
+  const creditName = allowance.kind === "quotation" ? "quotation credit" : "document credit"
+  return `Your workspace has ${allowance.remaining} ${creditName}${allowance.remaining === 1 ? "" : "s"} remaining, so this request for ${requested} ${documentName}${requested === 1 ? "" : "s"} cannot be saved.`
 }

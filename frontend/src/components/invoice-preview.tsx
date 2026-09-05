@@ -58,12 +58,14 @@ export function InvoicePreview({
   entity,
   customer,
   template,
+  documentType = "invoice",
   editor,
 }: {
   invoice: Invoice
   entity?: Company
   customer?: Customer
   template: TemplateSettings
+  documentType?: "invoice" | "quotation"
   editor?: PreviewEditor
 }) {
   const pageRef = useRef<HTMLElement>(null)
@@ -75,6 +77,9 @@ export function InvoicePreview({
   const isMinimal = template.preset === "minimal"
   const element = (id: TemplateElementId) => template.elements[id]
   const isGstInvoice = entity?.hasGstin ?? Boolean(entity?.gstin)
+  const isQuotation = documentType === "quotation"
+  const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
+  const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
 
   const startTextDrag = (event: ReactPointerEvent<HTMLDivElement>, id: string) => {
     if (!editor || !pageRef.current) return
@@ -137,13 +142,19 @@ export function InvoicePreview({
           </EditableInvoiceElement>
         </div>
         <EditableInvoiceElement id="invoiceTitle" setting={element("invoiceTitle")} editor={editor} onPointerDown={startElementDrag} className="shrink-0 text-right">
-          <h1 className="text-2xl font-bold" style={{ color: template.accentColor }}>{isGstInvoice ? element("invoiceTitle").label : "INVOICE"}</h1>
+          <h1 className="text-2xl font-bold" style={{ color: template.accentColor }}>{displayedTitle}</h1>
           <p className="mt-2 text-sm text-zinc-500">{invoice.sourceNumber || invoice.number}</p>
           <p className="text-sm text-zinc-500">{invoice.date}</p>
         </EditableInvoiceElement>
       </header>
 
-      <section className="grid gap-8 py-7 md:grid-cols-2">
+      {isQuotation && (
+        <div className="mt-4 rounded-md border border-amber-400 bg-amber-50 px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-amber-950">
+          This is a quotation, not a sales or tax invoice. It does not record a completed sale.
+        </div>
+      )}
+
+      <section className={`grid gap-8 md:grid-cols-2 ${isQuotation ? "py-5" : "py-7"}`}>
         <EditableInvoiceElement id="customer" setting={element("customer")} editor={editor} onPointerDown={startElementDrag}>
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: template.accentColor }}>{element("customer").label}</p>
           <h3 className="mt-2 font-bold">{customer?.companyName || invoice.companyName}</h3>
@@ -152,9 +163,10 @@ export function InvoicePreview({
           {customer?.pan && <p className="text-xs text-zinc-500">PAN: {customer.pan}</p>}
         </EditableInvoiceElement>
         <EditableInvoiceElement id="invoiceDetails" setting={element("invoiceDetails")} editor={editor} onPointerDown={startElementDrag} className="md:text-right">
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: template.accentColor }}>{element("invoiceDetails").label}</p>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: template.accentColor }}>{isQuotation ? "Quotation details" : element("invoiceDetails").label}</p>
           <p className="mt-2 text-sm">Status: <strong>{invoice.status}</strong></p>
           <p className="text-sm">Items: <strong>{items.length}</strong></p>
+          {isQuotation && validUntil ? <p className="text-sm">Valid until: <strong>{validUntil}</strong></p> : null}
         </EditableInvoiceElement>
       </section>
 
@@ -208,8 +220,8 @@ export function InvoicePreview({
               )}
               style={template.preset === "breeze" ? { backgroundColor: template.accentColor } : template.preset === "classic" ? { borderColor: template.accentColor, color: template.accentColor } : undefined}
             >
-              <div className={cn("border-r p-3", template.preset === "breeze" ? "border-white/25" : "border-zinc-200")}><p className={cn("text-[10px] font-bold uppercase tracking-wider", template.preset === "breeze" ? "text-white/75" : "text-zinc-500")}>Invoice total</p><p className="mt-1 text-lg font-bold">{money(totals.amount)}</p></div>
-              <div className="p-3 text-right"><p className={cn("text-[10px] font-bold uppercase tracking-wider", template.preset === "breeze" ? "text-white/75" : "text-zinc-500")}>Net receivable</p><p className="mt-1 text-lg font-bold">{money(netReceivable)}</p></div>
+              <div className={cn("border-r p-3", template.preset === "breeze" ? "border-white/25" : "border-zinc-200")}><p className={cn("text-[10px] font-bold uppercase tracking-wider", template.preset === "breeze" ? "text-white/75" : "text-zinc-500")}>{isQuotation ? "Quotation total" : "Invoice total"}</p><p className="mt-1 text-lg font-bold">{money(totals.amount)}</p></div>
+              <div className="p-3 text-right"><p className={cn("text-[10px] font-bold uppercase tracking-wider", template.preset === "breeze" ? "text-white/75" : "text-zinc-500")}>{isQuotation ? "Estimated amount" : "Net receivable"}</p><p className="mt-1 text-lg font-bold">{money(isQuotation ? totals.amount : netReceivable)}</p></div>
             </div>
             {((invoice.tdsAmount || 0) > 0 || (invoice.otherDeduction || 0) > 0) && (
               <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
@@ -235,7 +247,7 @@ export function InvoicePreview({
             <img src={template.signatureDataUrl} alt="Authorised signature" className="ml-auto mt-3 h-16 max-w-44 object-contain object-right" />
           )}
           {template.signatureMode === "system" && (
-            <p className="ml-auto mt-7 max-w-64 leading-5">This is a system-generated invoice. A signature is not required.</p>
+            <p className="ml-auto mt-7 max-w-64 leading-5">This is a system-generated {isQuotation ? "quotation" : "invoice"}. A signature is not required.</p>
           )}
           {template.signatureMode === "uploaded" && <p className="mt-2">{element("signature").label}</p>}
         </EditableInvoiceElement>

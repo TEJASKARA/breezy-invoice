@@ -64,8 +64,8 @@ export async function downloadCompleteDataExport(input: CompleteExportInput) {
     Total: invoice.amount,
     Status: invoice.status,
   })))
-  if (selected.has("proformas")) addSheet(XLSX, workbook, "Proforma Invoices", input.proformas.map((proforma) => ({
-    "Proforma Number": proforma.number,
+  if (selected.has("proformas")) addSheet(XLSX, workbook, "Quotations", input.proformas.map((proforma) => ({
+    "Quotation Number": proforma.number,
     Date: proforma.date,
     "Valid Until": proforma.validUntil || "",
     Customer: proforma.companyName,
@@ -122,11 +122,11 @@ export async function downloadCompleteDataExport(input: CompleteExportInput) {
   }
 
   if (selected.has("proformas")) {
-    const proformaTemplate = { ...input.template, elements: { ...input.template.elements, invoiceTitle: { ...input.template.elements.invoiceTitle, label: "PROFORMA INVOICE" } } }
+    const proformaTemplate = { ...input.template, elements: { ...input.template.elements, invoiceTitle: { ...input.template.elements.invoiceTitle, label: "QUOTATION / PROFORMA" } } }
     for (const proforma of input.proformas) {
       const customer = input.customers.find((item) => item.id === proforma.customerId)
-      const pdf = await createInvoicePdfFile({ invoice: proforma, entity: input.entity, customer, template: proformaTemplate })
-      files.push({ ...pdf, name: `Proforma-Invoices/PDF/${pdf.name.replace(/\.pdf$/i, "_proforma.pdf")}` })
+      const pdf = await createInvoicePdfFile({ invoice: proforma, entity: input.entity, customer, template: proformaTemplate, documentType: "quotation" })
+      files.push({ ...pdf, name: `Quotations/PDF/${pdf.name.replace(/\.pdf$/i, "_quotation.pdf")}` })
     }
   }
 

@@ -18,6 +18,7 @@ class BillingOrderResponse(BaseModel):
     plan_key: PlanKey
     plan_name: str
     credits: int
+    quotation_credits: int
     duration_months: int
 
 
@@ -33,6 +34,7 @@ class BillingVerificationResponse(BaseModel):
     already_processed: bool = False
     plan_key: str
     credits_added: int
+    quotation_credits_added: int
     current_period_ends_at: str | None = None
 
 

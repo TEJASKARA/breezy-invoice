@@ -54,6 +54,10 @@ export type WorkspaceCreditAccount = {
   monthly_credits_remaining: number
   topup_credits_remaining: number
   monthly_credits_reset_at: string | null
+  free_quotation_credits_granted?: number
+  free_quotation_credits_used?: number
+  monthly_quotation_credits_remaining?: number
+  topup_quotation_credits_remaining?: number
 }
 
 export type WorkspaceOption = {
@@ -124,10 +128,16 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     return optionWorkspace ? [{ workspace: optionWorkspace, membership: item }] : []
   })
 
-  const [subscriptionResult, creditResult] = await Promise.all([
+  const [subscriptionResult, initialCreditResult] = await Promise.all([
     supabase.from("breezy_subscriptions").select("id, workspace_id, plan_key, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, limits, included_seats, extra_seats").eq("workspace_id", membership.workspace_id).maybeSingle(),
-    supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at").eq("workspace_id", membership.workspace_id).maybeSingle(),
+    supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at, free_quotation_credits_granted, free_quotation_credits_used, monthly_quotation_credits_remaining, topup_quotation_credits_remaining").eq("workspace_id", membership.workspace_id).maybeSingle(),
   ])
+  let creditResult = initialCreditResult
+  if (creditResult.error?.message?.includes("quotation_credits")) {
+    // Keep the workspace usable while the quotation-credit migration is being
+    // rolled out. The UI derives matching legacy balances until it is present.
+    creditResult = await supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at").eq("workspace_id", membership.workspace_id).maybeSingle() as typeof initialCreditResult
+  }
   if (subscriptionResult.error) throw new Error(subscriptionResult.error.message)
   const creditTableMissing = creditResult.error?.code === "42P01" || creditResult.error?.message?.includes("breezy_credit_accounts")
   if (creditResult.error && !creditTableMissing) throw new Error(creditResult.error.message)

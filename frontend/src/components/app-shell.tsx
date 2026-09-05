@@ -60,7 +60,7 @@ const navigation = [
   { label: "Overview", href: "/workspace", icon: LayoutDashboard, end: true, permission: null },
   { label: "Entities", href: "/entities", icon: Building2, permission: "entities.read" },
   { label: "Invoices", href: "/invoices", icon: ReceiptText, permission: "invoices.read" },
-  { label: "Proformas", href: "/proformas", icon: FilePlus2, permission: "invoices.read" },
+  { label: "Quotations", href: "/proformas", icon: FilePlus2, permission: "invoices.read" },
   { label: "Employees", href: "/employees", icon: Users, permission: "payslips.read" },
   { label: "Employee letters", href: "/employees/letters", icon: FileSignature, permission: "payslips.read" },
   { label: "Attendance", href: "/attendance", icon: CalendarCheck2, permission: "payslips.read" },
@@ -114,7 +114,12 @@ export function AppShell() {
     ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used)
       + creditAccount.monthly_credits_remaining
       + creditAccount.topup_credits_remaining
-    : Math.max(0, 10 - invoices.length - proformas.length - payslips.length)
+    : Math.max(0, 10 - invoices.length - payslips.length)
+  const quotationCreditsRemaining = creditAccount
+    ? Math.max(0, (creditAccount.free_quotation_credits_granted ?? creditAccount.free_credits_granted) - (creditAccount.free_quotation_credits_used ?? 0))
+      + (creditAccount.monthly_quotation_credits_remaining ?? creditAccount.monthly_credits_remaining)
+      + (creditAccount.topup_quotation_credits_remaining ?? creditAccount.topup_credits_remaining)
+    : Math.max(0, 10 - proformas.length)
   useEffect(() => {
     if (!user) return
     const storageKey = `breezyinvoice-product-tour:${user.id}`
@@ -204,13 +209,24 @@ export function AppShell() {
             <Button
               variant="outline"
               className="h-9 gap-2 px-2.5 sm:px-3"
-              title={`${creditsRemaining} shared document credits remaining`}
-              aria-label={`${creditsRemaining} shared document credits remaining. Open workspace settings.`}
+              title={`${creditsRemaining} document credits remaining for invoices and payslips`}
+              aria-label={`${creditsRemaining} document credits remaining for invoices and payslips. Open workspace settings.`}
               onClick={() => navigate("/settings/workspace")}
             >
               <Coins className="size-4" />
               <span className="font-semibold tabular-nums">{creditsRemaining}</span>
-              <span className="hidden text-muted-foreground sm:inline">credits</span>
+              <span className="hidden text-muted-foreground sm:inline">document</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-9 gap-2 px-2.5 sm:px-3"
+              title={`${quotationCreditsRemaining} quotation credits remaining for proformas`}
+              aria-label={`${quotationCreditsRemaining} quotation credits remaining for proformas. Open workspace settings.`}
+              onClick={() => navigate("/settings/workspace")}
+            >
+              <FilePlus2 className="size-4" />
+              <span className="font-semibold tabular-nums">{quotationCreditsRemaining}</span>
+              <span className="hidden text-muted-foreground sm:inline">quotation</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -343,6 +343,7 @@ class SupabaseGateway:
                     "gst_status": "verified",
                     "verified_gstin": gstin,
                     "free_credits_granted": 30,
+                    "free_quotation_credits_granted": 30,
                 }
             ],
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"},

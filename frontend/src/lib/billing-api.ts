@@ -12,6 +12,7 @@ export type BillingOrder = {
   plan_key: BillingPlanKey
   plan_name: string
   credits: number
+  quotation_credits: number
   duration_months: number
 }
 
@@ -91,7 +92,7 @@ export async function createBillingOrder(workspaceId: string, planKey: BillingPl
 }
 
 export async function verifyBillingPayment(workspaceId: string, payment: RazorpaySuccess) {
-  return apiRequest<{ success: boolean; already_processed: boolean; credits_added: number }>("/api/v1/billing/verify", {
+  return apiRequest<{ success: boolean; already_processed: boolean; credits_added: number; quotation_credits_added: number }>("/api/v1/billing/verify", {
     method: "POST",
     body: JSON.stringify({ workspace_id: workspaceId, ...payment }),
   })

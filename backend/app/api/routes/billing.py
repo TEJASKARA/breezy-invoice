@@ -85,6 +85,7 @@ async def create_billing_order(
         plan_key=plan.key,  # type: ignore[arg-type]
         plan_name=plan.name,
         credits=plan.credits,
+        quotation_credits=plan.credits,
         duration_months=plan.duration_months,
     )
 
@@ -142,6 +143,9 @@ async def verify_billing_payment(
         already_processed=bool(applied.get("already_processed")),
         plan_key=str(applied.get("plan_key") or payment_order["plan_key"]),
         credits_added=int(applied.get("credits_added") or 0),
+        quotation_credits_added=int(
+            applied.get("quotation_credits_added") or 0
+        ),
         current_period_ends_at=(
             str(applied["current_period_ends_at"])
             if applied.get("current_period_ends_at")

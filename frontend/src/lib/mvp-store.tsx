@@ -685,7 +685,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     },
     addProforma: async (proforma) => {
       const current = stateRef.current
-      const prefix = `PI-${new Date().getFullYear()}-`
+      const prefix = `QTN-${new Date().getFullYear()}-`
       const highest = current.proformas.reduce((value, item) => {
         const sequence = item.entityId === proforma.entityId && item.number.startsWith(prefix) ? Number(item.number.slice(prefix.length)) : 0
         return Number.isSafeInteger(sequence) ? Math.max(value, sequence) : value

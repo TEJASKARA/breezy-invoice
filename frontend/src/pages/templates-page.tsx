@@ -1,5 +1,5 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
-import { AlignCenter, AlignLeft, AlignRight, Check, Eye, EyeOff, ImagePlus, Move, Plus, RotateCcw, Trash2, Undo2, Upload } from "lucide-react"
+import { AlignCenter, AlignLeft, AlignRight, Check, Eye, EyeOff, FilePlus2, ImagePlus, Move, Plus, ReceiptText, RotateCcw, Trash2, Undo2, Upload } from "lucide-react"
 
 import { InvoicePreview } from "@/components/invoice-preview"
 import { PageHeader } from "@/components/page-header"
@@ -87,6 +87,7 @@ export function TemplatesPage() {
   const [colorDraft, setColorDraft] = useState(template.accentColor)
   const [selectedTextId, setSelectedTextId] = useState<string | null>(template.customTexts[0]?.id ?? null)
   const [selectedElementId, setSelectedElementId] = useState<TemplateElementId | null>("invoiceTitle")
+  const [previewDocumentType, setPreviewDocumentType] = useState<"invoice" | "quotation">("invoice")
 
   const previewEntity: Company = companies[0] ?? {
     id: "preview-entity",
@@ -111,6 +112,12 @@ export function TemplatesPage() {
     () => sampleInvoice(previewEntity.companyName, previewCustomer.companyName),
     [previewEntity.companyName, previewCustomer.companyName],
   )
+  const previewDocument = useMemo(() => previewDocumentType === "quotation" ? {
+    ...previewInvoice,
+    number: "QTN-2026-0001",
+    sourceNumber: "QTN-2026-0001",
+    validUntil: "2026-08-20",
+  } : previewInvoice, [previewDocumentType, previewInvoice])
   const selectedText = template.customTexts.find((block) => block.id === selectedTextId) ?? null
   const selectedElementDefinition = editableElements.find((item) => item.id === selectedElementId) ?? null
   const selectedElement = selectedElementId ? template.elements[selectedElementId] : null
@@ -188,9 +195,9 @@ export function TemplatesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Invoice studio"
-        title="Design your invoice"
-        description="Create the invoice once here. The preview and downloaded PDF use these same saved settings."
+        eyebrow="Document studio"
+        title="Design sales invoices and quotations"
+        description="Switch between the final sales invoice and quotation previews. Downloaded PDFs use these same saved settings."
         actions={canManage ? <Button variant="outline" onClick={resetTemplate}><RotateCcw />Reset</Button> : null}
       />
 
@@ -363,12 +370,20 @@ export function TemplatesPage() {
         </Card>
 
         <div className="page-grid min-w-0 overflow-auto rounded-xl border bg-muted/30 p-3 sm:p-6">
-          <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground"><Move className="size-4" />Select and drag existing invoice elements or custom text. Use arrow keys for precise movement.</div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex rounded-lg border bg-background p-1" aria-label="Document preview type">
+              <Button size="sm" variant={previewDocumentType === "invoice" ? "default" : "ghost"} onClick={() => setPreviewDocumentType("invoice")}><ReceiptText />Sales invoice</Button>
+              <Button size="sm" variant={previewDocumentType === "quotation" ? "default" : "ghost"} onClick={() => setPreviewDocumentType("quotation")}><FilePlus2 />Quotation / proforma</Button>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Move className="size-4" />Select and drag elements. Use arrow keys for precise movement.</div>
+          </div>
+          {previewDocumentType === "quotation" ? <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Quotation previews and PDFs are always marked as not being sales or tax invoices.</p> : null}
           <InvoicePreview
-            invoice={previewInvoice}
+            invoice={previewDocument}
             entity={previewEntity}
             customer={previewCustomer}
             template={template}
+            documentType={previewDocumentType}
             editor={{
               selectedTextId,
               selectedElementId,

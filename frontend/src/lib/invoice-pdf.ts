@@ -49,6 +49,7 @@ type InvoicePdfInput = {
   entity?: Company
   customer?: Customer
   template: TemplateSettings
+  documentType?: "invoice" | "quotation"
 }
 
 export async function createInvoicePdf({
@@ -56,6 +57,7 @@ export async function createInvoicePdf({
   entity,
   customer,
   template,
+  documentType = "invoice",
 }: InvoicePdfInput) {
   const { jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true })
@@ -72,6 +74,10 @@ export async function createInvoicePdf({
   const netReceivable = invoice.netReceivable ?? totals.amount - (invoice.tdsAmount || 0) - (invoice.otherDeduction || 0)
   const compactOffset = template.compact ? -3 : 0
   const element = (id: TemplateElementId) => template.elements[id]
+  const isQuotation = documentType === "quotation"
+  const isGstInvoice = entity?.hasGstin ?? Boolean(entity?.gstin)
+  const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
+  const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
   const shift = (id: TemplateElementId) => ({
     x: (element(id).offsetX / 100) * pageWidth,
     y: (element(id).offsetY / 100) * pageHeight,
@@ -115,7 +121,7 @@ export async function createInvoicePdf({
     doc.setTextColor(...accent)
     doc.setFont(baseFont, "bold")
     doc.setFontSize(template.preset === "minimal" ? 17 : 20)
-    doc.text(element("invoiceTitle").label, pageWidth - margin + titleShift.x, headerY + 6 + titleShift.y, { align: "right" })
+    doc.text(displayedTitle, pageWidth - margin + titleShift.x, headerY + 6 + titleShift.y, { align: "right" })
     doc.setTextColor(...muted)
     doc.setFontSize(9)
     doc.setFont(baseFont, "normal")
@@ -128,7 +134,22 @@ export async function createInvoicePdf({
   doc.setLineWidth(template.preset === "minimal" ? 0.25 : 0.45)
   doc.line(margin, dividerY, pageWidth - margin, dividerY)
 
-  const infoY = dividerY + 10
+  if (isQuotation) {
+    doc.setFillColor(255, 247, 214)
+    doc.setDrawColor(217, 119, 6)
+    doc.roundedRect(margin, dividerY + 4, pageWidth - margin * 2, 8, 1.5, 1.5, "FD")
+    doc.setFont(baseFont, "bold")
+    doc.setFontSize(7.2)
+    doc.setTextColor(120, 53, 15)
+    doc.text(
+      "THIS IS A QUOTATION, NOT A SALES OR TAX INVOICE. IT DOES NOT RECORD A COMPLETED SALE.",
+      pageWidth / 2,
+      dividerY + 9,
+      { align: "center" },
+    )
+  }
+
+  const infoY = dividerY + (isQuotation ? 20 : 10)
   if (element("customer").visible) {
     const customerShift = shift("customer")
     doc.setFont(baseFont, "bold")
@@ -151,16 +172,22 @@ export async function createInvoicePdf({
     doc.setFont(baseFont, "bold")
     doc.setFontSize(8)
     doc.setTextColor(...accent)
-    doc.text(element("invoiceDetails").label.toUpperCase(), 132 + detailsShift.x, infoY + detailsShift.y)
+    doc.text(isQuotation ? "QUOTATION DETAILS" : element("invoiceDetails").label.toUpperCase(), 132 + detailsShift.x, infoY + detailsShift.y)
     doc.setTextColor(...ink)
     doc.setFont(baseFont, "normal")
-    doc.text("Invoice number", 132 + detailsShift.x, infoY + 7 + detailsShift.y)
+    doc.text(isQuotation ? "Quotation number" : "Invoice number", 132 + detailsShift.x, infoY + 7 + detailsShift.y)
     doc.setFont(baseFont, "bold")
     doc.text(invoiceNumber, pageWidth - margin + detailsShift.x, infoY + 7 + detailsShift.y, { align: "right" })
     doc.setFont(baseFont, "normal")
-    doc.text("Invoice date", 132 + detailsShift.x, infoY + 14 + detailsShift.y)
+    doc.text(isQuotation ? "Quotation date" : "Invoice date", 132 + detailsShift.x, infoY + 14 + detailsShift.y)
     doc.setFont(baseFont, "bold")
     doc.text(invoice.date, pageWidth - margin + detailsShift.x, infoY + 14 + detailsShift.y, { align: "right" })
+    if (isQuotation && validUntil) {
+      doc.setFont(baseFont, "normal")
+      doc.text("Valid until", 132 + detailsShift.x, infoY + 21 + detailsShift.y)
+      doc.setFont(baseFont, "bold")
+      doc.text(validUntil, pageWidth - margin + detailsShift.x, infoY + 21 + detailsShift.y, { align: "right" })
+    }
   }
 
   const itemsShift = shift("lineItems")
@@ -181,7 +208,7 @@ export async function createInvoicePdf({
     doc.text("TAXABLE VALUE", pageWidth - margin - 3 + itemsShift.x, y + 6.5, { align: "right" })
   }
 
-  let rowY = 117 + compactOffset + itemsShift.y
+  let rowY = 117 + compactOffset + itemsShift.y + (isQuotation ? 10 : 0)
   if (element("lineItems").visible) drawTableHeader(rowY - 10)
   if (element("lineItems").visible) lineItems.forEach((item, index) => {
     const descriptionLines = (doc.splitTextToSize(item.description, 72) as string[]).slice(0, 3)
@@ -259,14 +286,14 @@ export async function createInvoicePdf({
       else doc.setTextColor(...muted)
       doc.setFont(baseFont, "bold")
       doc.setFontSize(6.7)
-      doc.text("INVOICE TOTAL", summaryX + 4, summaryY + 21)
-      doc.text("NET RECEIVABLE", summaryX + summaryWidth - 4, summaryY + 21, { align: "right" })
+      doc.text(isQuotation ? "QUOTATION TOTAL" : "INVOICE TOTAL", summaryX + 4, summaryY + 21)
+      doc.text(isQuotation ? "ESTIMATED AMOUNT" : "NET RECEIVABLE", summaryX + summaryWidth - 4, summaryY + 21, { align: "right" })
       if (template.preset === "breeze") doc.setTextColor(255, 255, 255)
       else if (template.preset === "classic") doc.setTextColor(...accent)
       else doc.setTextColor(...ink)
       doc.setFontSize(11.5)
       doc.text(money(totals.amount), summaryX + 4, summaryY + 28)
-      doc.text(money(netReceivable), summaryX + summaryWidth - 4, summaryY + 28, { align: "right" })
+      doc.text(money(isQuotation ? totals.amount : netReceivable), summaryX + summaryWidth - 4, summaryY + 28, { align: "right" })
       totalsY = summaryY + 34
       if (invoice.tdsAmount || invoice.otherDeduction) {
         doc.setFont(baseFont, "normal")
@@ -310,12 +337,12 @@ export async function createInvoicePdf({
       doc.setFont(baseFont, "normal")
       doc.setTextColor(...muted)
       doc.setFontSize(7.2)
-      const declaration = doc.splitTextToSize("This is a system-generated invoice. A signature is not required.", 58) as string[]
+      const declaration = doc.splitTextToSize(`This is a system-generated ${isQuotation ? "quotation" : "invoice"}. A signature is not required.`, 58) as string[]
       doc.text(declaration, pageWidth - margin + signatureShift.x, footerY + 15 + signatureShift.y, { align: "right" })
     }
   }
   doc.setFontSize(7)
-  doc.text("Generated with BreezyInvoice", pageWidth / 2, pageHeight - 8, { align: "center" })
+  doc.text("Generated with ChanaX", pageWidth / 2, pageHeight - 8, { align: "center" })
 
   if (template.customTexts.length) {
     doc.setPage(1)

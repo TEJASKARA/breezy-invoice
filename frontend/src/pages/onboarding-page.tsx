@@ -192,12 +192,12 @@ export function OnboardingPage() {
                   <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === true ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
                     <input type="radio" name="hasGstin" required checked={hasGstin === true} onChange={() => { setHasGstin(true); setGstDetails(null); setGstDetailsConfirmed(false); setPan(""); setSaveError("") }} className="sr-only" />
                     <span className="block font-medium">Yes, I have a GSTIN</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">You receive 10 provisional shared credits. GST verification unlocks 20 more.</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">You receive provisional document credits plus an equal, separate quotation allowance. GST verification unlocks the full free allowance in both balances.</span>
                   </label>
                   <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === false ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
                     <input type="radio" name="hasGstin" required checked={hasGstin === false} onChange={() => { setHasGstin(false); setGstin(""); setGstDetails(null); setGstDetailsConfirmed(false); setPan(""); setSaveError("") }} className="sr-only" />
                     <span className="block font-medium">No, I do not have a GSTIN</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">You receive 10 shared credits for invoices, proformas or payslips.</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">You receive document credits for invoices or payslips, plus the same number of separate quotation credits.</span>
                   </label>
                 </div>
               </fieldset>

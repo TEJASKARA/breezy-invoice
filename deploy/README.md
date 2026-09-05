@@ -77,7 +77,10 @@ username and API-key password, plus a sender address on your verified domain.
 ## Razorpay billing setup
 
 Run `supabase/migrations/202609040001_razorpay_billing.sql` before enabling
-checkout. Configure the Razorpay webhook URL as
+checkout, followed by
+`supabase/migrations/202609050001_separate_quotation_credits.sql` so every
+purchase receives matching, separately restricted quotation credits. Configure
+the Razorpay webhook URL as
 `https://api.chanax.in/api/v1/billing/webhook` and enter exactly the same
 webhook secret saved on the VPS. Enable `payment.captured`, `payment.failed`,
 `order.paid`, and `refund.processed`. Test Mode and Live Mode should use
