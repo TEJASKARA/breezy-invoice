@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { AlertTriangle, CalendarDays, Check, Clipboard, Coins, CreditCard, Crown, KeyRound, MailPlus, Save, ShieldCheck, Trash2, UserCog, Users } from "lucide-react"
+import { AlertTriangle, Calculator, CalendarDays, Check, Clipboard, Coins, CreditCard, Crown, KeyRound, MailPlus, Save, ShieldCheck, Trash2, UserCog, Users } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -34,6 +34,7 @@ import {
   verifyBillingPayment,
   type BillingPayment,
   type BillingPlanKey,
+  type CustomPlanUsage,
 } from "@/lib/billing-api"
 
 type EditableRole = Exclude<WorkspaceRole, "owner">
@@ -50,6 +51,19 @@ const previewPlans = [
   { key: "half_yearly" as const, name: "Half-yearly", price: "₹3,000", term: "6 months", credits: 900, seats: 3, description: "More credits for active businesses and accounting teams.", recommended: true },
   { key: "annual" as const, name: "Annual", price: "₹4,500", term: "12 months", credits: 1500, seats: 3, description: "The best-value plan for year-round business operations." },
 ]
+const customDurations = [
+  { key: "custom_monthly" as const, label: "Monthly", months: 1 },
+  { key: "custom_quarterly" as const, label: "Quarterly", months: 3 },
+  { key: "custom_annual" as const, label: "Annual", months: 12 },
+]
+
+function currency(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(value)
+}
 
 function readableDate(value: string | null) {
   if (!value) return "Not set"
@@ -99,6 +113,9 @@ export function WorkspaceSettingsPage() {
   const [deletionRequest, setDeletionRequest] = useState<{ status: string; purge_after: string } | null>(null)
   const [billingPayments, setBillingPayments] = useState<BillingPayment[]>([])
   const [purchasingPlan, setPurchasingPlan] = useState<BillingPlanKey | null>(null)
+  const [customMonthlyInvoices, setCustomMonthlyInvoices] = useState("")
+  const [customEmployees, setCustomEmployees] = useState("")
+  const [customPlanKey, setCustomPlanKey] = useState<"custom_monthly" | "custom_quarterly" | "custom_annual">("custom_monthly")
 
   const canManageTeam = can("team.manage")
   const canManageWorkspace = can("workspace.manage")
@@ -111,6 +128,15 @@ export function WorkspaceSettingsPage() {
       + (creditAccount.monthly_quotation_credits_remaining ?? creditAccount.monthly_credits_remaining)
       + (creditAccount.topup_quotation_credits_remaining ?? creditAccount.topup_credits_remaining)
     : 10
+  const customInvoiceCount = Math.max(0, Math.floor(Number(customMonthlyInvoices) || 0))
+  const customEmployeeCount = Math.max(0, Math.floor(Number(customEmployees) || 0))
+  const customExpectedDocuments = customInvoiceCount + customEmployeeCount
+  const customMonthlyCredits = Math.ceil(customExpectedDocuments * 1.2)
+  const customMonths = customDurations.find((duration) => duration.key === customPlanKey)?.months || 1
+  const customRawMonthlyPrice = customExpectedDocuments * 0.4
+  const customMonthlyPrice = customExpectedDocuments > 0 ? Math.max(100, customRawMonthlyPrice) : 0
+  const customTotalCredits = customMonthlyCredits * customMonths
+  const customTotalPrice = customMonthlyPrice * customMonths
 
   useEffect(() => {
     setFirmName(setup?.firmName || workspace?.name || "")
@@ -239,14 +265,14 @@ export function WorkspaceSettingsPage() {
     }
   }
 
-  async function purchasePlan(planKey: BillingPlanKey) {
+  async function purchasePlan(planKey: BillingPlanKey, usage?: CustomPlanUsage) {
     if (!workspace || !isOwner) return
     setPurchasingPlan(planKey)
     setNotice("")
     setError("")
     try {
       const [order] = await Promise.all([
-        createBillingOrder(workspace.id, planKey),
+        createBillingOrder(workspace.id, planKey, usage),
         loadRazorpayCheckout(),
       ])
       await new Promise<void>((resolve, reject) => {
@@ -337,7 +363,28 @@ export function WorkspaceSettingsPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Subscription plans</CardTitle><CardDescription>Purchase a prepaid ChanaX plan securely through Razorpay. Only the workspace owner can make payments.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="size-4" />Build a custom plan</CardTitle><CardDescription>Tell us your expected monthly invoices and employees. We add a 20% usage buffer and an equal, separate quotation allowance.</CardDescription></CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2"><Label htmlFor="custom-monthly-invoices">Invoices generated each month</Label><Input id="custom-monthly-invoices" inputMode="numeric" min="0" step="1" type="number" value={customMonthlyInvoices} onChange={(event) => setCustomMonthlyInvoices(event.target.value)} placeholder="For example, 100" /></div>
+            <div className="space-y-2"><Label htmlFor="custom-employees">Number of employees</Label><Input id="custom-employees" inputMode="numeric" min="0" step="1" type="number" value={customEmployees} onChange={(event) => setCustomEmployees(event.target.value)} placeholder="For example, 100" /><p className="text-xs text-muted-foreground">One monthly payslip credit per employee.</p></div>
+            <div className="space-y-2"><Label htmlFor="custom-duration">Billing period</Label><select id="custom-duration" value={customPlanKey} onChange={(event) => setCustomPlanKey(event.target.value as typeof customPlanKey)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">{customDurations.map((duration) => <option key={duration.key} value={duration.key}>{duration.label}</option>)}</select></div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Monthly requirement</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customExpectedDocuments}</p><p className="mt-1 text-xs text-muted-foreground">Invoices + employees</p></div>
+            <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Document credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Includes the additional 20%</p></div>
+            <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Quotation credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Separate quotation-only balance</p></div>
+            <div className="rounded-xl border border-primary/40 bg-primary/5 p-4"><p className="text-xs font-medium text-muted-foreground">Total for {customMonths} {customMonths === 1 ? "month" : "months"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{currency(customTotalPrice)}</p><p className="mt-1 text-xs text-muted-foreground">₹0.40 per expected document; minimum ₹100/month</p></div>
+          </div>
+
+          {customExpectedDocuments > 0 && customRawMonthlyPrice < 100 ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">Your calculated monthly usage price is {currency(customRawMonthlyPrice)}. The ₹100 monthly minimum applies.</p> : null}
+          <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-muted-foreground">Credits remain available until the end of the selected prepaid period.</p><Button disabled={!isOwner || purchasingPlan !== null || customExpectedDocuments < 1} onClick={() => void purchasePlan(customPlanKey, { monthlyInvoices: customInvoiceCount, employees: customEmployeeCount })}>{purchasingPlan === customPlanKey ? "Opening Razorpay…" : isOwner ? `Purchase custom plan · ${currency(customTotalPrice)}` : "Owner payment only"}</Button></div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Ready-made plans</CardTitle><CardDescription>Or choose a prepaid fixed plan through Razorpay. Only the workspace owner can make payments.</CardDescription></CardHeader>
         <CardContent><div className="grid gap-4 lg:grid-cols-3">{previewPlans.map((plan) => <div key={plan.name} className={`relative rounded-xl border p-5 ${plan.recommended ? "border-primary ring-1 ring-primary" : ""}`}>{plan.recommended ? <Badge className="absolute right-4 top-4">Recommended</Badge> : null}<h3 className="text-lg font-semibold">{plan.name}</h3><p className="mt-3 text-3xl font-bold">{plan.price}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p><p className="mt-2 text-sm text-muted-foreground">{plan.description}</p><div className="mt-5 space-y-2 text-sm"><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> document credits for invoices or payslips</p><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> separate quotation credits</p><p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p><p className="flex items-center gap-2"><Check className="size-4" />Quotation credits are only for proformas</p><p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p></div><Button className="mt-5 w-full" variant={plan.recommended ? "default" : "outline"} disabled={!isOwner || purchasingPlan !== null} onClick={() => void purchasePlan(plan.key)}>{purchasingPlan === plan.key ? "Opening Razorpay…" : isOwner ? `Choose ${plan.name}` : "Owner payment only"}</Button></div>)}</div><div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Both paid credit balances expire at the end of the selected plan period. Quotation credits cannot be used for sales invoices or payslips.</p><p>Payments are processed by Razorpay. Credits are added only after secure server verification.</p><p>Additional team accounts will be available as a recurring monthly add-on after its price is finalised.</p></div></CardContent>
       </Card>
 

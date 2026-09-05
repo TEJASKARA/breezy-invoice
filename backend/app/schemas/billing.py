@@ -2,12 +2,21 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-PlanKey = Literal["quarterly", "half_yearly", "annual"]
+PlanKey = Literal[
+    "quarterly",
+    "half_yearly",
+    "annual",
+    "custom_monthly",
+    "custom_quarterly",
+    "custom_annual",
+]
 
 
 class BillingOrderRequest(BaseModel):
     workspace_id: str = Field(min_length=36, max_length=36)
     plan_key: PlanKey
+    monthly_invoices: int | None = Field(default=None, ge=0, le=1_000_000)
+    employees: int | None = Field(default=None, ge=0, le=1_000_000)
 
 
 class BillingOrderResponse(BaseModel):
@@ -20,6 +29,8 @@ class BillingOrderResponse(BaseModel):
     credits: int
     quotation_credits: int
     duration_months: int
+    estimated_monthly_invoices: int | None = None
+    estimated_employees: int | None = None
 
 
 class BillingVerificationRequest(BaseModel):
@@ -45,6 +56,8 @@ class BillingHistoryItem(BaseModel):
     currency: str
     credits: int
     duration_months: int
+    estimated_monthly_invoices: int | None = None
+    estimated_employees: int | None = None
     status: str
     provider_order_id: str
     provider_payment_id: str | None = None

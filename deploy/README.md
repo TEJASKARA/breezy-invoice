@@ -89,6 +89,13 @@ webhook secret saved on the VPS. Enable `payment.captured`, `payment.failed`,
 `order.paid`, and `refund.processed`. Test Mode and Live Mode should use
 separate API keys and separate webhook secrets.
 
+Run `supabase/migrations/202609050003_custom_subscription_plans.sql` after the
+private super-admin migration to enable server-priced custom plans. Custom-plan
+monthly usage is invoices plus employees, with 20% additional document credits
+and the same separate quantity of quotation credits. Pricing is ₹0.40 per
+expected monthly document with a ₹100 minimum monthly charge; quarterly and
+annual selections multiply both credits and price by their duration.
+
 ## Private platform administration
 
 Run `supabase/migrations/202609050002_private_super_admin.sql` after the

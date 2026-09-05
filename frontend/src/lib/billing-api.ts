@@ -2,7 +2,18 @@ import { supabase } from "@/lib/supabase"
 
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 
-export type BillingPlanKey = "quarterly" | "half_yearly" | "annual"
+export type BillingPlanKey =
+  | "quarterly"
+  | "half_yearly"
+  | "annual"
+  | "custom_monthly"
+  | "custom_quarterly"
+  | "custom_annual"
+
+export type CustomPlanUsage = {
+  monthlyInvoices: number
+  employees: number
+}
 
 export type BillingOrder = {
   order_id: string
@@ -14,6 +25,8 @@ export type BillingOrder = {
   credits: number
   quotation_credits: number
   duration_months: number
+  estimated_monthly_invoices: number | null
+  estimated_employees: number | null
 }
 
 export type BillingPayment = {
@@ -23,6 +36,8 @@ export type BillingPayment = {
   currency: string
   credits: number
   duration_months: number
+  estimated_monthly_invoices: number | null
+  estimated_employees: number | null
   status: string
   provider_order_id: string
   provider_payment_id: string | null
@@ -84,10 +99,15 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T
 }
 
-export async function createBillingOrder(workspaceId: string, planKey: BillingPlanKey) {
+export async function createBillingOrder(workspaceId: string, planKey: BillingPlanKey, usage?: CustomPlanUsage) {
   return apiRequest<BillingOrder>("/api/v1/billing/orders", {
     method: "POST",
-    body: JSON.stringify({ workspace_id: workspaceId, plan_key: planKey }),
+    body: JSON.stringify({
+      workspace_id: workspaceId,
+      plan_key: planKey,
+      monthly_invoices: usage?.monthlyInvoices,
+      employees: usage?.employees,
+    }),
   })
 }
 

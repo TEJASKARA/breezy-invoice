@@ -67,6 +67,7 @@ supabase/migrations/202608280001_remaining_product_features.sql
 supabase/migrations/202609040001_razorpay_billing.sql
 supabase/migrations/202609050001_separate_quotation_credits.sql
 supabase/migrations/202609050002_private_super_admin.sql
+supabase/migrations/202609050003_custom_subscription_plans.sql
 ```
 
 The migrations create user-owned tables and Row Level Security policies. The

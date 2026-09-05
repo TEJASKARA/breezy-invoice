@@ -50,8 +50,17 @@ async def create_billing_order(
     access_token = _bearer_token(authorization)
     gateway = SupabaseGateway(settings)
     razorpay = RazorpayClient(settings)
-    plan = billing_plan(order_request.plan_key)
     try:
+        custom_plan = order_request.plan_key.startswith("custom_")
+        monthly_invoices = (
+            order_request.monthly_invoices if custom_plan else None
+        )
+        employees = order_request.employees if custom_plan else None
+        plan = billing_plan(
+            order_request.plan_key,
+            monthly_invoices,
+            employees,
+        )
         user = await gateway.authenticated_user(access_token)
         await gateway.assert_workspace_owner(
             order_request.workspace_id, str(user["id"])
@@ -68,6 +77,8 @@ async def create_billing_order(
             amount_paise=plan.amount_paise,
             credits=plan.credits,
             duration_months=plan.duration_months,
+            estimated_monthly_invoices=monthly_invoices,
+            estimated_employees=employees,
         )
     except (
         SupabaseGatewayError,
@@ -87,6 +98,8 @@ async def create_billing_order(
         credits=plan.credits,
         quotation_credits=plan.credits,
         duration_months=plan.duration_months,
+        estimated_monthly_invoices=monthly_invoices,
+        estimated_employees=employees,
     )
 
 

@@ -115,22 +115,27 @@ class SupabaseGateway:
         amount_paise: int,
         credits: int,
         duration_months: int,
+        estimated_monthly_invoices: int | None = None,
+        estimated_employees: int | None = None,
     ) -> dict[str, Any]:
+        order = {
+            "workspace_id": workspace_id,
+            "requested_by": user_id,
+            "provider_order_id": provider_order_id,
+            "plan_key": plan_key,
+            "amount_paise": amount_paise,
+            "currency": "INR",
+            "credits": credits,
+            "duration_months": duration_months,
+        }
+        if estimated_monthly_invoices is not None:
+            order["estimated_monthly_invoices"] = estimated_monthly_invoices
+        if estimated_employees is not None:
+            order["estimated_employees"] = estimated_employees
         response = await self._request(
             "POST",
             "breezy_payment_orders",
-            json=[
-                {
-                    "workspace_id": workspace_id,
-                    "requested_by": user_id,
-                    "provider_order_id": provider_order_id,
-                    "plan_key": plan_key,
-                    "amount_paise": amount_paise,
-                    "currency": "INR",
-                    "credits": credits,
-                    "duration_months": duration_months,
-                }
-            ],
+            json=[order],
             headers={"Prefer": "return=representation"},
         )
         rows = response.json()
@@ -174,6 +179,7 @@ class SupabaseGateway:
             {
                 "select": (
                     "id,plan_key,amount_paise,currency,credits,duration_months,"
+                    "estimated_monthly_invoices,estimated_employees,"
                     "status,provider_order_id,provider_payment_id,paid_at,created_at"
                 ),
                 "workspace_id": f"eq.{workspace_id}",

@@ -19,6 +19,33 @@ def test_billing_plan_prices_are_server_controlled() -> None:
     assert billing_plan("annual").duration_months == 12
 
 
+def test_custom_plan_adds_twenty_percent_and_applies_monthly_minimum() -> None:
+    plan = billing_plan("custom_monthly", monthly_invoices=100, employees=100)
+
+    assert plan.credits == 240
+    assert plan.amount_paise == 10_000
+    assert plan.duration_months == 1
+
+
+def test_custom_plan_multiplies_credits_and_price_by_duration() -> None:
+    quarterly = billing_plan(
+        "custom_quarterly", monthly_invoices=100, employees=100
+    )
+    annual = billing_plan("custom_annual", monthly_invoices=100, employees=100)
+
+    assert quarterly.credits == 720
+    assert quarterly.amount_paise == 30_000
+    assert annual.credits == 2_880
+    assert annual.amount_paise == 120_000
+
+
+def test_custom_plan_uses_forty_paise_rate_above_minimum() -> None:
+    plan = billing_plan("custom_monthly", monthly_invoices=300, employees=0)
+
+    assert plan.credits == 360
+    assert plan.amount_paise == 12_000
+
+
 def test_verifies_checkout_and_webhook_signatures() -> None:
     secret = "test-secret"
     order_id = "order_test"

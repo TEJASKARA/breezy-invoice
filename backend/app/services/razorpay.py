@@ -31,14 +31,48 @@ BILLING_PLANS = {
     "annual": BillingPlan("annual", "Annual", 450_000, 1500, 12),
 }
 
+CUSTOM_PLAN_DURATIONS = {
+    "custom_monthly": ("Custom monthly", 1),
+    "custom_quarterly": ("Custom quarterly", 3),
+    "custom_annual": ("Custom annual", 12),
+}
 
-def billing_plan(plan_key: str) -> BillingPlan:
-    try:
+
+def billing_plan(
+    plan_key: str,
+    monthly_invoices: int | None = None,
+    employees: int | None = None,
+) -> BillingPlan:
+    if plan_key in BILLING_PLANS:
         return BILLING_PLANS[plan_key]
-    except KeyError as exc:
+    if plan_key not in CUSTOM_PLAN_DURATIONS:
+        raise RazorpayRequestError("The selected ChanaX plan is not available.")
+    if monthly_invoices is None or employees is None:
         raise RazorpayRequestError(
-            "The selected ChanaX plan is not available."
-        ) from exc
+            "Enter monthly invoices and employees for the custom plan."
+        )
+    if monthly_invoices < 0 or employees < 0:
+        raise RazorpayRequestError("Custom-plan usage cannot be negative.")
+    expected_documents = monthly_invoices + employees
+    if expected_documents < 1:
+        raise RazorpayRequestError(
+            "Enter at least one monthly invoice or employee."
+        )
+    if expected_documents > 1_000_000:
+        raise RazorpayRequestError(
+            "Contact ChanaX for custom usage above one million documents per month."
+        )
+
+    name, duration_months = CUSTOM_PLAN_DURATIONS[plan_key]
+    monthly_credits = (expected_documents * 6 + 4) // 5
+    monthly_amount_paise = max(10_000, expected_documents * 40)
+    return BillingPlan(
+        key=plan_key,
+        name=name,
+        amount_paise=monthly_amount_paise * duration_months,
+        credits=monthly_credits * duration_months,
+        duration_months=duration_months,
+    )
 
 
 def verify_checkout_signature(
@@ -88,6 +122,8 @@ class RazorpayClient:
                     "notes": {
                         "workspace_id": workspace_id,
                         "plan_key": plan.key,
+                        "credits": str(plan.credits),
+                        "duration_months": str(plan.duration_months),
                     },
                 },
             )
