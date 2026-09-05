@@ -26,15 +26,15 @@ class BillingPlan:
 
 
 BILLING_PLANS = {
-    "quarterly": BillingPlan("quarterly", "Quarterly", 150_000, 300, 3),
-    "half_yearly": BillingPlan("half_yearly", "Half-yearly", 300_000, 900, 6),
-    "annual": BillingPlan("annual", "Annual", 450_000, 1500, 12),
+    "monthly": BillingPlan("monthly", "Monthly", 10_000, 240, 1),
+    "quarterly": BillingPlan("quarterly", "Quarterly", 30_000, 750, 3),
+    "annual": BillingPlan("annual", "Annual", 120_000, 3_120, 12),
 }
 
-CUSTOM_PLAN_DURATIONS = {
-    "custom_monthly": ("Custom monthly", 1),
-    "custom_quarterly": ("Custom quarterly", 3),
-    "custom_annual": ("Custom annual", 12),
+CUSTOM_PLAN_OPTIONS = {
+    "custom_monthly": ("Custom monthly", 1, 20),
+    "custom_quarterly": ("Custom quarterly", 3, 25),
+    "custom_annual": ("Custom annual", 12, 30),
 }
 
 
@@ -45,7 +45,7 @@ def billing_plan(
 ) -> BillingPlan:
     if plan_key in BILLING_PLANS:
         return BILLING_PLANS[plan_key]
-    if plan_key not in CUSTOM_PLAN_DURATIONS:
+    if plan_key not in CUSTOM_PLAN_OPTIONS:
         raise RazorpayRequestError("The selected ChanaX plan is not available.")
     if monthly_invoices is None or employees is None:
         raise RazorpayRequestError(
@@ -63,14 +63,17 @@ def billing_plan(
             "Contact ChanaX for custom usage above one million documents per month."
         )
 
-    name, duration_months = CUSTOM_PLAN_DURATIONS[plan_key]
-    monthly_credits = (expected_documents * 6 + 4) // 5
+    name, duration_months, bonus_percent = CUSTOM_PLAN_OPTIONS[plan_key]
+    period_documents = expected_documents * duration_months
+    credits = (
+        period_documents * (100 + bonus_percent) + 99
+    ) // 100
     monthly_amount_paise = max(10_000, expected_documents * 40)
     return BillingPlan(
         key=plan_key,
         name=name,
         amount_paise=monthly_amount_paise * duration_months,
-        credits=monthly_credits * duration_months,
+        credits=credits,
         duration_months=duration_months,
     )
 

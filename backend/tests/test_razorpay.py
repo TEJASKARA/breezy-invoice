@@ -14,9 +14,12 @@ from app.services.razorpay import (
 
 
 def test_billing_plan_prices_are_server_controlled() -> None:
-    assert billing_plan("quarterly").amount_paise == 150_000
-    assert billing_plan("half_yearly").credits == 900
-    assert billing_plan("annual").duration_months == 12
+    assert billing_plan("monthly").amount_paise == 10_000
+    assert billing_plan("monthly").credits == 240
+    assert billing_plan("quarterly").amount_paise == 30_000
+    assert billing_plan("quarterly").credits == 750
+    assert billing_plan("annual").amount_paise == 120_000
+    assert billing_plan("annual").credits == 3_120
 
 
 def test_custom_plan_adds_twenty_percent_and_applies_monthly_minimum() -> None:
@@ -27,15 +30,15 @@ def test_custom_plan_adds_twenty_percent_and_applies_monthly_minimum() -> None:
     assert plan.duration_months == 1
 
 
-def test_custom_plan_multiplies_credits_and_price_by_duration() -> None:
+def test_custom_plan_uses_period_specific_credit_bonuses() -> None:
     quarterly = billing_plan(
         "custom_quarterly", monthly_invoices=100, employees=100
     )
     annual = billing_plan("custom_annual", monthly_invoices=100, employees=100)
 
-    assert quarterly.credits == 720
+    assert quarterly.credits == 750
     assert quarterly.amount_paise == 30_000
-    assert annual.credits == 2_880
+    assert annual.credits == 3_120
     assert annual.amount_paise == 120_000
 
 
@@ -66,7 +69,7 @@ def test_creates_razorpay_order_with_backend_amount() -> None:
         assert request.url.path == "/v1/orders"
         assert request.headers["authorization"].startswith("Basic ")
         body = request.read().decode()
-        assert '"amount":150000' in body
+        assert '"amount":30000' in body
         return httpx.Response(200, json={"id": "order_created", "status": "created"})
 
     settings = Settings(

@@ -3,8 +3,8 @@ import { supabase } from "@/lib/supabase"
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 
 export type BillingPlanKey =
+  | "monthly"
   | "quarterly"
-  | "half_yearly"
   | "annual"
   | "custom_monthly"
   | "custom_quarterly"

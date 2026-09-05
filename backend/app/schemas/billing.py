@@ -3,8 +3,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 PlanKey = Literal[
+    "monthly",
     "quarterly",
-    "half_yearly",
     "annual",
     "custom_monthly",
     "custom_quarterly",

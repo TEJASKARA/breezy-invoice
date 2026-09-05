@@ -90,11 +90,15 @@ webhook secret saved on the VPS. Enable `payment.captured`, `payment.failed`,
 separate API keys and separate webhook secrets.
 
 Run `supabase/migrations/202609050003_custom_subscription_plans.sql` after the
-private super-admin migration to enable server-priced custom plans. Custom-plan
-monthly usage is invoices plus employees, with 20% additional document credits
-and the same separate quantity of quotation credits. Pricing is ₹0.40 per
-expected monthly document with a ₹100 minimum monthly charge; quarterly and
-annual selections multiply both credits and price by their duration.
+private super-admin migration, followed by
+`supabase/migrations/202609050004_fixed_subscription_plans.sql`, to enable the
+current fixed and server-priced custom plans. Custom-plan
+monthly usage is invoices plus employees, with 20% additional credits for a
+monthly term, 25% for a quarterly term, and 30% for an annual term. Every plan
+receives the same separate quantity of quotation credits. Custom pricing is
+₹0.40 per expected monthly document with a ₹100 minimum monthly charge. The
+fixed plans are ₹100/month for 240 credits, ₹300/quarter for 750 credits, and
+₹1,200/year for 3,120 credits.
 
 ## Private platform administration
 

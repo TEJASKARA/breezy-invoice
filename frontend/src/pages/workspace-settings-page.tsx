@@ -47,14 +47,14 @@ const editableRoles: { value: EditableRole; label: string }[] = [
 ]
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const previewPlans = [
-  { key: "quarterly" as const, name: "Quarterly", price: "₹1,500", term: "3 months", credits: 300, seats: 3, description: "A flexible three-month plan for regular document generation." },
-  { key: "half_yearly" as const, name: "Half-yearly", price: "₹3,000", term: "6 months", credits: 900, seats: 3, description: "More credits for active businesses and accounting teams.", recommended: true },
-  { key: "annual" as const, name: "Annual", price: "₹4,500", term: "12 months", credits: 1500, seats: 3, description: "The best-value plan for year-round business operations." },
+  { key: "monthly" as const, name: "Monthly", price: "₹100", term: "1 month", credits: 240, bonus: 20, seats: 3, description: "A flexible monthly plan with 20% additional credits." },
+  { key: "quarterly" as const, name: "Quarterly", price: "₹300", term: "3 months", credits: 750, bonus: 25, seats: 3, description: "Three months of access with 25% additional credits.", recommended: true },
+  { key: "annual" as const, name: "Annual", price: "₹1,200", term: "12 months", credits: 3120, bonus: 30, seats: 3, description: "A full year with the highest 30% additional-credit allowance." },
 ]
 const customDurations = [
-  { key: "custom_monthly" as const, label: "Monthly", months: 1 },
-  { key: "custom_quarterly" as const, label: "Quarterly", months: 3 },
-  { key: "custom_annual" as const, label: "Annual", months: 12 },
+  { key: "custom_monthly" as const, label: "Monthly · 20% extra", months: 1, bonus: 20 },
+  { key: "custom_quarterly" as const, label: "Quarterly · 25% extra", months: 3, bonus: 25 },
+  { key: "custom_annual" as const, label: "Annual · 30% extra", months: 12, bonus: 30 },
 ]
 
 function currency(value: number) {
@@ -131,11 +131,12 @@ export function WorkspaceSettingsPage() {
   const customInvoiceCount = Math.max(0, Math.floor(Number(customMonthlyInvoices) || 0))
   const customEmployeeCount = Math.max(0, Math.floor(Number(customEmployees) || 0))
   const customExpectedDocuments = customInvoiceCount + customEmployeeCount
-  const customMonthlyCredits = Math.ceil(customExpectedDocuments * 1.2)
-  const customMonths = customDurations.find((duration) => duration.key === customPlanKey)?.months || 1
+  const customDuration = customDurations.find((duration) => duration.key === customPlanKey) || customDurations[0]
+  const customMonths = customDuration.months
+  const customBonusPercent = customDuration.bonus
   const customRawMonthlyPrice = customExpectedDocuments * 0.4
   const customMonthlyPrice = customExpectedDocuments > 0 ? Math.max(100, customRawMonthlyPrice) : 0
-  const customTotalCredits = customMonthlyCredits * customMonths
+  const customTotalCredits = Math.ceil(customExpectedDocuments * customMonths * (1 + customBonusPercent / 100))
   const customTotalPrice = customMonthlyPrice * customMonths
 
   useEffect(() => {
@@ -363,7 +364,7 @@ export function WorkspaceSettingsPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="size-4" />Build a custom plan</CardTitle><CardDescription>Tell us your expected monthly invoices and employees. We add a 20% usage buffer and an equal, separate quotation allowance.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="size-4" />Build a custom plan</CardTitle><CardDescription>Tell us your expected monthly invoices and employees. Monthly plans include 20% extra credits, quarterly plans 25%, and annual plans 30%.</CardDescription></CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2"><Label htmlFor="custom-monthly-invoices">Invoices generated each month</Label><Input id="custom-monthly-invoices" inputMode="numeric" min="0" step="1" type="number" value={customMonthlyInvoices} onChange={(event) => setCustomMonthlyInvoices(event.target.value)} placeholder="For example, 100" /></div>
@@ -373,7 +374,7 @@ export function WorkspaceSettingsPage() {
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Monthly requirement</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customExpectedDocuments}</p><p className="mt-1 text-xs text-muted-foreground">Invoices + employees</p></div>
-            <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Document credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Includes the additional 20%</p></div>
+            <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Document credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Includes {customBonusPercent}% additional credits</p></div>
             <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Quotation credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Separate quotation-only balance</p></div>
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4"><p className="text-xs font-medium text-muted-foreground">Total for {customMonths} {customMonths === 1 ? "month" : "months"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{currency(customTotalPrice)}</p><p className="mt-1 text-xs text-muted-foreground">₹0.40 per expected document; minimum ₹100/month</p></div>
           </div>
@@ -385,7 +386,7 @@ export function WorkspaceSettingsPage() {
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Ready-made plans</CardTitle><CardDescription>Or choose a prepaid fixed plan through Razorpay. Only the workspace owner can make payments.</CardDescription></CardHeader>
-        <CardContent><div className="grid gap-4 lg:grid-cols-3">{previewPlans.map((plan) => <div key={plan.name} className={`relative rounded-xl border p-5 ${plan.recommended ? "border-primary ring-1 ring-primary" : ""}`}>{plan.recommended ? <Badge className="absolute right-4 top-4">Recommended</Badge> : null}<h3 className="text-lg font-semibold">{plan.name}</h3><p className="mt-3 text-3xl font-bold">{plan.price}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p><p className="mt-2 text-sm text-muted-foreground">{plan.description}</p><div className="mt-5 space-y-2 text-sm"><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> document credits for invoices or payslips</p><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> separate quotation credits</p><p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p><p className="flex items-center gap-2"><Check className="size-4" />Quotation credits are only for proformas</p><p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p></div><Button className="mt-5 w-full" variant={plan.recommended ? "default" : "outline"} disabled={!isOwner || purchasingPlan !== null} onClick={() => void purchasePlan(plan.key)}>{purchasingPlan === plan.key ? "Opening Razorpay…" : isOwner ? `Choose ${plan.name}` : "Owner payment only"}</Button></div>)}</div><div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Both paid credit balances expire at the end of the selected plan period. Quotation credits cannot be used for sales invoices or payslips.</p><p>Payments are processed by Razorpay. Credits are added only after secure server verification.</p><p>Additional team accounts will be available as a recurring monthly add-on after its price is finalised.</p></div></CardContent>
+        <CardContent><div className="grid gap-4 lg:grid-cols-3">{previewPlans.map((plan) => <div key={plan.name} className={`relative rounded-xl border p-5 ${plan.recommended ? "border-primary ring-1 ring-primary" : ""}`}>{plan.recommended ? <Badge className="absolute right-4 top-4">Recommended</Badge> : null}<h3 className="text-lg font-semibold">{plan.name}</h3><p className="mt-3 text-3xl font-bold">{plan.price}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p><p className="mt-2 text-sm text-muted-foreground">{plan.description}</p><div className="mt-5 space-y-2 text-sm"><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> document credits for invoices or payslips</p><p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> separate quotation credits</p><p className="flex items-center gap-2"><Check className="size-4" /><strong>{plan.bonus}%</strong> additional credits included</p><p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p><p className="flex items-center gap-2"><Check className="size-4" />Quotation credits are only for proformas</p><p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p></div><Button className="mt-5 w-full" variant={plan.recommended ? "default" : "outline"} disabled={!isOwner || purchasingPlan !== null} onClick={() => void purchasePlan(plan.key)}>{purchasingPlan === plan.key ? "Opening Razorpay…" : isOwner ? `Choose ${plan.name}` : "Owner payment only"}</Button></div>)}</div><div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Both paid credit balances expire at the end of the selected plan period. Quotation credits cannot be used for sales invoices or payslips.</p><p>Payments are processed by Razorpay. Credits are added only after secure server verification.</p><p>Additional team accounts will be available as a recurring monthly add-on after its price is finalised.</p></div></CardContent>
       </Card>
 
       {billingPayments.length ? <Card>
