@@ -23,6 +23,7 @@ const TemplatesPage = lazy(() => import("@/pages/templates-page").then((module) 
 const TallyExportPage = lazy(() => import("@/pages/tally-export-page").then((module) => ({ default: module.TallyExportPage })))
 const WorkspaceSettingsPage = lazy(() => import("@/pages/workspace-settings-page").then((module) => ({ default: module.WorkspaceSettingsPage })))
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then((module) => ({ default: module.PlatformAdminPage })))
+const CaPortalPage = lazy(() => import("@/pages/ca-portal-page").then((module) => ({ default: module.CaPortalPage })))
 
 function PageFallback() {
   return <div className="grid min-h-72 place-items-center text-sm text-muted-foreground">Loading page…</div>
@@ -36,11 +37,14 @@ function Protected({ children }: { children: React.ReactNode }) {
 }
 function SetupGate({ children }: { children: React.ReactNode }) {
   const { setup, loading, syncError } = useMvpStore()
+  const { workspace, userProfile, loading: accessLoading } = useWorkspaceAccess()
   async function signOut() {
     await supabase?.auth.signOut()
     window.location.assign("/login")
   }
-  if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
+  if (loading || accessLoading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
+  if (userProfile?.account_type === "unselected") return <Navigate to="/setup" replace />
+  if (userProfile?.account_type === "ca" && !workspace) return <Navigate to="/ca" replace />
   if (!setup && syncError) {
     return (
       <main className="grid min-h-svh place-items-center bg-muted/30 p-5">
@@ -74,6 +78,7 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<WorkspaceProviders />}>
         <Route path="/setup" element={<Protected><OnboardingPage /></Protected>} />
+        <Route path="/ca" element={<Protected><CaPortalPage /></Protected>} />
         <Route element={<Protected><SetupGate><AppShell /></SetupGate></Protected>}>
           <Route path="/workspace" element={<DashboardPage />} />
           <Route path="/entities" element={<PermissionGate permission="entities.read"><EntitiesPage /></PermissionGate>} />

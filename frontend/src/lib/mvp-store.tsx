@@ -534,7 +534,8 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const legacyData = localStorage.getItem(legacyStorageKey)
       const cachedState = hasOwnData ? readState(userCacheKey) : legacyData ? readState(legacyStorageKey) : emptyState()
       try {
-        const remoteState = await loadWorkspace(userId)
+        const preferredWorkspaceId = window.localStorage.getItem(`chanax-active-workspace:${userId}`)
+        const remoteState = await loadWorkspace(userId, preferredWorkspaceId)
         if (sequence !== loadSequence.current) return
         if (remoteState) {
           const { workspaceId, hasData, ...workspaceData } = remoteState

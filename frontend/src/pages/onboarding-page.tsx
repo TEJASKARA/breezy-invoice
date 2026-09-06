@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Building2, CalendarDays, CheckCircle2, Hash } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
 
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { verifyGstin, type GstVerification } from "@/lib/gst-api"
 import { parseExistingInvoiceNumber, useMvpStore } from "@/lib/mvp-store"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { setMyAccountType } from "@/lib/workspace-access-service"
 
 const industries = [
   "Accounting / CA firm",
@@ -29,7 +30,7 @@ const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 
 export function OnboardingPage() {
   const { setup, loading, completeSetup } = useMvpStore()
-  const { workspace, refresh: refreshWorkspaceAccess } = useWorkspaceAccess()
+  const { workspace, membership, userProfile, refresh: refreshWorkspaceAccess } = useWorkspaceAccess()
   const navigate = useNavigate()
   const [firmName, setFirmName] = useState("")
   const [accountType, setAccountType] = useState<"ca" | "founder" | "employee" | null>(null)
@@ -50,8 +51,85 @@ export function OnboardingPage() {
   const [gstDetails, setGstDetails] = useState<GstVerification | null>(null)
   const [gstDetailsConfirmed, setGstDetailsConfirmed] = useState(false)
 
+  useEffect(() => {
+    if (userProfile?.account_type && userProfile.account_type !== "unselected") {
+      setAccountType(userProfile.account_type)
+      if (userProfile.account_type === "ca" && userProfile.ca_firm_name) setFirmName(userProfile.ca_firm_name)
+    }
+  }, [userProfile])
+
   if (loading) return <div className="grid min-h-svh place-items-center text-sm text-muted-foreground">Loading your workspace…</div>
-  if (setup) return <Navigate to="/workspace" replace />
+  if (userProfile?.account_type === "ca" && !membership) return <Navigate to="/ca" replace />
+  if (setup && userProfile?.account_type !== "unselected") return <Navigate to="/workspace" replace />
+
+  async function chooseAccountType(nextType: "ca" | "founder" | "employee") {
+    setAccountType(nextType)
+    setSaveError("")
+    if (nextType !== "ca" && setup) {
+      setSaving(true)
+      try {
+        await setMyAccountType(nextType)
+        await refreshWorkspaceAccess()
+        navigate("/workspace")
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : "Your account type could not be saved.")
+      } finally {
+        setSaving(false)
+      }
+    }
+  }
+
+  async function completeCaSetup(event: React.FormEvent) {
+    event.preventDefault()
+    if (!firmName.trim()) return setSaveError("Enter your CA practice or accounting firm name.")
+    setSaving(true)
+    setSaveError("")
+    try {
+      await setMyAccountType("ca", firmName.trim())
+      await refreshWorkspaceAccess()
+      navigate("/ca", { replace: true })
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Your CA portal could not be created.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (accountType === null) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-muted/30 p-5 sm:p-10">
+        <Card className="w-full max-w-3xl">
+          <CardHeader><BrandMark className="mb-6" /><CardTitle className="text-2xl">How will you use ChanaX?</CardTitle><CardDescription>This creates the right workspace experience for your role.</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            {saveError ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{saveError}</p> : null}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {([
+                ["ca", "CA / accounting firm", "Work across client subscriptions without paying for them"],
+                ["founder", "Founder / owner", "Own your company subscription and manage your team"],
+                ["employee", "Company employee", "Use access assigned by your company admin"],
+              ] as const).map(([value, title, description]) => <button key={value} type="button" disabled={saving} onClick={() => void chooseAccountType(value)} className="rounded-xl border bg-background p-5 text-left transition-colors hover:border-primary hover:bg-primary/5"><span className="block font-semibold">{title}</span><span className="mt-2 block text-sm text-muted-foreground">{description}</span></button>)}
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
+
+  if (accountType === "ca" && userProfile?.account_type !== "ca") {
+    return (
+      <main className="grid min-h-svh place-items-center bg-muted/30 p-5 sm:p-10">
+        <Card className="w-full max-w-xl">
+          <CardHeader><BrandMark className="mb-6" /><CardTitle>Create your CA portal</CardTitle><CardDescription>You will access client-paid workspaces only after each company approves your request or invitation.</CardDescription></CardHeader>
+          <CardContent><form className="space-y-5" onSubmit={completeCaSetup}>
+            {saveError ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{saveError}</p> : null}
+            <div className="space-y-2"><Label htmlFor="ca-firm-name">CA practice or accounting firm name</Label><Input id="ca-firm-name" required value={firmName} onChange={(event) => setFirmName(event.target.value)} placeholder="Your practice name" /></div>
+            <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Client companies own their subscriptions, credits and data. Every client controls your page permissions and can revoke access.</p>
+            <div className="flex justify-between gap-3"><Button type="button" variant="outline" onClick={() => setAccountType(null)}>Back</Button><Button type="submit" disabled={saving}>{saving ? "Creating portal…" : "Continue to CA portal"}</Button></div>
+          </form></CardContent>
+        </Card>
+      </main>
+    )
+  }
 
   const existingNumbering = continueExistingNumbers ? parseExistingInvoiceNumber(latestInvoiceNumber) : null
   const nextNumberPreview = existingNumbering
@@ -124,6 +202,7 @@ export function OnboardingPage() {
     setSaving(true)
     setSaveError("")
     try {
+      await setMyAccountType(accountType)
       const verified = hasGstin ? gstDetails : null
       await completeSetup({
         firmName: firmName.trim() || verified?.trade_name || verified?.legal_name || "",
@@ -244,17 +323,6 @@ export function OnboardingPage() {
                   <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
                 </section>
               ) : null}
-              <fieldset className="space-y-3">
-                <legend className="text-sm font-medium">How will you use ChanaX?</legend>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {([
-                    ["ca", "CA / accounting firm", "Manage multiple client entities"],
-                    ["founder", "Founder / owner", "Manage your company and team"],
-                    ["employee", "Employee", "Use access assigned by an admin"],
-                  ] as const).map(([value, title, description]) => <label key={value} className={`cursor-pointer rounded-xl border p-4 transition-colors ${accountType === value ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}><input className="sr-only" type="radio" name="accountType" required checked={accountType === value} onChange={() => { setAccountType(value); setSaveError("") }} /><span className="block font-medium">{title}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span></label>)}
-                </div>
-                <p className="text-xs text-muted-foreground">The subscription owner remains the workspace admin and controls every invited member’s page permissions.</p>
-              </fieldset>
               <section className="space-y-4 rounded-xl border bg-muted/20 p-4">
                 <div className="flex items-start gap-3">
                   <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-background"><CalendarDays className="size-4" /></span>

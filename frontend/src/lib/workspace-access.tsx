@@ -11,6 +11,7 @@ import {
   type WorkspaceSubscription,
   type WorkspaceCreditAccount,
   type WorkspaceOption,
+  type UserWorkspaceProfile,
 } from "@/lib/workspace-access-service"
 
 type WorkspaceAccessState = {
@@ -20,6 +21,7 @@ type WorkspaceAccessState = {
   subscription: WorkspaceSubscription | null
   creditAccount: WorkspaceCreditAccount | null
   workspaceOptions: WorkspaceOption[]
+  userProfile: UserWorkspaceProfile | null
   loading: boolean
   error: string | null
   can: (permission: WorkspacePermission) => boolean
@@ -36,6 +38,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   const [subscription, setSubscription] = useState<WorkspaceSubscription | null>(null)
   const [creditAccount, setCreditAccount] = useState<WorkspaceCreditAccount | null>(null)
   const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([])
+  const [userProfile, setUserProfile] = useState<UserWorkspaceProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,6 +50,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setSubscription(null)
       setCreditAccount(null)
       setWorkspaceOptions([])
+      setUserProfile(null)
       setError(null)
       setLoading(false)
       return
@@ -61,6 +65,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setSubscription(next.subscription)
       setCreditAccount(next.creditAccount)
       setWorkspaceOptions(next.workspaceOptions)
+      setUserProfile(next.userProfile)
       if (next.workspace?.id) window.localStorage.setItem(storageKey, next.workspace.id)
       setError(null)
     } catch (accessError) {
@@ -91,12 +96,13 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
     subscription,
     creditAccount,
     workspaceOptions,
+    userProfile,
     loading,
     error,
     can: (permission) => allowsWorkspacePermission(membership, permission),
     refresh,
     switchWorkspace,
-  }), [user, workspace, membership, subscription, creditAccount, workspaceOptions, loading, error, refresh, switchWorkspace])
+  }), [user, workspace, membership, subscription, creditAccount, workspaceOptions, userProfile, loading, error, refresh, switchWorkspace])
 
   return <WorkspaceAccessContext.Provider value={value}>{children}</WorkspaceAccessContext.Provider>
 }

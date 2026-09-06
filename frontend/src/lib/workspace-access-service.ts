@@ -65,6 +65,14 @@ export type WorkspaceOption = {
   membership: WorkspaceMembership
 }
 
+export type UserWorkspaceProfile = {
+  id: string
+  email: string | null
+  full_name: string
+  account_type: "unselected" | "ca" | "founder" | "employee"
+  ca_firm_name: string | null
+}
+
 export type WorkspaceMember = WorkspaceMembership & {
   profile: { full_name: string; email: string | null; avatar_path: string | null } | null
 }
@@ -91,6 +99,19 @@ export function allowsWorkspacePermission(membership: WorkspaceMembership | null
 
 export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: string | null) {
   if (!supabase) throw new Error("Supabase is not configured.")
+  const profileResult = await supabase
+    .from("profiles")
+    .select("id, email, full_name, account_type, ca_firm_name")
+    .eq("id", user.id)
+    .maybeSingle()
+  if (profileResult.error) throw new Error(profileResult.error.message)
+  const userProfile = (profileResult.data || {
+    id: user.id,
+    email: user.email || null,
+    full_name: String(user.user_metadata.full_name || user.user_metadata.name || ""),
+    account_type: "unselected",
+    ca_firm_name: null,
+  }) as UserWorkspaceProfile
   let membershipsResult = await supabase
     .from("breezy_workspace_members")
     .select("id, workspace_id, user_id, role, permissions, status, joined_at")
@@ -98,7 +119,7 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     .eq("status", "active")
     .order("created_at", { ascending: true })
   if (membershipsResult.error) throw new Error(membershipsResult.error.message)
-  if (!membershipsResult.data?.length) {
+  if (!membershipsResult.data?.length && userProfile.account_type !== "ca") {
     const ensured = await supabase.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
       throw new Error(friendlyWorkspaceError(ensured.error))
@@ -112,7 +133,7 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     if (membershipsResult.error) throw new Error(membershipsResult.error.message)
   }
   const memberships = (membershipsResult.data || []) as WorkspaceMembership[]
-  if (!memberships.length) return { membership: null, workspace: null, subscription: null, creditAccount: null, workspaceOptions: [] }
+  if (!memberships.length) return { membership: null, workspace: null, subscription: null, creditAccount: null, workspaceOptions: [], userProfile }
   const membership = memberships.find((item) => item.workspace_id === preferredWorkspaceId) || memberships.at(-1)!
 
   const workspacesResult = await supabase
@@ -147,6 +168,90 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     subscription: subscriptionResult.data as WorkspaceSubscription | null,
     creditAccount: creditTableMissing ? null : creditResult.data as WorkspaceCreditAccount | null,
     workspaceOptions,
+    userProfile,
+  }
+}
+
+export type CaAccessRequest = {
+  id: string
+  workspace_id: string
+  requester_user_id: string
+  requester_email: string
+  requester_name: string
+  ca_firm_name: string | null
+  message: string | null
+  requested_permissions: WorkspacePermission[]
+  status: "pending" | "approved" | "rejected" | "cancelled"
+  created_at: string
+  workspace?: { name: string } | null
+}
+
+export type WorkspaceAuditEntry = {
+  id: number
+  actor_email: string | null
+  actor_account_type: string | null
+  action: string
+  resource_type: string
+  resource_id: string | null
+  details: Record<string, unknown>
+  created_at: string
+}
+
+export async function setMyAccountType(accountType: "ca" | "founder" | "employee", caFirmName?: string) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { error } = await supabase.rpc("breezy_set_account_type", {
+    target_account_type: accountType,
+    target_ca_firm_name: caFirmName || null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function requestCaClientAccess(companyReference: string, message: string) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { error } = await supabase.rpc("breezy_request_ca_access", {
+    target_company_reference: companyReference,
+    request_message: message || null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function cancelCaClientAccessRequest(requestId: string) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { error } = await supabase.rpc("breezy_cancel_ca_access_request", { target_request_id: requestId })
+  if (error) throw new Error(error.message)
+}
+
+export async function loadMyCaAccessRequests() {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { data, error } = await supabase
+    .from("breezy_ca_access_requests")
+    .select("id, workspace_id, requester_user_id, requester_email, requester_name, ca_firm_name, message, requested_permissions, status, created_at, workspace:breezy_workspaces(name)")
+    .order("created_at", { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data || []) as unknown as CaAccessRequest[]
+}
+
+export async function decideCaAccessRequest(requestId: string, approved: boolean, permissions: WorkspacePermission[]) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { error } = await supabase.rpc("breezy_decide_ca_access_request", {
+    target_request_id: requestId,
+    approve_request: approved,
+    target_permissions: permissions,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function loadWorkspaceCaAdministration(workspaceId: string) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const [requestsResult, auditResult] = await Promise.all([
+    supabase.from("breezy_ca_access_requests").select("id, workspace_id, requester_user_id, requester_email, requester_name, ca_firm_name, message, requested_permissions, status, created_at").eq("workspace_id", workspaceId).eq("status", "pending").order("created_at"),
+    supabase.from("breezy_workspace_audit_log").select("id, actor_email, actor_account_type, action, resource_type, resource_id, details, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(50),
+  ])
+  if (requestsResult.error) throw new Error(requestsResult.error.message)
+  if (auditResult.error) throw new Error(auditResult.error.message)
+  return {
+    requests: (requestsResult.data || []) as CaAccessRequest[],
+    auditEntries: (auditResult.data || []) as WorkspaceAuditEntry[],
   }
 }
 

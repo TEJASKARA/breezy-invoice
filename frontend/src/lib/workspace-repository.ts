@@ -33,11 +33,16 @@ function isMissingOptionalTable(error: { code?: string; message: string } | null
 
 export type WorkspaceLoadResult = Partial<MvpState> & { workspaceId: string; hasData: boolean }
 
-export async function loadWorkspace(userId: string): Promise<WorkspaceLoadResult | null> {
+export async function loadWorkspace(userId: string, preferredWorkspaceId?: string | null): Promise<WorkspaceLoadResult | null> {
   const db = client()
-  let membershipResult = await db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active").order("created_at").limit(1).maybeSingle()
+  let membershipQuery = db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active")
+  if (preferredWorkspaceId) membershipQuery = membershipQuery.eq("workspace_id", preferredWorkspaceId)
+  let membershipResult = await membershipQuery.order("created_at").limit(1).maybeSingle()
   throwIfError(membershipResult.error)
   if (!membershipResult.data?.workspace_id) {
+    const profileResult = await db.from("profiles").select("account_type").eq("id", userId).maybeSingle()
+    throwIfError(profileResult.error)
+    if (profileResult.data?.account_type === "ca") return null
     const ensured = await db.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
       throw new Error(friendlyWorkspaceError(ensured.error))

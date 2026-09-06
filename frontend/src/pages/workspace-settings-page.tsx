@@ -16,6 +16,8 @@ import {
 } from "@/lib/workspace-access"
 import {
   loadWorkspacePeople,
+  loadWorkspaceCaAdministration,
+  decideCaAccessRequest,
   permissionOptions,
   permissionsForRole,
   revokeWorkspaceInvitation,
@@ -24,6 +26,8 @@ import {
   type WorkspaceMember,
   type WorkspacePermission,
   type WorkspaceRole,
+  type CaAccessRequest,
+  type WorkspaceAuditEntry,
 } from "@/lib/workspace-access-service"
 import { sendWorkspaceInvitation } from "@/lib/team-api"
 import {
@@ -91,18 +95,21 @@ export function WorkspaceSettingsPage() {
   const { user, workspace, membership, subscription, creditAccount, can, refresh } = useWorkspaceAccess()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
+  const [caAccessRequests, setCaAccessRequests] = useState<CaAccessRequest[]>([])
+  const [auditEntries, setAuditEntries] = useState<WorkspaceAuditEntry[]>([])
   const [firmName, setFirmName] = useState(setup?.firmName || workspace?.name || "")
   const [industry, setIndustry] = useState(setup?.industry || "")
   const [hasGstin, setHasGstin] = useState(setup?.hasGstin ?? Boolean(setup?.gstin?.trim()))
   const [gstin, setGstin] = useState(setup?.gstin || "")
   const [mailingAddress, setMailingAddress] = useState(setup?.mailingAddress || "")
-  const [accountType, setAccountType] = useState<"ca" | "founder" | "employee">(setup?.accountType || "founder")
   const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">(setup?.leavePolicy?.period || "monthly")
   const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(setup?.leavePolicy?.allowanceDays ?? 1)
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<EditableRole>("viewer")
   const [invitePermissions, setInvitePermissions] = useState<WorkspacePermission[]>(permissionsForRole("viewer"))
   const [editingMember, setEditingMember] = useState<WorkspaceMember | null>(null)
+  const [reviewingCaRequest, setReviewingCaRequest] = useState<CaAccessRequest | null>(null)
+  const [caApprovalPermissions, setCaApprovalPermissions] = useState<WorkspacePermission[]>([])
   const [editRole, setEditRole] = useState<EditableRole>("viewer")
   const [editPermissions, setEditPermissions] = useState<WorkspacePermission[]>([])
   const [notice, setNotice] = useState("")
@@ -145,7 +152,6 @@ export function WorkspaceSettingsPage() {
     setHasGstin(setup?.hasGstin ?? Boolean(setup?.gstin?.trim()))
     setGstin(setup?.gstin || "")
     setMailingAddress(setup?.mailingAddress || "")
-    setAccountType(setup?.accountType || "founder")
     setLeavePeriod(setup?.leavePolicy?.period || "monthly")
     setLeaveAllowanceDays(setup?.leavePolicy?.allowanceDays ?? 1)
   }, [setup, workspace?.id, workspace?.name])
@@ -162,7 +168,19 @@ export function WorkspaceSettingsPage() {
     }
   }, [workspace, canManageTeam])
 
+  const loadCaAdministration = useCallback(async () => {
+    if (!workspace || !canManageTeam) return
+    try {
+      const result = await loadWorkspaceCaAdministration(workspace.id)
+      setCaAccessRequests(result.requests)
+      setAuditEntries(result.auditEntries)
+    } catch (adminError) {
+      setError(adminError instanceof Error ? adminError.message : "CA access activity could not be loaded.")
+    }
+  }, [workspace, canManageTeam])
+
   useEffect(() => { void loadPeople() }, [loadPeople])
+  useEffect(() => { void loadCaAdministration() }, [loadCaAdministration])
 
   useEffect(() => {
     if (!workspace || !isOwner || !supabase) return
@@ -199,7 +217,7 @@ export function WorkspaceSettingsPage() {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(updateError.message)
       }
-      await completeSetup({ ...setup, accountType, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
+      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -254,6 +272,23 @@ export function WorkspaceSettingsPage() {
       await loadPeople()
       showSuccess("Pending invitation revoked.")
     } catch (invitationError) { showError(invitationError) }
+  }
+
+  function beginCaApproval(request: CaAccessRequest) {
+    setReviewingCaRequest(request)
+    setCaApprovalPermissions(request.requested_permissions)
+    setNotice("")
+    setError("")
+  }
+
+  async function reviewCaRequest(request: CaAccessRequest, approved: boolean, permissions = request.requested_permissions) {
+    setSaving(true)
+    try {
+      await decideCaAccessRequest(request.id, approved, permissions)
+      setReviewingCaRequest(null)
+      await Promise.all([loadPeople(), loadCaAdministration()])
+      showSuccess(approved ? `${request.requester_name} can now access this workspace.` : "CA access request rejected.")
+    } catch (reviewError) { showError(reviewError) } finally { setSaving(false) }
   }
 
   async function copyCode() {
@@ -400,7 +435,6 @@ export function WorkspaceSettingsPage() {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveWorkspaceDetails}>
             <div className="space-y-2"><Label htmlFor="settings-firm-name">Firm or business name</Label><Input id="settings-firm-name" required value={firmName} disabled={!isOwner} onChange={(event) => setFirmName(event.target.value)} /></div>
             <div className="space-y-2"><Label htmlFor="settings-industry">Industry</Label><Input id="settings-industry" required disabled={!canManageWorkspace} value={industry} onChange={(event) => setIndustry(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="settings-account-type">You use ChanaX as</Label><select id="settings-account-type" disabled={!canManageWorkspace} value={accountType} onChange={(event) => setAccountType(event.target.value as "ca" | "founder" | "employee")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="ca">Chartered accountant / CA practice</option><option value="founder">Founder or business owner</option><option value="employee">Employee or team member</option></select></div>
             <div className="space-y-2"><Label htmlFor="settings-gst-status">GST registration</Label><select id="settings-gst-status" disabled={!canManageWorkspace} value={hasGstin ? "yes" : "no"} onChange={(event) => { const next = event.target.value === "yes"; setHasGstin(next); if (!next) setGstin("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="yes">I have a GSTIN</option><option value="no">I do not have a GSTIN</option></select><p className="text-xs text-muted-foreground">Free document credits are accompanied by an equal, separate quotation-credit allowance. A verified GSTIN unlocks the full allowance in both balances.</p></div>
             {hasGstin ? <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" placeholder="15-character GSTIN" /></div> : null}
             <div className="space-y-2 md:col-span-2"><Label htmlFor="settings-address">Mailing address</Label><textarea id="settings-address" required disabled={!canManageWorkspace} value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50" /></div>
@@ -423,6 +457,7 @@ export function WorkspaceSettingsPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Users className="size-4" />Team and page access</CardTitle><CardDescription>{canManageTeam ? `This workspace includes ${(subscription?.included_seats ?? 3) + (subscription?.extra_seats ?? 0)} total accounts. ${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length} seat${members.filter((member) => ["active", "invited"].includes(member.status)).length + invitations.length === 1 ? " is" : "s are"} currently reserved.` : "Only the workspace owner or an admin can change team access."}</CardDescription></CardHeader>
         <CardContent className="space-y-6">
+          {canManageTeam && caAccessRequests.length ? <section className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><h3 className="font-semibold">CA access requests</h3><p className="text-sm text-muted-foreground">Approving a CA uses one team seat. Choose the exact pages they may use before granting access.</p></div>{caAccessRequests.map((request) => <div key={request.id} className="flex flex-col gap-3 rounded-lg border bg-background p-3 lg:flex-row lg:items-center"><div className="min-w-0 flex-1"><p className="font-medium">{request.requester_name}{request.ca_firm_name ? ` · ${request.ca_firm_name}` : ""}</p><p className="text-xs text-muted-foreground">{request.requester_email}</p>{request.message ? <p className="mt-2 text-sm">{request.message}</p> : null}<p className="mt-2 text-xs text-muted-foreground">Requested: {request.requested_permissions.map((permission) => permission.replace(".", " ")).join(", ")}</p></div><div className="flex gap-2"><Button variant="outline" disabled={saving} onClick={() => void reviewCaRequest(request, false)}>Reject</Button><Button disabled={saving} onClick={() => beginCaApproval(request)}><Check />Review & approve</Button></div></div>)}</section> : null}
           {canManageTeam ? (
             <form onSubmit={sendInvitation} className="space-y-4 rounded-xl border bg-muted/20 p-4">
               <div className="flex items-center gap-2 font-medium"><MailPlus className="size-4" />Add a team member</div>
@@ -449,6 +484,10 @@ export function WorkspaceSettingsPage() {
           {invitations.length ? <div className="space-y-3"><h3 className="font-medium">Pending invitations</h3>{invitations.map((invitation) => <div key={invitation.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-medium">{invitation.email}</p><p className="text-xs text-muted-foreground">{invitation.role} · expires {readableDate(invitation.expires_at)}</p></div><Button variant="outline" size="sm" onClick={() => void revokeInvitation(invitation.id)}>Revoke</Button></div>)}</div> : null}
         </CardContent>
       </Card>
+
+      {canManageTeam ? <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4" />CA access and activity log</CardTitle><CardDescription>The latest CA data changes and access decisions in this workspace. Records remain even if access is later revoked.</CardDescription></CardHeader><CardContent>{auditEntries.length ? <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>User</TableHead><TableHead>Action</TableHead><TableHead>Area</TableHead></TableRow></TableHeader><TableBody>{auditEntries.map((entry) => <TableRow key={entry.id}><TableCell>{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.created_at))}</TableCell><TableCell>{entry.actor_email || "Former user"}{entry.actor_account_type ? <span className="ml-2 text-xs text-muted-foreground">({entry.actor_account_type})</span> : null}</TableCell><TableCell className="capitalize">{entry.action}</TableCell><TableCell>{entry.resource_type.replace(/^breezy_/, "").replaceAll("_", " ")}</TableCell></TableRow>)}</TableBody></Table> : <p className="py-8 text-center text-sm text-muted-foreground">No CA access or activity has been recorded for this workspace.</p>}</CardContent></Card> : null}
+
+      {reviewingCaRequest ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Approve CA access"><Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto"><CardHeader><CardTitle>Approve CA access</CardTitle><CardDescription>Choose the pages {reviewingCaRequest.requester_name} may access. This approval uses one team seat.</CardDescription></CardHeader><CardContent className="space-y-4"><PermissionChecklist selected={caApprovalPermissions} onChange={setCaApprovalPermissions} /><div className="flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setReviewingCaRequest(null)}>Cancel</Button><Button disabled={saving || caApprovalPermissions.length === 0} onClick={() => void reviewCaRequest(reviewingCaRequest, true, caApprovalPermissions)}><Check />Grant access</Button></div></CardContent></Card></div> : null}
 
       {editingMember ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Edit team member access"><Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto"><CardHeader><CardTitle>Edit access</CardTitle><CardDescription>{editingMember.profile?.full_name || editingMember.profile?.email}</CardDescription></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="edit-member-role">Role</Label><select id="edit-member-role" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={editRole} onChange={(event) => { const role = event.target.value as EditableRole; setEditRole(role); setEditPermissions(permissionsForRole(role)) }}>{editableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></div>{editRole === "admin" ? <p className="rounded-lg border bg-muted/30 p-3 text-sm">Admins can access and manage every page.</p> : <PermissionChecklist selected={editPermissions} onChange={setEditPermissions} />}<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setEditingMember(null)}>Cancel</Button><Button disabled={saving} onClick={() => void saveMember()}><Check />Save access</Button></div></CardContent></Card></div> : null}
       {deletionStage ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="Confirm account deletion"><Card className="w-full max-w-xl"><CardHeader><CardTitle className="text-red-700">{deletionStage === 1 ? "First warning: workspace access will stop" : "Final warning: permanent deletion is scheduled"}</CardTitle><CardDescription>{deletionStage === 1 ? "Every team member will lose access immediately. Credits will be frozen and all documents will become unavailable." : "You have 30 days to cancel. After that, unused credits are lost and data is deleted or anonymised. Legally required records may be retained and encrypted backups expire on their normal schedule."}</CardDescription></CardHeader><CardContent className="space-y-4">{deletionStage === 2 ? <div className="space-y-2"><Label htmlFor="delete-confirmation">Type DELETE CHANAX ACCOUNT</Label><Input id="delete-confirmation" autoComplete="off" value={deletionConfirmation} onChange={(event) => setDeletionConfirmation(event.target.value)} /></div> : null}<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => { setDeletionStage(0); setDeletionConfirmation("") }}>Cancel</Button>{deletionStage === 1 ? <Button variant="destructive" onClick={() => setDeletionStage(2)}>I understand, continue</Button> : <Button variant="destructive" disabled={saving || deletionConfirmation !== "DELETE CHANAX ACCOUNT"} onClick={() => void requestDeletion()}><Trash2 />Schedule deletion</Button>}</div></CardContent></Card></div> : null}

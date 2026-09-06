@@ -103,7 +103,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { user } = useAuthUser()
-  const { workspace, membership, creditAccount, workspaceOptions, can, refresh, switchWorkspace } = useWorkspaceAccess()
+  const { workspace, membership, creditAccount, workspaceOptions, userProfile, can, refresh, switchWorkspace } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const { setup, companies, invoices, proformas, payslips, syncError } = useMvpStore()
@@ -290,6 +290,10 @@ export function AppShell() {
                   <Settings2 />
                   Workspace settings
                 </DropdownMenuItem>
+                {userProfile?.account_type === "ca" ? <DropdownMenuItem onClick={() => navigate("/ca")}>
+                  <Building2 />
+                  Client workspaces
+                </DropdownMenuItem> : null}
                 {isPlatformAdmin ? <DropdownMenuItem onClick={() => navigate("/platform-admin")}>
                   <ShieldCheck />
                   Platform administration
@@ -300,7 +304,7 @@ export function AppShell() {
                   {workspaceOptions.map((option) => (
                     <DropdownMenuItem
                       key={option.workspace.id}
-                      onClick={() => void switchWorkspace(option.workspace.id).then(() => navigate("/workspace"))}
+                      onClick={() => void switchWorkspace(option.workspace.id).then(() => window.location.assign("/workspace"))}
                     >
                       <Building2 />
                       <span className="min-w-0 flex-1 truncate">{option.workspace.name}</span>
