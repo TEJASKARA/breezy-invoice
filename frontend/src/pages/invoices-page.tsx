@@ -612,7 +612,7 @@ export function InvoicesPage() {
       [],
       ["Instructions"],
       ["1", mode === "existing"
-        ? "Customer details are prefilled from this entity's customer master. Do not change them unless the saved master must be corrected."
+        ? "Customer details are prefilled from this entity's customer list. Change them only when the saved details need correction."
         : "Enter the new customer's company name, address, GSTIN, PAN, and HSN/SAC before entering invoice amounts."],
       ["2", "Enter amounts in the blank amount columns. Invoice Total and Net Receivable contain formulas."],
       ["3", "Edit the generated invoice number, date, description, and status when required."],
@@ -728,7 +728,7 @@ export function InvoicesPage() {
       setManualCustomer(emptyManualCustomer())
       setManualCustomerError("")
       setShowManualCustomer(false)
-      showNotice(`${customer.companyName} was added to the selected entity's customer master.`)
+      showNotice(`${customer.companyName} was added to the selected entity's customer list.`)
     } catch (error) {
       setManualCustomerError(error instanceof Error ? error.message : "The customer could not be saved.")
     }
@@ -778,7 +778,7 @@ export function InvoicesPage() {
 
       {notice && <p role={noticeIsError ? "alert" : "status"} className={noticeIsError ? "rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{notice}</p>}
       {!companies.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Create at least one managed Entity. The selected entity will be the invoice issuer.</p>}
-      {!customers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Select an entity in the Customer Master section, then add a customer manually or import that entity's customer list.</p>}
+      {!customers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Select an entity in the Customers List section, then add a customer manually or import that entity's customer list.</p>}
 
       {showForm && canManage && (
         <Card>
@@ -989,7 +989,7 @@ export function InvoicesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Customer master by entity</CardTitle>
+          <CardTitle>Customers List</CardTitle>
           <CardDescription>Select an entity to maintain the customers that entity invoices.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -1088,7 +1088,7 @@ export function InvoicesPage() {
                   <TableCell className="hidden max-w-72 truncate lg:table-cell">{customer.billingAddress || "—"}</TableCell>
                   <TableCell className="text-right">
                     {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingCustomerDelete === customer.id ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteCustomer(customer.id); setPendingCustomerDelete(null); showNotice(`${customer.companyName} was removed from the invoice customer master.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The customer could not be deleted.", true) } }}>Confirm delete</Button></div>
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteCustomer(customer.id); setPendingCustomerDelete(null); showNotice(`${customer.companyName} was removed from the invoice customer list.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The customer could not be deleted.", true) } }}>Confirm delete</Button></div>
                     ) : (
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`${customer.favorite ? "Remove" : "Add"} ${customer.companyName} ${customer.favorite ? "from" : "to"} favourites`} title={customer.favorite ? "Remove from favourites" : "Add to favourites"} onClick={async () => { try { await updateCustomer(customer.id, { favorite: !customer.favorite }); showNotice(`${customer.companyName} ${customer.favorite ? "removed from" : "added to"} favourites.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The favourite could not be updated.", true) } }}><Star className={customer.favorite ? "fill-current text-amber-500" : ""} /></Button>
@@ -1097,7 +1097,7 @@ export function InvoicesPage() {
                     )}
                   </TableCell>
                 </TableRow>
-              )) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">{customerEntityId ? "No customers are saved for this entity. Add one manually or import the customer master." : "Select an entity to view its customer list."}</TableCell></TableRow>}
+              )) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">{customerEntityId ? "No customers are saved for this entity. Add one manually or import the customer list." : "Select an entity to view its customer list."}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
