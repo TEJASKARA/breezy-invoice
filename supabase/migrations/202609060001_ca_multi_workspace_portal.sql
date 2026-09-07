@@ -136,11 +136,12 @@ begin
         or exists (select 1 from public.breezy_payslips where workspace_id = owned_workspace_id)
       into workspace_has_business_data;
 
-      if workspace_has_business_data then
-        raise exception 'This account already owns a configured company workspace and cannot be converted automatically.' using errcode = 'P0001';
+      -- Preserve configured workspaces created under the original onboarding
+      -- model. Only remove the empty placeholder automatically created by the
+      -- auth trigger for a brand-new CA account.
+      if not workspace_has_business_data then
+        delete from public.breezy_workspaces where id = owned_workspace_id;
       end if;
-
-      delete from public.breezy_workspaces where id = owned_workspace_id;
     end if;
   end if;
 
@@ -152,7 +153,8 @@ begin
 
   return jsonb_build_object(
     'account_type', target_account_type,
-    'ca_firm_name', case when target_account_type = 'ca' then normalized_firm_name else null end
+    'ca_firm_name', case when target_account_type = 'ca' then normalized_firm_name else null end,
+    'existing_workspace_preserved', target_account_type = 'ca' and workspace_has_business_data
   );
 end;
 $$;
