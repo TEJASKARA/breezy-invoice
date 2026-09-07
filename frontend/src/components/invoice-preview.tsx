@@ -145,6 +145,7 @@ export function InvoicePreview({
           <h1 className="text-2xl font-bold" style={{ color: template.accentColor }}>{displayedTitle}</h1>
           <p className="mt-2 text-sm text-zinc-500">{invoice.sourceNumber || invoice.number}</p>
           <p className="text-sm text-zinc-500">{invoice.date}</p>
+          {!isQuotation && invoice.sourceProformaNumber ? <p className="mt-1 text-xs text-zinc-500">Created from quotation {invoice.sourceProformaNumber}</p> : null}
         </EditableInvoiceElement>
       </header>
 

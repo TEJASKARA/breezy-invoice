@@ -187,6 +187,11 @@ export async function createInvoicePdf({
       doc.text("Valid until", 132 + detailsShift.x, infoY + 21 + detailsShift.y)
       doc.setFont(baseFont, "bold")
       doc.text(validUntil, pageWidth - margin + detailsShift.x, infoY + 21 + detailsShift.y, { align: "right" })
+    } else if (invoice.sourceProformaNumber) {
+      doc.setFont(baseFont, "normal")
+      doc.text("Source quotation", 132 + detailsShift.x, infoY + 21 + detailsShift.y)
+      doc.setFont(baseFont, "bold")
+      doc.text(invoice.sourceProformaNumber, pageWidth - margin + detailsShift.x, infoY + 21 + detailsShift.y, { align: "right" })
     }
   }
 

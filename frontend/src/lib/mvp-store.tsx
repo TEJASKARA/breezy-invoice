@@ -54,6 +54,8 @@ export type Invoice = {
   customerId?: string
   companyName: string
   sourceNumber?: string
+  sourceProformaId?: string
+  sourceProformaNumber?: string
   date: string
   description?: string
   hsnSac?: string
@@ -68,7 +70,7 @@ export type Invoice = {
   lineItems?: InvoiceLineItem[]
   status: "Draft" | "Generated"
 }
-export type Proforma = Invoice & { entityId: string; validUntil?: string; convertedInvoiceId?: string }
+export type Proforma = Invoice & { entityId: string; validUntil?: string; convertedInvoiceId?: string; convertedInvoiceNumber?: string }
 export type PayrollComponent = { id: string; label: string; amount: number }
 export type AttendanceHoliday = { id: string; date: string; name: string }
 export type AttendanceDayStatus = "present" | "half_day" | "paid_leave" | "unpaid_leave"
@@ -261,7 +263,7 @@ type MvpStore = MvpState & {
   addCustomers: (customers: Omit<Customer, "id">[]) => Promise<void>
   updateCustomer: (customerId: string, changes: Partial<Omit<Customer, "id">>) => Promise<void>
   deleteCustomer: (customerId: string) => Promise<void>
-  addInvoice: (invoice: Omit<Invoice, "id" | "number">) => Promise<void>
+  addInvoice: (invoice: Omit<Invoice, "id" | "number">) => Promise<Invoice>
   addInvoices: (invoices: Omit<Invoice, "id" | "number">[]) => Promise<void>
   deleteInvoice: (invoiceId: string) => Promise<void>
   addProforma: (proforma: Omit<Proforma, "id" | "number">) => Promise<void>
@@ -654,6 +656,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         await upsertInvoices(userId, workspaceId, [added])
       })
       commit({ ...stateRef.current, setup: nextSetup, companies: nextCompanies, invoices: [added, ...stateRef.current.invoices] })
+      return added
     },
     addInvoices: async (invoices) => {
       const current = stateRef.current

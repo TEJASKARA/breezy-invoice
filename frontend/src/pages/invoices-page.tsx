@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Download, Eye, LoaderCircle, Plus, Search, Share2, Star, Trash2, Upload, X } from "lucide-react"
+import { useLocation, useNavigate } from "react-router-dom"
 
 import { InvoicePreview } from "@/components/invoice-preview"
 import { PageHeader } from "@/components/page-header"
@@ -57,7 +58,9 @@ const invoiceColumns = [
 ]
 
 export function InvoicesPage() {
-  const { setup, companies, customers, invoices, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const { loading, setup, companies, customers, invoices, proformas, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const location = useLocation()
+  const navigate = useNavigate()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
   const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
@@ -71,6 +74,7 @@ export function InvoicesPage() {
   const [lineItems, setLineItems] = useState<DraftLineItem[]>([newDraftLine()])
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
+  const [sourceProforma, setSourceProforma] = useState<{ id: string; number: string } | null>(null)
   const [draftFormError, setDraftFormError] = useState("")
   const [invoiceSaving, setInvoiceSaving] = useState(false)
   const [preview, setPreview] = useState<ImportInvoice[]>([])
@@ -178,6 +182,55 @@ export function InvoicesPage() {
     bulkPreviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }, [preview.length, bulkImportPending, bulkImportHasError])
 
+  useEffect(() => {
+    const conversionId = (location.state as { convertProformaId?: string } | null)?.convertProformaId
+    if (!conversionId || loading) return
+    const record = proformas.find((proforma) => proforma.id === conversionId)
+    navigate(location.pathname, { replace: true, state: null })
+    if (!record) {
+      showNotice("That quotation could not be found. Refresh the page and try again.", true)
+      return
+    }
+    if (record.convertedInvoiceId) {
+      showNotice(`${record.number} has already been converted into an invoice.`, true)
+      return
+    }
+    const recordEntity = companies.find((company) => company.id === record.entityId)
+    const recordCustomer = customers.find((customer) => customer.id === record.customerId)
+    if (!recordEntity || !recordCustomer) {
+      showNotice("The quotation's issuing entity or customer is no longer available.", true)
+      return
+    }
+    const sourceItems = record.lineItems?.length ? record.lineItems : [{
+      id: crypto.randomUUID(),
+      description: record.description || "",
+      hsnSac: record.hsnSac || "",
+      taxableAmount: record.taxableAmount || 0,
+      cgstAmount: record.cgstAmount || 0,
+      sgstAmount: record.sgstAmount || 0,
+      igstAmount: record.igstAmount || 0,
+    }]
+    setEntityName(recordEntity.companyName)
+    setCompanyName(recordCustomer.companyName)
+    setDate(new Date().toISOString().slice(0, 10))
+    setStatus("Generated")
+    setLineItems(sourceItems.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      taxableAmount: String(item.taxableAmount || ""),
+      cgstAmount: String(item.cgstAmount || ""),
+      sgstAmount: String(item.sgstAmount || ""),
+      igstAmount: String(item.igstAmount || ""),
+    })))
+    setTdsAmount(record.tdsAmount ? String(record.tdsAmount) : "")
+    setOtherDeduction(record.otherDeduction ? String(record.otherDeduction) : "")
+    setSourceProforma({ id: record.id, number: record.number })
+    setDraftFormError("")
+    setShowForm(true)
+    showNotice(`${record.number} is ready to review. Saving the invoice will use one document credit.`)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }, [companies, customers, loading, location.pathname, location.state, navigate, proformas])
+
   const draftError = () => {
     if (!entityName || !companyName) return "Select the issuing entity and customer."
     if (!date) return "Select the invoice date."
@@ -205,6 +258,8 @@ export function InvoicesPage() {
     otherDeduction: Number(otherDeduction) || 0,
     netReceivable: draftTotals.amount - (Number(tdsAmount) || 0) - (Number(otherDeduction) || 0),
     lineItems: parsedLineItems,
+    sourceProformaId: sourceProforma?.id,
+    sourceProformaNumber: sourceProforma?.number,
     status,
   })
 
@@ -214,6 +269,7 @@ export function InvoicesPage() {
     setLineItems([newDraftLine()])
     setTdsAmount("")
     setOtherDeduction("")
+    setSourceProforma(null)
     setDraftFormError("")
     setShowForm(false)
   }
@@ -238,14 +294,18 @@ export function InvoicesPage() {
       setDraftFormError(allowanceError)
       return
     }
+    if (sourceProforma && proformas.find((record) => record.id === sourceProforma.id)?.convertedInvoiceId) {
+      setDraftFormError(`${sourceProforma.number} has already been converted into an invoice.`)
+      return
+    }
     const { id: _id, number: _number, ...invoice } = buildDraftInvoice()
     setInvoiceSaving(true)
     setDraftFormError("")
     try {
-      await addInvoice(invoice)
+      const savedInvoice = await addInvoice(invoice)
       await refresh()
       resetForm()
-      showNotice("Invoice saved to your workspace.")
+      showNotice(sourceProforma ? `${sourceProforma.number} was converted into invoice ${savedInvoice.number}.` : "Invoice saved to your workspace.")
     } catch (saveError) {
       setDraftFormError(saveError instanceof Error ? saveError.message : "The invoice could not be saved. Please try again.")
     } finally {
@@ -722,8 +782,9 @@ export function InvoicesPage() {
 
       {showForm && canManage && (
         <Card>
-          <CardHeader><CardTitle>Create individual invoice</CardTitle><CardDescription>Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
           <CardContent className="space-y-6">
+            {sourceProforma ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"><strong>Source quotation: {sourceProforma.number}</strong><p className="mt-1">The quotation remains saved. Previewing uses no credit. One document credit is used only when this invoice is saved.</p></div> : null}
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
@@ -1096,7 +1157,7 @@ export function InvoicesPage() {
             <TableBody>
               {visibleInvoices.length ? visibleInvoices.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.sourceNumber || invoice.number}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge></TableCell>
+                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge></TableCell>
                   <TableCell className="text-right">
                     {pendingDelete === invoice.id && canManage ? (
                       <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The invoice could not be deleted.", true) } }}>Confirm delete</Button></div>
