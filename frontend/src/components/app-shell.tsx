@@ -292,7 +292,7 @@ export function AppShell() {
                 </DropdownMenuItem>
                 {userProfile?.account_type === "ca" ? <DropdownMenuItem onClick={() => navigate("/ca")}>
                   <Building2 />
-                  Client workspaces
+                  CA workspace hub
                 </DropdownMenuItem> : null}
                 {isPlatformAdmin ? <DropdownMenuItem onClick={() => navigate("/platform-admin")}>
                   <ShieldCheck />

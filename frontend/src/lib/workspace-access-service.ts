@@ -206,6 +206,21 @@ export async function setMyAccountType(accountType: "ca" | "founder" | "employee
   if (error) throw new Error(error.message)
 }
 
+export async function createMyFirmWorkspace(name: string) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { data, error } = await supabase.rpc("breezy_create_my_firm_workspace", {
+    target_name: name,
+  })
+  if (error) throw new Error(friendlyWorkspaceError(error))
+  const result = data as { workspace_id?: string; workspace_name?: string; created?: boolean } | null
+  if (!result?.workspace_id) throw new Error("Your firm workspace could not be created.")
+  return {
+    workspaceId: result.workspace_id,
+    workspaceName: result.workspace_name || name,
+    created: Boolean(result.created),
+  }
+}
+
 export async function requestCaClientAccess(companyReference: string, message: string) {
   if (!supabase) throw new Error("Supabase is not configured.")
   const { error } = await supabase.rpc("breezy_request_ca_access", {

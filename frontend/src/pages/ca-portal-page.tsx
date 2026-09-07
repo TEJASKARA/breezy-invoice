@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Building2, CheckCircle2, Clock3, LogOut, Send, XCircle } from "lucide-react"
+import { Building2, CheckCircle2, Clock3, LogOut, Plus, Send, XCircle } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import {
   cancelCaClientAccessRequest,
+  createMyFirmWorkspace,
   loadMyCaAccessRequests,
   requestCaClientAccess,
   type CaAccessRequest,
@@ -26,6 +27,7 @@ export function CaPortalPage() {
   const { userProfile, workspaceOptions, switchWorkspace, loading } = useWorkspaceAccess()
   const [companyReference, setCompanyReference] = useState("")
   const [message, setMessage] = useState("")
+  const [firmWorkspaceName, setFirmWorkspaceName] = useState("")
   const [requests, setRequests] = useState<CaAccessRequest[]>([])
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("")
@@ -37,6 +39,13 @@ export function CaPortalPage() {
   }, [])
 
   useEffect(() => { if (userProfile?.account_type === "ca") void loadRequests() }, [userProfile, loadRequests])
+
+  useEffect(() => {
+    if (!firmWorkspaceName && userProfile?.ca_firm_name) setFirmWorkspaceName(userProfile.ca_firm_name)
+  }, [firmWorkspaceName, userProfile])
+
+  const ownWorkspace = workspaceOptions.find((option) => option.workspace.owner_user_id === userProfile?.id || option.membership.role === "owner")
+  const clientWorkspaces = workspaceOptions.filter((option) => option.workspace.id !== ownWorkspace?.workspace.id)
 
   async function submitRequest(event: React.FormEvent) {
     event.preventDefault()
@@ -68,6 +77,19 @@ export function CaPortalPage() {
     window.location.assign("/workspace")
   }
 
+  async function createFirmWorkspace(event: React.FormEvent) {
+    event.preventDefault()
+    if (!firmWorkspaceName.trim()) return
+    setSaving(true); setNotice(""); setError("")
+    try {
+      const result = await createMyFirmWorkspace(firmWorkspaceName.trim())
+      await switchWorkspace(result.workspaceId)
+      window.location.assign(result.created ? "/setup" : "/workspace")
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "Your firm workspace could not be created.")
+    } finally { setSaving(false) }
+  }
+
   async function signOut() {
     await supabase?.auth.signOut()
     navigate("/login")
@@ -80,14 +102,22 @@ export function CaPortalPage() {
     <main className="min-h-svh bg-muted/30">
       <header className="border-b bg-background"><div className="mx-auto flex h-16 max-w-7xl items-center px-5"><BrandMark /><div className="ml-auto flex items-center gap-3"><Badge variant="outline">CA portal</Badge><Button variant="ghost" onClick={() => void signOut()}><LogOut />Sign out</Button></div></div></header>
       <div className="mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
-        <div><p className="text-sm font-medium text-primary">{userProfile.ca_firm_name}</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Client workspaces</h1><p className="mt-2 text-muted-foreground">Open every company that has granted your firm access. Each client owns its subscription, credits and permissions.</p></div>
+        <div><p className="text-sm font-medium text-primary">{userProfile.ca_firm_name}</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">CA workspace hub</h1><p className="mt-2 text-muted-foreground">Manage your own firm separately and open every client company that has granted you access.</p></div>
 
         {notice ? <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">{notice}</p> : null}
         {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p> : null}
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {workspaceOptions.map((option) => <Card key={option.workspace.id}><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-5" />{option.workspace.name}</CardTitle><CardDescription>Access granted as {option.membership.role}. The company’s page permissions apply.</CardDescription></CardHeader><CardContent><Button className="w-full" onClick={() => void openWorkspace(option.workspace.id)}>Open workspace</Button></CardContent></Card>)}
-          {!workspaceOptions.length ? <Card className="border-dashed md:col-span-2"><CardContent className="flex min-h-48 flex-col items-center justify-center p-8 text-center"><Building2 className="mb-3 size-8 text-muted-foreground" /><p className="font-semibold">No client access yet</p><p className="mt-1 max-w-md text-sm text-muted-foreground">Ask a client to invite your ChanaX email, or send a secure request using their owner email or subscription code.</p></CardContent></Card> : null}
+        <section className="space-y-3">
+          <div><h2 className="text-xl font-semibold">My firm workspace</h2><p className="text-sm text-muted-foreground">Use this only for your own firm’s invoices, payroll and records. It has its own subscription and credit balances.</p></div>
+          {ownWorkspace ? <Card className="max-w-2xl"><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-5" />{ownWorkspace.workspace.name}<Badge variant="secondary">My firm</Badge></CardTitle><CardDescription>You own this workspace. Client subscriptions and credits are never used here.</CardDescription></CardHeader><CardContent><Button onClick={() => void openWorkspace(ownWorkspace.workspace.id)}>Open my workspace</Button></CardContent></Card> : <Card className="max-w-2xl border-dashed"><CardHeader><CardTitle>Create a workspace for your firm</CardTitle><CardDescription>This is optional. Create it only if your CA practice needs to issue its own invoices or manage its own employees. You can review plans before purchasing.</CardDescription></CardHeader><CardContent><form className="flex flex-col gap-3 sm:flex-row" onSubmit={createFirmWorkspace}><div className="flex-1 space-y-2"><Label htmlFor="firm-workspace-name">Firm or practice name</Label><Input id="firm-workspace-name" required maxLength={160} value={firmWorkspaceName} onChange={(event) => setFirmWorkspaceName(event.target.value)} placeholder="Your CA practice name" /></div><Button className="sm:self-end" type="submit" disabled={saving}><Plus />Create my workspace</Button></form></CardContent></Card>}
+        </section>
+
+        <section className="space-y-3">
+          <div><h2 className="text-xl font-semibold">Client workspaces</h2><p className="text-sm text-muted-foreground">Each client owns its subscription, credits, data and the permissions granted to you.</p></div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {clientWorkspaces.map((option) => <Card key={option.workspace.id}><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-5" />{option.workspace.name}</CardTitle><CardDescription>Access granted as {option.membership.role}. The company’s page permissions apply.</CardDescription></CardHeader><CardContent><Button className="w-full" onClick={() => void openWorkspace(option.workspace.id)}>Open client workspace</Button></CardContent></Card>)}
+          {!clientWorkspaces.length ? <Card className="border-dashed md:col-span-2"><CardContent className="flex min-h-48 flex-col items-center justify-center p-8 text-center"><Building2 className="mb-3 size-8 text-muted-foreground" /><p className="font-semibold">No client access yet</p><p className="mt-1 max-w-md text-sm text-muted-foreground">Ask a client to invite your ChanaX email, or send a secure request using their owner email or subscription code.</p></CardContent></Card> : null}
+          </div>
         </section>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">

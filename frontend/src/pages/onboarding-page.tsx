@@ -202,7 +202,11 @@ export function OnboardingPage() {
     setSaving(true)
     setSaveError("")
     try {
-      await setMyAccountType(accountType)
+      // CA profiles have already selected their account type in the portal.
+      // Reapplying it here could remove a newly created, still-empty firm workspace.
+      if (userProfile?.account_type === "unselected") {
+        await setMyAccountType(accountType, accountType === "ca" ? firmName.trim() : undefined)
+      }
       const verified = hasGstin ? gstDetails : null
       await completeSetup({
         firmName: firmName.trim() || verified?.trade_name || verified?.legal_name || "",
