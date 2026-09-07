@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquareText,
   Monitor,
   Moon,
   ReceiptText,
@@ -26,6 +27,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
 import { FirstLoginTour } from "@/components/first-login-tour"
+import { ProductFeedbackDialog } from "@/components/product-feedback-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -105,6 +107,7 @@ export function AppShell() {
   const { user } = useAuthUser()
   const { workspace, membership, creditAccount, workspaceOptions, userProfile, can, refresh, switchWorkspace } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const { setup, companies, invoices, proformas, payslips, syncError } = useMvpStore()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
@@ -157,6 +160,12 @@ export function AppShell() {
         fullName={fullName}
         can={can}
         onComplete={completeProductTour}
+      />
+      <ProductFeedbackDialog
+        open={feedbackOpen}
+        onOpenChange={setFeedbackOpen}
+        workspaceId={workspace?.id || null}
+        workspaceName={workspace?.name || setup?.firmName || null}
       />
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r bg-background lg:flex lg:flex-col">
         <div className="flex h-16 items-center px-5">
@@ -289,6 +298,10 @@ export function AppShell() {
                 <DropdownMenuItem onClick={() => navigate("/settings/workspace")}>
                   <Settings2 />
                   Workspace settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFeedbackOpen(true)}>
+                  <MessageSquareText />
+                  Feedback
                 </DropdownMenuItem>
                 {userProfile?.account_type === "ca" ? <DropdownMenuItem onClick={() => navigate("/ca")}>
                   <Building2 />
