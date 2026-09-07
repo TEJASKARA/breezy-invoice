@@ -3,6 +3,7 @@ import { Download, Eye, LoaderCircle, Plus, Search, Share2, Star, Trash2, Upload
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { InvoicePreview } from "@/components/invoice-preview"
+import { DocumentShareDialog } from "@/components/document-share-dialog"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
+import { sendDocumentEmail } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
@@ -97,9 +99,11 @@ export function InvoicesPage() {
   const [pendingCustomerDelete, setPendingCustomerDelete] = useState<string | null>(null)
   const [showAllInvoices, setShowAllInvoices] = useState(false)
   const [invoiceSearch, setInvoiceSearch] = useState("")
+  const [invoiceEntityFilter, setInvoiceEntityFilter] = useState("")
   const [invoiceDateFilter, setInvoiceDateFilter] = useState("")
   const [invoiceAmountMin, setInvoiceAmountMin] = useState("")
   const [invoiceAmountMax, setInvoiceAmountMax] = useState("")
+  const [shareTarget, setShareTarget] = useState<Invoice | null>(null)
   const invoiceFileInput = useRef<HTMLInputElement>(null)
   const customerFileInput = useRef<HTMLInputElement>(null)
   const bulkPreviewRef = useRef<HTMLDivElement>(null)
@@ -115,13 +119,14 @@ export function InvoicesPage() {
   const normalizedInvoiceSearch = invoiceSearch.trim().toLowerCase()
   const minimumInvoiceAmount = invoiceAmountMin === "" ? null : Number(invoiceAmountMin)
   const maximumInvoiceAmount = invoiceAmountMax === "" ? null : Number(invoiceAmountMax)
-  const hasInvoiceFilters = Boolean(normalizedInvoiceSearch || invoiceDateFilter || invoiceAmountMin || invoiceAmountMax)
+  const hasInvoiceFilters = Boolean(normalizedInvoiceSearch || invoiceEntityFilter || invoiceDateFilter || invoiceAmountMin || invoiceAmountMax)
   const filteredInvoices = invoices.filter((invoice) => {
     const searchableText = [invoice.sourceNumber, invoice.number, invoice.entityName, invoice.companyName]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
     if (normalizedInvoiceSearch && !searchableText.includes(normalizedInvoiceSearch)) return false
+    if (invoiceEntityFilter && invoice.entityName !== invoiceEntityFilter) return false
     if (invoiceDateFilter && normalizeSpreadsheetDate(invoice.date) !== invoiceDateFilter) return false
     if (minimumInvoiceAmount !== null && Number.isFinite(minimumInvoiceAmount) && invoice.amount < minimumInvoiceAmount) return false
     if (maximumInvoiceAmount !== null && Number.isFinite(maximumInvoiceAmount) && invoice.amount > maximumInvoiceAmount) return false
@@ -159,6 +164,7 @@ export function InvoicesPage() {
 
   const clearInvoiceFilters = () => {
     setInvoiceSearch("")
+    setInvoiceEntityFilter("")
     setInvoiceDateFilter("")
     setInvoiceAmountMin("")
     setInvoiceAmountMax("")
@@ -355,20 +361,37 @@ export function InvoicesPage() {
   }
 
   const shareInvoiceOnWhatsApp = async (invoice: Invoice) => {
-    try {
-      const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
-      const customer = customers.find((item) => item.id === invoice.customerId)
-        || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
-      const result = await sharePdfViaWhatsApp({
-        title: `Invoice ${invoice.sourceNumber || invoice.number}`,
-        message: `Invoice ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
-        createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template }),
-      })
-      if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
-      if (result === "opened") showNotice("WhatsApp opened with the invoice message. This browser cannot attach the generated PDF automatically.")
-    } catch (error) {
-      showNotice(error instanceof Error ? error.message : "The invoice could not be shared through WhatsApp.", true)
-    }
+    const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+    const customer = customers.find((item) => item.id === invoice.customerId)
+      || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
+    const result = await sharePdfViaWhatsApp({
+      title: `Invoice ${invoice.sourceNumber || invoice.number}`,
+      message: `Invoice ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
+      createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template }),
+    })
+    if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
+    if (result === "opened") showNotice("WhatsApp opened with the invoice message. This browser cannot attach the generated PDF automatically.")
+  }
+
+  const emailInvoice = async (invoice: Invoice, toEmail: string) => {
+    if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
+    const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+    const customer = customers.find((item) => item.id === invoice.customerId)
+      || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
+    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template })
+    const invoiceNumber = invoice.sourceNumber || invoice.number
+    const message = await sendDocumentEmail({
+      workspaceId: workspace.id,
+      documentId: invoice.id,
+      toEmail,
+      documentType: "invoice",
+      documentNumber: invoiceNumber,
+      subject: `Invoice ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
+      message: `Hello,\n\nPlease find invoice ${invoiceNumber} attached.\n\nRegards,\n${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
+      filename: file.name,
+      pdf: file.data,
+    })
+    showNotice(message)
   }
 
   const downloadBulkInvoiceZip = async () => {
@@ -853,61 +876,6 @@ export function InvoicesPage() {
         </Card>
       )}
 
-      {canManage ? <Card>
-        <CardHeader>
-          <CardTitle>Bulk invoice generation</CardTitle>
-          <CardDescription>Select the entity once, download the format, fill one invoice line item per row, and upload the completed workbook.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
-            <div className="space-y-2">
-              <Label htmlFor="bulk-invoice-entity">Entity issuing the invoices</Label>
-              <select
-                id="bulk-invoice-entity"
-                value={bulkEntityName}
-                onChange={(event) => {
-                  setBulkEntityName(event.target.value)
-                  setPreview([])
-                  setBulkNewCustomers([])
-                  setBulkInvoicesSaved(false)
-                  setShowDownloadChoices(false)
-                  setBulkImportMessage("")
-                  setBulkImportHasError(false)
-                }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Select entity</option>
-                {companies.map((company) => <option key={company.id}>{company.companyName}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <Button variant="outline" disabled={!bulkEntityName} onClick={() => setShowDownloadChoices(true)}><Download />Download Excel template</Button>
-              <Button disabled={!bulkEntityName || bulkImportPending} onClick={openInvoiceFilePicker}>
-                {bulkImportPending ? <LoaderCircle className="animate-spin" /> : <Upload />}
-                {bulkImportPending ? "Reading workbook…" : "Upload invoice workbook"}
-              </Button>
-            </div>
-          </div>
-          {bulkImportMessage && (
-            <p
-              role={bulkImportHasError ? "alert" : "status"}
-              aria-live="polite"
-              className={`rounded-lg border p-3 text-sm ${bulkImportHasError ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border bg-muted/40 text-foreground"}`}
-            >
-              {bulkImportMessage}
-            </p>
-          )}
-          <div>
-            <p className="mb-2 text-sm font-medium">Required table columns</p>
-            <div className="flex flex-wrap gap-2">
-              {invoiceColumns.map((column) => <Badge key={column} variant="secondary">{column}</Badge>)}
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">For existing customers, the workbook includes the saved company details and only the amount inputs are blank. Choose the new-customer workbook when the customer has not yet been saved. Repeat an invoice number on multiple rows to add multiple descriptions to one invoice.</p>
-          {bulkEntityName && !bulkCustomers.length && <p className="text-sm text-destructive">This entity has no existing customers, but you can download and upload the new-customer workbook.</p>}
-        </CardContent>
-      </Card> : null}
-
       {canManage && customerPreview.length > 0 && (
         <Card>
           <CardHeader>
@@ -936,55 +904,6 @@ export function InvoicesPage() {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {canManage && preview.length > 0 && (
-        <div ref={bulkPreviewRef} tabIndex={-1} className="scroll-mt-6 outline-none">
-          <Card>
-            <CardHeader>
-              <CardTitle>Bulk invoice preview</CardTitle>
-              <CardDescription>
-                {preview.length} valid invoices found for {bulkEntityName}.
-                {bulkNewCustomers.length ? ` ${bulkNewCustomers.length} new customer${bulkNewCustomers.length === 1 ? "" : "s"} will also be saved for this entity.` : ""}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader><TableRow><TableHead>Entity</TableHead><TableHead>Invoice</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                <TableBody>{preview.slice(0, 10).map((invoice, index) => <TableRow key={`${invoice.companyName}-${invoice.date}-${index}`}><TableCell>{invoice.entityName}</TableCell><TableCell>{invoice.sourceNumber}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant="secondary">{invoice.status}</Badge></TableCell></TableRow>)}</TableBody>
-              </Table>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => { setPreview([]); setBulkNewCustomers([]); setBulkInvoicesSaved(false) }}>{bulkInvoicesSaved ? "Close" : "Cancel"}</Button>
-                <Button variant="outline" disabled={bulkDownloadPending} onClick={() => void downloadBulkInvoiceZip()}>
-                  <Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${preview.length} PDFs (ZIP)`}
-                </Button>
-                <Button disabled={bulkInvoicesSaved} onClick={async () => {
-                  const count = preview.length
-                  const customerCount = bulkNewCustomers.length
-                  const allowanceError = freeAllowanceError(invoiceAllowance, count)
-                  if (allowanceError) {
-                    showNotice(allowanceError, true)
-                    return
-                  }
-                  try {
-                    if (customerCount) {
-                      await addCustomers(bulkNewCustomers)
-                      setBulkNewCustomers([])
-                    }
-                    await addInvoices(preview)
-                    await refresh()
-                    setBulkInvoicesSaved(true)
-                    showNotice(`${count} invoices generated successfully${customerCount ? ` and ${customerCount} new customers were saved` : ""}. You can now download the complete batch as a ZIP.`)
-                  } catch (error) {
-                    showNotice(error instanceof Error ? error.message : "The invoice batch could not be saved.", true)
-                  }
-                }}>
-                  {bulkInvoicesSaved ? "Invoices generated" : `Generate ${preview.length} invoices`}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       )}
 
       <Card>
@@ -1103,6 +1022,110 @@ export function InvoicesPage() {
         </CardContent>
       </Card>
 
+      {canManage ? <Card>
+        <CardHeader>
+          <CardTitle>Bulk invoice generation</CardTitle>
+          <CardDescription>Select the entity once, download the format, fill one invoice line item per row, and upload the completed workbook.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-invoice-entity">Entity issuing the invoices</Label>
+              <select
+                id="bulk-invoice-entity"
+                value={bulkEntityName}
+                onChange={(event) => {
+                  setBulkEntityName(event.target.value)
+                  setPreview([])
+                  setBulkNewCustomers([])
+                  setBulkInvoicesSaved(false)
+                  setShowDownloadChoices(false)
+                  setBulkImportMessage("")
+                  setBulkImportHasError(false)
+                }}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Select entity</option>
+                {companies.map((company) => <option key={company.id}>{company.companyName}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <Button variant="outline" disabled={!bulkEntityName} onClick={() => setShowDownloadChoices(true)}><Download />Download Excel template</Button>
+              <Button disabled={!bulkEntityName || bulkImportPending} onClick={openInvoiceFilePicker}>
+                {bulkImportPending ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                {bulkImportPending ? "Reading workbook…" : "Upload invoice workbook"}
+              </Button>
+            </div>
+          </div>
+          {bulkImportMessage ? (
+            <p
+              role={bulkImportHasError ? "alert" : "status"}
+              aria-live="polite"
+              className={`rounded-lg border p-3 text-sm ${bulkImportHasError ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border bg-muted/40 text-foreground"}`}
+            >
+              {bulkImportMessage}
+            </p>
+          ) : null}
+          <div>
+            <p className="mb-2 text-sm font-medium">Required table columns</p>
+            <div className="flex flex-wrap gap-2">
+              {invoiceColumns.map((column) => <Badge key={column} variant="secondary">{column}</Badge>)}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">For existing customers, the workbook includes the saved company details and only the amount inputs are blank. Choose the new-customer workbook when the customer has not yet been saved. Repeat an invoice number on multiple rows to add multiple descriptions to one invoice.</p>
+          {bulkEntityName && !bulkCustomers.length ? <p className="text-sm text-destructive">This entity has no existing customers, but you can download and upload the new-customer workbook.</p> : null}
+        </CardContent>
+      </Card> : null}
+
+      {canManage && preview.length > 0 ? (
+        <div ref={bulkPreviewRef} tabIndex={-1} className="scroll-mt-6 outline-none">
+          <Card>
+            <CardHeader>
+              <CardTitle>Bulk invoice preview</CardTitle>
+              <CardDescription>
+                {preview.length} valid invoices found for {bulkEntityName}.
+                {bulkNewCustomers.length ? ` ${bulkNewCustomers.length} new customer${bulkNewCustomers.length === 1 ? "" : "s"} will also be saved for this entity.` : ""}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Entity</TableHead><TableHead>Invoice</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableBody>{preview.slice(0, 10).map((invoice, index) => <TableRow key={`${invoice.companyName}-${invoice.date}-${index}`}><TableCell>{invoice.entityName}</TableCell><TableCell>{invoice.sourceNumber}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant="secondary">{invoice.status}</Badge></TableCell></TableRow>)}</TableBody>
+              </Table>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => { setPreview([]); setBulkNewCustomers([]); setBulkInvoicesSaved(false) }}>{bulkInvoicesSaved ? "Close" : "Cancel"}</Button>
+                <Button variant="outline" disabled={bulkDownloadPending} onClick={() => void downloadBulkInvoiceZip()}>
+                  <Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${preview.length} PDFs (ZIP)`}
+                </Button>
+                <Button disabled={bulkInvoicesSaved} onClick={async () => {
+                  const count = preview.length
+                  const customerCount = bulkNewCustomers.length
+                  const allowanceError = freeAllowanceError(invoiceAllowance, count)
+                  if (allowanceError) {
+                    showNotice(allowanceError, true)
+                    return
+                  }
+                  try {
+                    if (customerCount) {
+                      await addCustomers(bulkNewCustomers)
+                      setBulkNewCustomers([])
+                    }
+                    await addInvoices(preview)
+                    await refresh()
+                    setBulkInvoicesSaved(true)
+                    showNotice(`${count} invoices generated successfully${customerCount ? ` and ${customerCount} new customers were saved` : ""}. You can now download the complete batch as a ZIP.`)
+                  } catch (error) {
+                    showNotice(error instanceof Error ? error.message : "The invoice batch could not be saved.", true)
+                  }
+                }}>
+                  {bulkInvoicesSaved ? "Invoices generated" : `Generate ${preview.length} invoices`}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1124,7 +1147,7 @@ export function InvoicesPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.4fr)_180px_160px_160px_auto]">
+          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.3fr)_180px_170px_150px_150px_auto]">
             <div className="space-y-2">
               <Label htmlFor="invoice-register-search">Invoice, customer or entity</Label>
               <div className="relative">
@@ -1137,6 +1160,13 @@ export function InvoicesPage() {
                   className="pl-9"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoice-register-entity">Entity</Label>
+              <select id="invoice-register-entity" value={invoiceEntityFilter} onChange={(event) => { setInvoiceEntityFilter(event.target.value); setShowAllInvoices(false) }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">All entities</option>
+                {companies.map((company) => <option key={company.id} value={company.companyName}>{company.companyName}</option>)}
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="invoice-register-date">Invoice date</Label>
@@ -1165,7 +1195,7 @@ export function InvoicesPage() {
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
-                        <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number} through WhatsApp`} title="Share via WhatsApp" onClick={() => void shareInvoiceOnWhatsApp(invoice)}><Share2 /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title="Share invoice" onClick={() => setShareTarget(invoice)}><Share2 /></Button>
                         {canManage ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>
                     )}
@@ -1186,7 +1216,7 @@ export function InvoicesPage() {
                 <p className="text-sm text-muted-foreground">Selected template: {template.preset}. The downloaded PDF will use this format.</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => void shareInvoiceOnWhatsApp(pdfPreview)}><Share2 />Share via WhatsApp</Button>
+                <Button variant="outline" onClick={() => setShareTarget(pdfPreview)}><Share2 />Share</Button>
                 <Button variant="outline" onClick={() => void downloadPdf(pdfPreview)}><Download />Download PDF</Button>
                 <Button size="icon" variant="ghost" aria-label="Close invoice preview" onClick={() => setPdfPreview(null)}><X /></Button>
               </div>
@@ -1203,6 +1233,22 @@ export function InvoicesPage() {
           </div>
         </div>
       )}
+
+      <DocumentShareDialog
+        open={Boolean(shareTarget)}
+        title={shareTarget ? `invoice ${shareTarget.sourceNumber || shareTarget.number}` : "invoice"}
+        onClose={() => setShareTarget(null)}
+        onEmail={async (email) => {
+          if (!shareTarget) return
+          await emailInvoice(shareTarget, email)
+          setShareTarget(null)
+        }}
+        onWhatsApp={async () => {
+          if (!shareTarget) return
+          await shareInvoiceOnWhatsApp(shareTarget)
+          setShareTarget(null)
+        }}
+      />
 
       {canManage && showDownloadChoices && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="download-template-title">

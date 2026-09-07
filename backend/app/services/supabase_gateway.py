@@ -89,6 +89,29 @@ class SupabaseGateway:
                 "This email address is not saved on an employee in this workspace."
             )
 
+    async def assert_workspace_document(
+        self, workspace_id: str, document_id: str, document_type: str
+    ) -> None:
+        table = {
+            "invoice": "breezy_invoices",
+            "quotation": "breezy_proformas",
+        }.get(document_type)
+        if not table:
+            raise SupabaseGatewayError("This document type cannot be emailed.")
+        rows = await self._get(
+            table,
+            {
+                "select": "id",
+                "id": f"eq.{document_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            raise SupabaseGatewayError(
+                "This document is not saved in the selected workspace."
+            )
+
     async def assert_workspace_permission(
         self, access_token: str, workspace_id: str, permission: str
     ) -> None:

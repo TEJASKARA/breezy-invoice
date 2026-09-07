@@ -3,6 +3,7 @@ import { Download, Eye, FilePlus2, ReceiptText, Share2, Trash2 } from "lucide-re
 import { useNavigate } from "react-router-dom"
 
 import { InvoicePreview } from "@/components/invoice-preview"
+import { DocumentShareDialog } from "@/components/document-share-dialog"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
+import { sendDocumentEmail } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { cleanInvoiceFileName, createInvoicePdf } from "@/lib/invoice-pdf"
 import { useMvpStore, type InvoiceLineItem, type Proforma } from "@/lib/mvp-store"
@@ -62,6 +64,7 @@ export function ProformasPage() {
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [preview, setPreview] = useState<Proforma | null>(null)
+  const [shareTarget, setShareTarget] = useState<Proforma | null>(null)
   const invoiceItems = useMemo<InvoiceLineItem[]>(() => items.map(({ cgstRate: _cgstRate, sgstRate: _sgstRate, igstRate: _igstRate, ...item }) => item), [items])
   const totals = useMemo(() => calculateInvoiceTotals(invoiceItems), [invoiceItems])
   const entity = companies.find((company) => company.id === entityId)
@@ -151,6 +154,25 @@ export function ProformasPage() {
     await sharePdfViaWhatsApp({ title: `Proforma ${record.number}`, message: `Proforma ${record.number} for ${record.companyName}.`, createFile: async () => { const doc = await pdf(record); return { name: `${cleanInvoiceFileName(record.companyName)}_${record.date}_proforma.pdf`, data: new Uint8Array(doc.output("arraybuffer")) } } })
   }
 
+  async function email(record: Proforma, toEmail: string) {
+    if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
+    const recordEntity = companies.find((company) => company.id === record.entityId)
+    const doc = await pdf(record)
+    const filename = `${cleanInvoiceFileName(record.companyName)}_${record.date}_proforma.pdf`
+    const message = await sendDocumentEmail({
+      workspaceId: workspace.id,
+      documentId: record.id,
+      toEmail,
+      documentType: "quotation",
+      documentNumber: record.number,
+      subject: `Quotation ${record.number} from ${recordEntity?.companyName || record.entityName || "ChanaX"}`,
+      message: `Hello,\n\nPlease find quotation ${record.number} attached.\n\nRegards,\n${recordEntity?.companyName || record.entityName || "ChanaX"}`,
+      filename,
+      pdf: new Uint8Array(doc.output("arraybuffer")),
+    })
+    setNotice(message)
+  }
+
   function convert(record: Proforma) {
     if (record.convertedInvoiceId) return
     navigate("/invoices", { state: { convertProformaId: record.id } })
@@ -180,7 +202,8 @@ export function ProformasPage() {
       <div className="flex flex-wrap items-center justify-between gap-3"><Button variant="outline" onClick={() => setItems((current) => [...current, line(entityHsnCodes[0])])}><FilePlus2 />Add description</Button><div className="text-right"><p className="text-sm text-muted-foreground">Taxable ₹{totals.taxableAmount.toLocaleString("en-IN")}</p><p className="text-lg font-semibold">Total ₹{totals.amount.toLocaleString("en-IN")}</p></div></div>
       <div className="flex justify-end"><Button disabled={!canManage || !companies.length || !availableCustomers.length || quotationAllowance?.remaining === 0} onClick={() => void save()}><ReceiptText />Generate quotation</Button></div>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>Quotation register</CardTitle><CardDescription>Generated quotations can be downloaded, shared or converted without changing their original record.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{proformas.length ? proformas.map((record) => <TableRow key={record.id}><TableCell className="font-medium">{record.number}</TableCell><TableCell>{record.companyName}</TableCell><TableCell>{record.date}</TableCell><TableCell>₹{record.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant="outline">{record.convertedInvoiceId ? "Converted" : record.status}</Badge>{record.convertedInvoiceId ? <p className="text-xs text-muted-foreground">{record.convertedInvoiceNumber ? `Invoice ${record.convertedInvoiceNumber}` : "Invoice created"}</p> : null}</div></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" aria-label="Preview quotation" onClick={() => setPreview(record)}><Eye /></Button><Button size="icon" variant="ghost" aria-label="Download quotation" onClick={() => void download(record)}><Download /></Button><Button size="icon" variant="ghost" aria-label="Share quotation" onClick={() => void share(record)}><Share2 /></Button><Button size="sm" variant="outline" disabled={!canManage || Boolean(record.convertedInvoiceId)} onClick={() => convert(record)}>Convert to invoice</Button><Button size="icon" variant="ghost" aria-label="Delete quotation" disabled={!canManage} onClick={() => void deleteProforma(record.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No quotations yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
-    {preview ? <div className="fixed inset-0 z-50 overflow-auto bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Quotation preview"><div className="mx-auto max-w-5xl space-y-3"><div className="flex justify-end"><Button variant="secondary" onClick={() => setPreview(null)}>Close preview</Button></div><InvoicePreview invoice={preview} entity={companies.find((item) => item.id === preview.entityId)} customer={customers.find((item) => item.id === preview.customerId)} template={proformaTemplate} documentType="quotation" /></div></div> : null}
+    <Card><CardHeader><CardTitle>Quotation register</CardTitle><CardDescription>Generated quotations can be downloaded, shared or converted without changing their original record.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{proformas.length ? proformas.map((record) => <TableRow key={record.id}><TableCell className="font-medium">{record.number}</TableCell><TableCell>{record.companyName}</TableCell><TableCell>{record.date}</TableCell><TableCell>₹{record.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant="outline">{record.convertedInvoiceId ? "Converted" : record.status}</Badge>{record.convertedInvoiceId ? <p className="text-xs text-muted-foreground">{record.convertedInvoiceNumber ? `Invoice ${record.convertedInvoiceNumber}` : "Invoice created"}</p> : null}</div></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" aria-label="Preview quotation" onClick={() => setPreview(record)}><Eye /></Button><Button size="icon" variant="ghost" aria-label="Download quotation" onClick={() => void download(record)}><Download /></Button><Button size="icon" variant="ghost" aria-label="Share quotation" onClick={() => setShareTarget(record)}><Share2 /></Button><Button size="sm" variant="outline" disabled={!canManage || Boolean(record.convertedInvoiceId)} onClick={() => convert(record)}>Convert to invoice</Button><Button size="icon" variant="ghost" aria-label="Delete quotation" disabled={!canManage} onClick={() => void deleteProforma(record.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No quotations yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    {preview ? <div className="fixed inset-0 z-50 overflow-auto bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Quotation preview"><div className="mx-auto max-w-5xl space-y-3"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShareTarget(preview)}><Share2 />Share</Button><Button variant="secondary" onClick={() => setPreview(null)}>Close preview</Button></div><InvoicePreview invoice={preview} entity={companies.find((item) => item.id === preview.entityId)} customer={customers.find((item) => item.id === preview.customerId)} template={proformaTemplate} documentType="quotation" /></div></div> : null}
+    <DocumentShareDialog open={Boolean(shareTarget)} title={shareTarget ? `quotation ${shareTarget.number}` : "quotation"} onClose={() => setShareTarget(null)} onEmail={async (toEmail) => { if (!shareTarget) return; await email(shareTarget, toEmail); setShareTarget(null) }} onWhatsApp={async () => { if (!shareTarget) return; await share(shareTarget); setShareTarget(null) }} />
   </div>
 }

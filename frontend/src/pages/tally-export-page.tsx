@@ -244,9 +244,9 @@ export function TallyExportPage() {
     {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access. Ledger edits, mapping uploads, and XML generation require Data Export management permission.</p> : null}
 
     <Card>
-      <CardHeader><CardTitle>Export selection</CardTitle><CardDescription>Select the Tally company and reporting period used by both sales and payroll exports.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Export a particular entity</CardTitle><CardDescription>Select the entity and reporting period. Invoice exports will include only invoices issued by this entity.</CardDescription></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-3">
-        <div className="space-y-2"><Label htmlFor="tally-entity">Entity</Label><select id="tally-entity" className={selectClass} value={selectedEntityId} onChange={(event) => changeEntity(event.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
+        <div className="space-y-2"><Label htmlFor="tally-entity">Export entity</Label><select id="tally-entity" className={selectClass} value={selectedEntityId} onChange={(event) => changeEntity(event.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
         <div className="space-y-2"><Label htmlFor="tally-from">From date</Label><Input id="tally-from" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></div>
         <div className="space-y-2"><Label htmlFor="tally-to">To date</Label><Input id="tally-to" type="date" value={dateTo} min={dateFrom} onChange={(event) => setDateTo(event.target.value)} /></div>
       </CardContent>
@@ -256,7 +256,7 @@ export function TallyExportPage() {
     {notice && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p>}
 
     <Card>
-      <CardHeader><CardTitle>Complete workspace export</CardTitle><CardDescription>Choose the records you need. ChanaX will create one ZIP containing an Excel workbook, available PDFs, Tally XML, and stored expense bills for this entity and date range.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Selected entity export</CardTitle><CardDescription>Choose the records you need. ChanaX will create one ZIP containing data only for {entity?.companyName || "the selected entity"} within this date range.</CardDescription></CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {([
