@@ -68,7 +68,7 @@ def billing_plan(
     credits = (
         period_documents * (100 + bonus_percent) + 99
     ) // 100
-    monthly_amount_paise = max(10_000, expected_documents * 40)
+    monthly_amount_paise = max(10_000, expected_documents * 60)
     return BillingPlan(
         key=plan_key,
         name=name,

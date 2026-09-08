@@ -22,11 +22,11 @@ def test_billing_plan_prices_are_server_controlled() -> None:
     assert billing_plan("annual").credits == 3_120
 
 
-def test_custom_plan_adds_twenty_percent_and_applies_monthly_minimum() -> None:
+def test_custom_plan_adds_twenty_percent_at_sixty_paise_rate() -> None:
     plan = billing_plan("custom_monthly", monthly_invoices=100, employees=100)
 
     assert plan.credits == 240
-    assert plan.amount_paise == 10_000
+    assert plan.amount_paise == 12_000
     assert plan.duration_months == 1
 
 
@@ -37,16 +37,23 @@ def test_custom_plan_uses_period_specific_credit_bonuses() -> None:
     annual = billing_plan("custom_annual", monthly_invoices=100, employees=100)
 
     assert quarterly.credits == 750
-    assert quarterly.amount_paise == 30_000
+    assert quarterly.amount_paise == 36_000
     assert annual.credits == 3_120
-    assert annual.amount_paise == 120_000
+    assert annual.amount_paise == 144_000
 
 
-def test_custom_plan_uses_forty_paise_rate_above_minimum() -> None:
+def test_custom_plan_uses_sixty_paise_rate_above_minimum() -> None:
     plan = billing_plan("custom_monthly", monthly_invoices=300, employees=0)
 
     assert plan.credits == 360
-    assert plan.amount_paise == 12_000
+    assert plan.amount_paise == 18_000
+
+
+def test_custom_plan_keeps_one_hundred_rupee_monthly_minimum() -> None:
+    plan = billing_plan("custom_monthly", monthly_invoices=100, employees=0)
+
+    assert plan.credits == 120
+    assert plan.amount_paise == 10_000
 
 
 def test_verifies_checkout_and_webhook_signatures() -> None:

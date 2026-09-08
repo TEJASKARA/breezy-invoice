@@ -141,7 +141,7 @@ export function WorkspaceSettingsPage() {
   const customDuration = customDurations.find((duration) => duration.key === customPlanKey) || customDurations[0]
   const customMonths = customDuration.months
   const customBonusPercent = customDuration.bonus
-  const customRawMonthlyPrice = customExpectedDocuments * 0.4
+  const customRawMonthlyPrice = customExpectedDocuments * 0.6
   const customMonthlyPrice = customExpectedDocuments > 0 ? Math.max(100, customRawMonthlyPrice) : 0
   const customTotalCredits = Math.ceil(customExpectedDocuments * customMonths * (1 + customBonusPercent / 100))
   const customTotalPrice = customMonthlyPrice * customMonths
@@ -411,7 +411,7 @@ export function WorkspaceSettingsPage() {
             <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Monthly requirement</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customExpectedDocuments}</p><p className="mt-1 text-xs text-muted-foreground">Invoices + employees</p></div>
             <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Document credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Includes {customBonusPercent}% additional credits</p></div>
             <div className="rounded-xl border bg-muted/30 p-4"><p className="text-xs font-medium text-muted-foreground">Quotation credits</p><p className="mt-2 text-2xl font-semibold tabular-nums">{customTotalCredits}</p><p className="mt-1 text-xs text-muted-foreground">Separate quotation-only balance</p></div>
-            <div className="rounded-xl border border-primary/40 bg-primary/5 p-4"><p className="text-xs font-medium text-muted-foreground">Total for {customMonths} {customMonths === 1 ? "month" : "months"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{currency(customTotalPrice)}</p><p className="mt-1 text-xs text-muted-foreground">₹0.40 per expected document; minimum ₹100/month</p></div>
+            <div className="rounded-xl border border-primary/40 bg-primary/5 p-4"><p className="text-xs font-medium text-muted-foreground">Total for {customMonths} {customMonths === 1 ? "month" : "months"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{currency(customTotalPrice)}</p><p className="mt-1 text-xs text-muted-foreground">₹0.60 per expected document; minimum ₹100/month</p></div>
           </div>
 
           {customExpectedDocuments > 0 && customRawMonthlyPrice < 100 ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">Your calculated monthly usage price is {currency(customRawMonthlyPrice)}. The ₹100 monthly minimum applies.</p> : null}

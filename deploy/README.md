@@ -96,7 +96,7 @@ current fixed and server-priced custom plans. Custom-plan
 monthly usage is invoices plus employees, with 20% additional credits for a
 monthly term, 25% for a quarterly term, and 30% for an annual term. Every plan
 receives the same separate quantity of quotation credits. Custom pricing is
-₹0.40 per expected monthly document with a ₹100 minimum monthly charge. The
+₹0.60 per expected monthly document with a ₹100 minimum monthly charge. The
 fixed plans are ₹100/month for 240 credits, ₹300/quarter for 750 credits, and
 ₹1,200/year for 3,120 credits.
 
