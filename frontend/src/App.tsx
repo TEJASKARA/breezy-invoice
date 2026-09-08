@@ -22,6 +22,7 @@ const OnboardingPage = lazy(() => import("@/pages/onboarding-page").then((module
 const TemplatesPage = lazy(() => import("@/pages/templates-page").then((module) => ({ default: module.TemplatesPage })))
 const TallyExportPage = lazy(() => import("@/pages/tally-export-page").then((module) => ({ default: module.TallyExportPage })))
 const WorkspaceSettingsPage = lazy(() => import("@/pages/workspace-settings-page").then((module) => ({ default: module.WorkspaceSettingsPage })))
+const PricingPage = lazy(() => import("@/pages/pricing-page").then((module) => ({ default: module.PricingPage })))
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then((module) => ({ default: module.PlatformAdminPage })))
 const CaPortalPage = lazy(() => import("@/pages/ca-portal-page").then((module) => ({ default: module.CaPortalPage })))
 const TermsPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.TermsPage })))
@@ -99,6 +100,7 @@ function App() {
           <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />
           <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />
           <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
           <Route path="/platform-admin" element={<PlatformAdminPage />} />
         </Route>
       </Route>

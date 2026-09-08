@@ -17,6 +17,7 @@ import {
   MessageSquareText,
   Monitor,
   Moon,
+  PackageCheck,
   ReceiptText,
   Settings2,
   ShieldCheck,
@@ -72,6 +73,7 @@ const navigation = [
   { label: "Expenses", href: "/expenses", icon: WalletCards, permission: "expenses.read" },
   { label: "Data Export", href: "/tally-export", icon: FileOutput, permission: "data_export.read" },
   { label: "Templates", href: "/settings/templates", icon: FileText, permission: "templates.read" },
+  { label: "Pricing", href: "/pricing", icon: PackageCheck, permission: null },
 ]
 
 function Navigation({ mobile = false }: { mobile?: boolean }) {
@@ -245,8 +247,8 @@ export function AppShell() {
               variant="outline"
               className="h-9 gap-2 px-2.5 sm:px-3"
               title={`${creditsRemaining} document credits remaining for invoices and payslips`}
-              aria-label={`${creditsRemaining} document credits remaining for invoices and payslips. Open workspace settings.`}
-              onClick={() => navigate("/settings/workspace")}
+              aria-label={`${creditsRemaining} document credits remaining for invoices and payslips. Open pricing.`}
+              onClick={() => navigate("/pricing")}
             >
               <Coins className="size-4" />
               <span className="font-semibold tabular-nums">{creditsRemaining}</span>
@@ -256,8 +258,8 @@ export function AppShell() {
               variant="outline"
               className="h-9 gap-2 px-2.5 sm:px-3"
               title={`${quotationCreditsRemaining} quotation credits remaining for proformas`}
-              aria-label={`${quotationCreditsRemaining} quotation credits remaining for proformas. Open workspace settings.`}
-              onClick={() => navigate("/settings/workspace")}
+              aria-label={`${quotationCreditsRemaining} quotation credits remaining for proformas. Open pricing.`}
+              onClick={() => navigate("/pricing")}
             >
               <FilePlus2 className="size-4" />
               <span className="font-semibold tabular-nums">{quotationCreditsRemaining}</span>
@@ -313,6 +315,10 @@ export function AppShell() {
                 <DropdownMenuItem onClick={() => navigate("/settings/workspace")}>
                   <Settings2 />
                   Workspace settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/pricing")}>
+                  <PackageCheck />
+                  Pricing
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setFeedbackOpen(true)}>
                   <MessageSquareText />
