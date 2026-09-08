@@ -1,6 +1,6 @@
 import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
@@ -134,7 +134,7 @@ export function LoginPage() {
             </CardContent>
           </Card>
           <p className="mt-5 text-center text-xs text-muted-foreground">
-            By continuing, you agree to the Terms of Service and Privacy Policy.
+            By continuing, you agree to the <Link to="/terms" className="underline underline-offset-4 hover:text-foreground">Terms &amp; Conditions</Link> and <Link to="/privacy" className="underline underline-offset-4 hover:text-foreground">Privacy Policy</Link>.
           </p>
         </div>
       </section>

@@ -24,6 +24,10 @@ const TallyExportPage = lazy(() => import("@/pages/tally-export-page").then((mod
 const WorkspaceSettingsPage = lazy(() => import("@/pages/workspace-settings-page").then((module) => ({ default: module.WorkspaceSettingsPage })))
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then((module) => ({ default: module.PlatformAdminPage })))
 const CaPortalPage = lazy(() => import("@/pages/ca-portal-page").then((module) => ({ default: module.CaPortalPage })))
+const TermsPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.TermsPage })))
+const PrivacyPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.PrivacyPage })))
+const ContactPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.ContactPage })))
+const CancellationRefundsPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.CancellationRefundsPage })))
 
 function PageFallback() {
   return <div className="grid min-h-72 place-items-center text-sm text-muted-foreground">Loading page…</div>
@@ -76,6 +80,10 @@ function App() {
     <Suspense fallback={<PageFallback />}><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/contact" element={<ContactPage />} />
+      <Route path="/cancellation-refunds" element={<CancellationRefundsPage />} />
       <Route element={<WorkspaceProviders />}>
         <Route path="/setup" element={<Protected><OnboardingPage /></Protected>} />
         <Route path="/ca" element={<Protected><CaPortalPage /></Protected>} />

@@ -15,6 +15,7 @@ import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { PublicFooter } from "@/components/public-footer"
 import { supabase } from "@/lib/supabase"
 import { useAuthUser } from "@/lib/use-auth-user"
 
@@ -204,12 +205,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="bg-[#062f5d] text-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-7 text-xs text-white/55 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <div className="flex items-center gap-4"><BrandMark tone="light" /><span>© {new Date().getFullYear()}</span></div>
-          <span>Customers · Documents · Invoices · Employees · Attendance · Expenses</span>
-        </div>
-      </footer>
+      <PublicFooter />
     </main>
   )
 }
