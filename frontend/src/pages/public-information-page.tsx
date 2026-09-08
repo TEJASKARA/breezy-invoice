@@ -55,7 +55,7 @@ function PublicInformationPage({ eyebrow, title, introduction, sections }: Publi
   )
 }
 
-const contactLink = <a href="mailto:bharadwaj@rushyendra.com" className="font-medium text-[#0b3f77] underline underline-offset-4">bharadwaj@rushyendra.com</a>
+const contactLink = <a href="mailto:contact@azorix.com" className="font-medium text-[#0b3f77] underline underline-offset-4">contact@azorix.com</a>
 
 export function TermsPage() {
   return <PublicInformationPage eyebrow="Legal" title="Terms & Conditions" introduction="These terms govern access to and use of ChanaX, a business operations platform provided by Azorix Technologies Private Limited." sections={[
