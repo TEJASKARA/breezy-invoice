@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Building2,
+  Boxes,
   CalendarCheck2,
   Check,
   ChevronDown,
@@ -97,6 +98,20 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
           {label}
         </NavLink>
       ))}
+      <div
+        className={cn(
+          "flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground/65",
+          mobile && "py-2.5"
+        )}
+        aria-disabled="true"
+        title="Inventory management is coming soon"
+      >
+        <Boxes className="size-4" aria-hidden="true" />
+        <span className="min-w-0 flex-1">Inventory management</span>
+        <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+          Coming soon
+        </span>
+      </div>
     </nav>
   )
 }
