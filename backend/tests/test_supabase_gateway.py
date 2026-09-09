@@ -17,6 +17,15 @@ async def test_permission_rpc_uses_deployed_parameter_names() -> None:
         "entities.manage",
     )
 
+    gateway.user_rpc.assert_awaited_once_with(
+        "access-token",
+        "breezy_has_permission",
+        {
+            "target_workspace_id": "00000000-0000-0000-0000-000000000001",
+            "required_permission": "entities.manage",
+        },
+    )
+
 
 @pytest.mark.asyncio
 async def test_employee_letter_email_must_match_saved_letter_and_employee() -> None:
@@ -33,16 +42,6 @@ async def test_employee_letter_email_must_match_saved_letter_and_employee() -> N
     )
 
     assert gateway._get.await_count == 2
-
-    gateway.user_rpc.assert_awaited_once_with(
-        "access-token",
-        "breezy_has_permission",
-        {
-            "target_workspace_id": "00000000-0000-0000-0000-000000000001",
-            "required_permission": "entities.manage",
-        },
-    )
-
 
 @pytest.mark.asyncio
 async def test_special_credit_grant_records_platform_admin_actor() -> None:
