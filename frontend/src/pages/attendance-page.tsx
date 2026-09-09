@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { downloadAttendanceExcel, downloadAttendancePdf, type AttendanceExportInput } from "@/lib/attendance-export"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { type AttendanceDayRecord, type AttendanceDayStatus, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
-import { attendancePresentDays, calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
+import { attendancePresentDays, calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, dailyPresentDays, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
 import { downloadZip } from "@/lib/zip-download"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -378,15 +378,16 @@ export function AttendancePage() {
             {!selectedDateIsWorking ? <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{selectedDateHoliday ? `${selectedDateHoliday.name} is a public holiday.` : selectedDateIsWeeklyOff ? "This date is a weekly off." : "Select a date within the attendance month."} No employee marking is required.</p> : null}
             <div className="max-h-96 overflow-auto rounded-md border">
               <Table>
-                <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead className="w-64">Status for {attendanceDate}</TableHead><TableHead>Month marked</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead className="w-64">Status for {attendanceDate}</TableHead><TableHead>Present this month</TableHead></TableRow></TableHeader>
                 <TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => {
                   const alreadyExists = existingEmployeeIds.has(employee.id)
                   const checked = !alreadyExists && !excludedEmployeeIds.includes(employee.id)
                   const marked = validDailyRecordCount(employee.id)
+                  const presentDays = dailyPresentDays(employeeAttendance[employee.id]?.dailyRecords || [])
                   return <TableRow key={`daily-${employee.id}`} className={alreadyExists || !checked ? "opacity-60" : undefined}>
                     <TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></TableCell>
                     <TableCell>{selectedDateIsWorking ? <select aria-label={`Attendance status for ${employee.employeeName}`} className={selectClass} disabled={!canManage || !checked} value={dailyStatusFor(employee.id, attendanceDate)} onChange={(event) => setDailyStatus(employee.id, attendanceDate, event.target.value as AttendanceDayStatus | "")}><option value="">Not marked</option><option value="present">Present</option><option value="half_day">Half-day</option><option value="paid_leave">Paid leave</option><option value="unpaid_leave">Absent / unpaid leave</option></select> : <Badge variant="secondary">No marking required</Badge>}</TableCell>
-                    <TableCell><span className={marked === calendarSummary.workingDays ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>{marked} / {calendarSummary.workingDays}</span>{alreadyExists ? <p className="text-xs text-muted-foreground">Payslip exists</p> : null}</TableCell>
+                    <TableCell><span className={marked === calendarSummary.workingDays ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>{presentDays} / {calendarSummary.workingDays}</span>{alreadyExists ? <p className="text-xs text-muted-foreground">Payslip exists</p> : null}</TableCell>
                   </TableRow>
                 }) : <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No employees match this search.</TableCell></TableRow>}</TableBody>
               </Table>

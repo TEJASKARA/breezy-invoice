@@ -22,6 +22,10 @@ export function attendancePresentDays(attendance: Pick<PayslipAttendance, "fullP
   return Math.round((attendance.fullPresentDays + attendance.halfDays * 0.5) * 100) / 100
 }
 
+export function dailyPresentDays(records: AttendanceDayRecord[]) {
+  return records.reduce((total, record) => total + (record.status === "present" ? 1 : record.status === "half_day" ? 0.5 : 0), 0)
+}
+
 const nationalHolidayDefinitions = [
   { monthDay: "01-26", name: "Republic Day" },
   { monthDay: "08-15", name: "Independence Day" },
