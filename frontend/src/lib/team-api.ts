@@ -36,7 +36,7 @@ export async function sendWorkspaceInvitation(
       ? String((payload as { detail?: unknown }).detail || "")
       : ""
     if (detail.includes("Purchase an additional monthly seat")) {
-      throw new Error("All three included team accounts are already reserved. Additional paid seats will be enabled with billing later.")
+      throw new Error("Both included additional-user seats are already reserved. Disable a team member or add a paid seat before inviting another person.")
     }
     throw new Error(detail || "The invitation could not be sent.")
   }

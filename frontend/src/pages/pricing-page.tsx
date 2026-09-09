@@ -21,9 +21,9 @@ import {
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const fixedPlans = [
-  { key: "monthly" as const, name: "Monthly", price: "₹100", term: "1 month", credits: 240, bonus: 20, seats: 3, description: "A flexible monthly plan with 20% additional credits." },
-  { key: "quarterly" as const, name: "Quarterly", price: "₹300", term: "3 months", credits: 750, bonus: 25, seats: 3, description: "Three months of access with 25% additional credits." },
-  { key: "annual" as const, name: "Annual", price: "₹1,200", term: "12 months", credits: 3120, bonus: 30, seats: 3, description: "A full year with the highest 30% additional-credit allowance." },
+  { key: "monthly" as const, name: "Monthly", price: "₹100", term: "1 month", credits: 240, bonus: 20, seats: "Owner + 2", description: "A flexible monthly plan with 20% additional credits." },
+  { key: "quarterly" as const, name: "Quarterly", price: "₹300", term: "3 months", credits: 750, bonus: 25, seats: "Owner + 2", description: "Three months of access with 25% additional credits." },
+  { key: "annual" as const, name: "Annual", price: "₹1,200", term: "12 months", credits: 3120, bonus: 30, seats: "Owner + 2", description: "A full year with the highest 30% additional-credit allowance." },
 ]
 
 const customDurations = [
