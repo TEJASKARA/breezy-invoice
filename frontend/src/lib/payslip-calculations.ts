@@ -18,6 +18,10 @@ export function sumPayrollComponents(items: PayrollComponent[]) {
   return items.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0)
 }
 
+export function attendancePresentDays(attendance: Pick<PayslipAttendance, "fullPresentDays" | "halfDays">) {
+  return Math.round((attendance.fullPresentDays + attendance.halfDays * 0.5) * 100) / 100
+}
+
 const nationalHolidayDefinitions = [
   { monthDay: "01-26", name: "Republic Day" },
   { monthDay: "08-15", name: "Independence Day" },

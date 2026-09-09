@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class EmployeeLetterEmailRequest(BaseModel):
     workspace_id: str = Field(min_length=36, max_length=36)
+    letter_id: str = Field(min_length=36, max_length=36)
     to_email: str = Field(min_length=3, max_length=320)
     employee_name: str = Field(min_length=1, max_length=200)
     subject: str = Field(min_length=1, max_length=300)

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Download, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
@@ -16,9 +16,17 @@ import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const today = () => new Date().toISOString().slice(0, 10)
 const selectClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-const templateBody = (type: EmployeeLetter["letterType"], name: string, effectiveDate: string) => type === "offer"
-  ? `Dear ${name},\n\nWe are pleased to offer you employment with our organisation. Your appointment will be effective from ${effectiveDate}. Your role, compensation, benefits and other employment conditions will be governed by the terms agreed with the company.\n\nPlease confirm your acceptance of this offer. We look forward to welcoming you to the team.`
-  : `Dear ${name},\n\nThis letter confirms that your employment with the organisation will end effective ${effectiveDate}. Please complete the applicable handover and clearance formalities on or before your final working day.\n\nAny final settlement and employment documents will be processed in accordance with company policy and applicable law.`
+const letterDetails: Record<EmployeeLetter["letterType"], { subject: string; title: string; label: string }> = {
+  offer: { subject: "Employment offer", title: "OFFER LETTER", label: "Offer" },
+  internship_offer: { subject: "Internship offer", title: "INTERNSHIP OFFER LETTER", label: "Internship offer" },
+  termination: { subject: "Termination of employment", title: "TERMINATION LETTER", label: "Termination" },
+}
+
+function templateBody(type: EmployeeLetter["letterType"], name: string, effectiveDate: string) {
+  if (type === "offer") return `Dear ${name},\n\nWe are pleased to offer you employment with our organisation. Your appointment will be effective from ${effectiveDate}. Your role, compensation, benefits and other employment conditions will be governed by the terms agreed with the company.\n\nPlease confirm your acceptance of this offer. We look forward to welcoming you to the team.`
+  if (type === "internship_offer") return `Dear ${name},\n\nWe are pleased to offer you an internship with our organisation, effective from ${effectiveDate}. Your internship role, duration, stipend, reporting arrangements and other conditions will be governed by the terms agreed with the company.\n\nPlease confirm your acceptance of this internship offer. We look forward to having you learn and contribute with our team.`
+  return `Dear ${name},\n\nThis letter confirms that your employment with the organisation will end effective ${effectiveDate}. Please complete the applicable handover and clearance formalities on or before your final working day.\n\nAny final settlement and employment documents will be processed in accordance with company policy and applicable law.`
+}
 
 export function EmployeeLettersPage() {
   const { companies, employees, employeeLetters, template, addEmployeeLetter, deleteEmployeeLetter } = useMvpStore()
@@ -35,10 +43,17 @@ export function EmployeeLettersPage() {
   const [signatureName, setSignatureName] = useState("")
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
-  const visibleLetters = useMemo(() => employeeLetters.filter((letter) => !employeeId || letter.employeeId === employeeId), [employeeLetters, employeeId])
+  const [emailingLetterId, setEmailingLetterId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (employeeId || !employees.length) return
+    const firstEmployee = employees[0]
+    setEmployeeId(firstEmployee.id)
+    setBody(templateBody(letterType, firstEmployee.employeeName, effectiveDate))
+  }, [employeeId, employees, letterType, effectiveDate])
 
   const selectEmployee = (id: string) => { setEmployeeId(id); const selected = employees.find((item) => item.id === id); setBody(templateBody(letterType, selected?.employeeName || "Employee", effectiveDate)) }
-  const selectType = (type: EmployeeLetter["letterType"]) => { setLetterType(type); setSubject(type === "offer" ? "Employment offer" : "Termination of employment"); setBody(templateBody(type, employee?.employeeName || "Employee", effectiveDate)) }
+  const selectType = (type: EmployeeLetter["letterType"]) => { setLetterType(type); setSubject(letterDetails[type].subject); setBody(templateBody(type, employee?.employeeName || "Employee", effectiveDate)) }
 
   async function save() {
     setError(""); setNotice("")
@@ -46,8 +61,8 @@ export function EmployeeLettersPage() {
     if (!employee || !entity) return setError("Select an employee with an issuing entity.")
     if (!subject.trim() || body.trim().length < 20) return setError("Add a subject and complete letter content.")
     try {
-      await addEmployeeLetter({ entityId: entity.id, employeeId: employee.id, letterType, title: letterType === "offer" ? "OFFER LETTER" : "TERMINATION LETTER", issueDate, effectiveDate, subject: subject.trim(), body: body.trim(), status: "Issued", signatureName: signatureName.trim(), issuedAt: new Date().toISOString() })
-      setNotice(`${letterType === "offer" ? "Offer" : "Termination"} letter saved under ${employee.employeeName}.`)
+      await addEmployeeLetter({ entityId: entity.id, employeeId: employee.id, letterType, title: letterDetails[letterType].title, issueDate, effectiveDate, subject: subject.trim(), body: body.trim(), status: "Issued", signatureName: signatureName.trim(), issuedAt: new Date().toISOString() })
+      setNotice(`${letterDetails[letterType].label} letter saved under ${employee.employeeName}.`)
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The letter could not be saved.") }
   }
 
@@ -61,17 +76,20 @@ export function EmployeeLettersPage() {
   async function email(letter: EmployeeLetter) {
     setError(""); setNotice("")
     const target = employees.find((item) => item.id === letter.employeeId)
+    const targetEntity = companies.find((item) => item.id === letter.entityId)
     if (!target?.email) return setError(`Add an email address to ${target?.employeeName || "this employee"}'s profile before sending the email.`)
     if (!workspace?.id) return setError("Your workspace is still loading. Please try again.")
+    setEmailingLetterId(letter.id)
     try {
       const { doc } = await documentFor(letter)
       const fileName = employeeLetterFileName(letter, target)
       const result = await sendEmployeeLetterEmail({
         workspaceId: workspace.id,
+        letterId: letter.id,
         toEmail: target.email,
         employeeName: target.employeeName,
         subject: `${letter.title} - ${target.employeeName}`,
-        message: `Hello ${target.employeeName},\n\nPlease find your employment letter attached.\n\nRegards,\n${entity?.companyName || "ChanaX"}`,
+        message: `Hello ${target.employeeName},\n\nPlease find your employment letter attached.\n\nRegards,\n${targetEntity?.companyName || "ChanaX"}`,
         filename: fileName,
         pdf: new Uint8Array(doc.output("arraybuffer")),
       })
@@ -79,20 +97,20 @@ export function EmployeeLettersPage() {
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return
       setError(caught instanceof Error ? caught.message : "The employee letter email could not be prepared.")
-    }
+    } finally { setEmailingLetterId(null) }
   }
 
   return <div className="space-y-7">
-    <PageHeader eyebrow="Employee documents" title="Offer and termination letters" description="Create reusable employee letters with your saved company branding and signature." />
+    <PageHeader eyebrow="Employee documents" title="Employment letters" description="Create offer, internship offer and termination letters with your saved company branding and signature." />
     {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p> : null}
     {notice ? <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p> : null}
     <Card><CardHeader><CardTitle>Create employee letter</CardTitle><CardDescription>Start with the standard wording, then edit every line for the employee.</CardDescription></CardHeader><CardContent className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-4"><div className="space-y-2"><Label htmlFor="letter-employee">Employee</Label><select id="letter-employee" className={selectClass} value={employeeId} onChange={(event) => selectEmployee(event.target.value)}>{employees.map((item) => <option key={item.id} value={item.id}>{item.employeeName} · {item.employeeCode}</option>)}</select></div><div className="space-y-2"><Label htmlFor="letter-type">Letter type</Label><select id="letter-type" className={selectClass} value={letterType} onChange={(event) => selectType(event.target.value as EmployeeLetter["letterType"])}><option value="offer">Offer letter</option><option value="termination">Termination letter</option></select></div><div className="space-y-2"><Label htmlFor="letter-issue-date">Issue date</Label><Input id="letter-issue-date" type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="letter-effective-date">Effective date</Label><Input id="letter-effective-date" type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></div></div>
+      <div className="grid gap-4 md:grid-cols-4"><div className="space-y-2"><Label htmlFor="letter-employee">Employee</Label><select id="letter-employee" className={selectClass} value={employeeId} onChange={(event) => selectEmployee(event.target.value)}>{employees.map((item) => <option key={item.id} value={item.id}>{item.employeeName} · {item.employeeCode}</option>)}</select></div><div className="space-y-2"><Label htmlFor="letter-type">Letter type</Label><select id="letter-type" className={selectClass} value={letterType} onChange={(event) => selectType(event.target.value as EmployeeLetter["letterType"])}><option value="offer">Offer letter</option><option value="internship_offer">Internship offer letter</option><option value="termination">Termination letter</option></select></div><div className="space-y-2"><Label htmlFor="letter-issue-date">Issue date</Label><Input id="letter-issue-date" type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="letter-effective-date">Effective date</Label><Input id="letter-effective-date" type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></div></div>
       <div className="space-y-2"><Label htmlFor="letter-subject">Subject</Label><Input id="letter-subject" value={subject} onChange={(event) => setSubject(event.target.value)} /></div>
       <div className="space-y-2"><Label htmlFor="letter-body">Letter content</Label><textarea id="letter-body" className="min-h-72 w-full rounded-md border border-input bg-background p-3 text-sm leading-6" value={body} onChange={(event) => setBody(event.target.value)} /></div>
       <div className="space-y-2"><Label htmlFor="letter-signatory">Signatory name (optional)</Label><Input id="letter-signatory" value={signatureName} onChange={(event) => setSignatureName(event.target.value)} placeholder={`For ${entity?.companyName || "company"}`} /></div>
       <div className="flex justify-end"><Button disabled={!canManage || !employee} onClick={() => void save()}><Plus />Save issued letter</Button></div>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>Employee letter history</CardTitle><CardDescription>Letters remain attached to the selected employee profile and can be emailed with their generated PDF.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Letter</TableHead><TableHead>Issue date</TableHead><TableHead>Effective date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{visibleLetters.length ? visibleLetters.map((letter) => <TableRow key={letter.id}><TableCell><p className="font-medium">{letter.title}</p><p className="text-xs text-muted-foreground">{letter.subject}</p></TableCell><TableCell>{letter.issueDate}</TableCell><TableCell>{letter.effectiveDate}</TableCell><TableCell><Badge variant="outline">{letter.status}</Badge></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download PDF" aria-label="Download employee letter" onClick={() => void download(letter)}><Download /></Button><Button size="icon" variant="ghost" title="Share via WhatsApp" aria-label="Share employee letter via WhatsApp" onClick={() => void share(letter)}><MessageCircle /></Button><Button size="icon" variant="ghost" title="Email PDF" aria-label="Email employee letter PDF" onClick={() => void email(letter)}><Mail /></Button><Button size="icon" variant="ghost" title="Delete letter" aria-label="Delete employee letter" disabled={!canManage} onClick={() => void deleteEmployeeLetter(letter.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No letters saved for this employee.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    <Card><CardHeader><CardTitle>Employee letter history</CardTitle><CardDescription>All saved letters remain visible here and can be downloaded, shared or emailed again.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Letter</TableHead><TableHead>Employee</TableHead><TableHead>Issue date</TableHead><TableHead>Effective date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{employeeLetters.length ? employeeLetters.map((letter) => { const target = employees.find((item) => item.id === letter.employeeId); return <TableRow key={letter.id}><TableCell><p className="font-medium">{letter.title}</p><p className="text-xs text-muted-foreground">{letter.subject}</p></TableCell><TableCell>{target?.employeeName || "Employee unavailable"}</TableCell><TableCell>{letter.issueDate}</TableCell><TableCell>{letter.effectiveDate}</TableCell><TableCell><Badge variant="outline">{letter.status}</Badge></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download PDF" aria-label="Download employee letter" onClick={() => void download(letter)}><Download /></Button><Button size="icon" variant="ghost" title="Share via WhatsApp" aria-label="Share employee letter via WhatsApp" onClick={() => void share(letter)}><MessageCircle /></Button><Button size="icon" variant="ghost" title="Email PDF" aria-label="Email employee letter PDF" disabled={emailingLetterId !== null} onClick={() => void email(letter)}><Mail />{emailingLetterId === letter.id ? <span className="sr-only">Sending</span> : null}</Button><Button size="icon" variant="ghost" title="Delete letter" aria-label="Delete employee letter" disabled={!canManage} onClick={() => void deleteEmployeeLetter(letter.id)}><Trash2 /></Button></div></TableCell></TableRow> }) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No employee letters have been saved yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
   </div>
 }

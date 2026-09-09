@@ -17,6 +17,23 @@ async def test_permission_rpc_uses_deployed_parameter_names() -> None:
         "entities.manage",
     )
 
+
+@pytest.mark.asyncio
+async def test_employee_letter_email_must_match_saved_letter_and_employee() -> None:
+    gateway = SupabaseGateway(Settings())
+    gateway._get = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [{"employee_id": "employee-id"}],
+            [{"payload": {"email": "employee@example.com"}}],
+        ]
+    )
+
+    await gateway.assert_workspace_employee_letter(
+        "workspace-id", "letter-id", " Employee@Example.com "
+    )
+
+    assert gateway._get.await_count == 2
+
     gateway.user_rpc.assert_awaited_once_with(
         "access-token",
         "breezy_has_permission",

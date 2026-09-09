@@ -86,6 +86,7 @@ export function WorkspaceSettingsPage() {
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
+  const [inviting, setInviting] = useState(false)
   const [deletionStage, setDeletionStage] = useState<0 | 1 | 2>(0)
   const [deletionConfirmation, setDeletionConfirmation] = useState("")
   const [deletionRequest, setDeletionRequest] = useState<{ status: string; purge_after: string } | null>(null)
@@ -169,13 +170,13 @@ export function WorkspaceSettingsPage() {
   async function sendInvitation(event: React.FormEvent) {
     event.preventDefault()
     if (!workspace) return
-    setSaving(true)
+    setInviting(true)
     try {
       const result = await sendWorkspaceInvitation(workspace.id, inviteEmail, inviteRole, invitePermissions)
       setInviteEmail("")
       await loadPeople()
       showSuccess(result.message)
-    } catch (inviteError) { showError(inviteError) } finally { setSaving(false) }
+    } catch (inviteError) { showError(inviteError) } finally { setInviting(false) }
   }
 
   function beginEdit(member: WorkspaceMember) {
@@ -331,7 +332,7 @@ export function WorkspaceSettingsPage() {
                 <div className="space-y-2"><Label htmlFor="invite-role">Role</Label><select id="invite-role" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={inviteRole} onChange={(event) => { const role = event.target.value as EditableRole; setInviteRole(role); setInvitePermissions(permissionsForRole(role)) }}>{editableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></div>
               </div>
               {inviteRole === "admin" ? <p className="rounded-lg border bg-background p-3 text-sm">Admins can access and manage every ChanaX page.</p> : <PermissionChecklist selected={invitePermissions} onChange={setInvitePermissions} />}
-              <div className="flex justify-end"><Button type="submit" disabled={saving}><MailPlus />Add access</Button></div>
+              <div className="flex justify-end"><Button type="submit" disabled={inviting}><MailPlus />{inviting ? "Adding access…" : "Add access"}</Button></div>
             </form>
           ) : null}
 
@@ -341,7 +342,7 @@ export function WorkspaceSettingsPage() {
               <TableBody>{members.map((member) => {
                 const name = member.profile?.full_name || member.profile?.email || "Workspace member"
                 const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()
-                return <TableRow key={member.id}><TableCell><div className="flex items-center gap-2"><Avatar className="size-8">{member.profile?.avatar_path ? <AvatarImage src={member.profile.avatar_path} alt={name} /> : null}<AvatarFallback>{initials}</AvatarFallback></Avatar><div><p className="font-medium">{name}</p><p className="text-xs text-muted-foreground">{member.profile?.email || (member.user_id === user?.id ? "You" : member.user_id)}</p></div></div></TableCell><TableCell className="capitalize">{member.role}</TableCell><TableCell><Badge variant={member.status === "active" ? "secondary" : "destructive"}>{member.status}</Badge></TableCell><TableCell>{readableDate(member.joined_at)}</TableCell><TableCell><div className="flex justify-end gap-2">{member.role === "owner" ? <Badge variant="outline"><Crown />Owner</Badge> : <><Button size="sm" variant="outline" onClick={() => beginEdit(member)}><UserCog />Edit access</Button><Button size="sm" variant={member.status === "active" ? "destructive" : "outline"} disabled={saving} onClick={() => void toggleMember(member)}>{member.status === "active" ? "Disable" : "Restore"}</Button></>}</div></TableCell></TableRow>
+                return <TableRow key={member.id}><TableCell><div className="flex items-center gap-2"><Avatar className="size-8">{member.profile?.avatar_path ? <AvatarImage src={member.profile.avatar_path} alt={name} /> : null}<AvatarFallback>{initials}</AvatarFallback></Avatar><div><p className="font-medium">{name}</p><p className="text-xs text-muted-foreground">{member.profile?.email || (member.user_id === user?.id ? "You" : member.user_id)}</p></div></div></TableCell><TableCell className="capitalize">{member.role}</TableCell><TableCell><Badge variant={member.status === "active" ? "secondary" : "destructive"}>{member.status}</Badge></TableCell><TableCell>{readableDate(member.joined_at)}</TableCell><TableCell><div className="flex justify-end gap-2">{member.role === "owner" ? <Badge variant="outline"><Crown />Owner</Badge> : <><Button size="sm" variant="outline" onClick={() => beginEdit(member)}><UserCog />Edit access</Button><Button size="sm" variant="outline" className={member.status === "active" ? "text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30" : undefined} disabled={saving} onClick={() => void toggleMember(member)}>{member.status === "active" ? "Disable" : "Restore"}</Button></>}</div></TableCell></TableRow>
               })}</TableBody>
             </Table>
           ) : <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Your role is <strong className="capitalize text-foreground">{membership.role}</strong>. Contact the workspace owner to change your access.</div>}

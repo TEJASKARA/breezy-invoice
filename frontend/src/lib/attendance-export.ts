@@ -1,5 +1,5 @@
 import type { AttendanceDayRecord, Company, PayslipAttendance } from "@/lib/mvp-store"
-import { cleanPayslipFileName, formatSalaryMonth } from "@/lib/payslip-calculations"
+import { attendancePresentDays, cleanPayslipFileName, formatSalaryMonth } from "@/lib/payslip-calculations"
 
 export type AttendanceExportRow = {
   employeeName: string
@@ -59,7 +59,7 @@ export async function downloadAttendanceExcel(input: AttendanceExportInput) {
     row.designation,
     row.department,
     ...Array.from({ length: days }, (_, index) => calendarCode(input, row, index + 1)),
-    row.attendance.fullPresentDays,
+    attendancePresentDays(row.attendance),
     row.attendance.halfDays,
     row.attendance.paidLeaveDays,
     row.attendance.unpaidLeaveDays,
@@ -80,7 +80,7 @@ export async function downloadAttendanceExcel(input: AttendanceExportInput) {
     row.employeeName,
     row.employeeCode,
     row.workingDays,
-    row.attendance.fullPresentDays,
+    attendancePresentDays(row.attendance),
     row.attendance.halfDays,
     row.attendance.paidLeaveDays,
     row.attendance.unpaidLeaveDays,
@@ -208,7 +208,7 @@ export async function downloadAttendancePdf(input: AttendanceExportInput) {
         doc.setFillColor(247, 248, 250)
         doc.rect(margin, y, summaryWidths.reduce((sum, width) => sum + width, 0), rowHeight, "F")
       }
-      const values = [row.employeeName, row.workingDays, row.attendance.fullPresentDays, row.attendance.halfDays, row.attendance.paidLeaveDays, row.attendance.unpaidLeaveDays, row.attendance.excessLeaveDays || 0, row.payableDays, row.deductionAmount.toLocaleString("en-IN", { maximumFractionDigits: 2 })]
+      const values = [row.employeeName, row.workingDays, attendancePresentDays(row.attendance), row.attendance.halfDays, row.attendance.paidLeaveDays, row.attendance.unpaidLeaveDays, row.attendance.excessLeaveDays || 0, row.payableDays, row.deductionAmount.toLocaleString("en-IN", { maximumFractionDigits: 2 })]
       x = margin
       doc.setTextColor(39, 39, 42)
       doc.setFont("helvetica", "normal")

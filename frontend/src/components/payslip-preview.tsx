@@ -1,5 +1,5 @@
 import type { Company, Payslip, TemplateSettings } from "@/lib/mvp-store"
-import { amountInWords, formatSalaryMonth, maskBankAccount } from "@/lib/payslip-calculations"
+import { amountInWords, attendancePresentDays, formatSalaryMonth, maskBankAccount } from "@/lib/payslip-calculations"
 
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -52,7 +52,7 @@ export function PayslipPreview({
         <div className="grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
           <AttendanceValue label="Calendar" value={payslip.attendance.calendarDays} />
           <AttendanceValue label="Working" value={payslip.workingDays} />
-          <AttendanceValue label="Full present" value={payslip.attendance.fullPresentDays} />
+          <AttendanceValue label="Present days" value={attendancePresentDays(payslip.attendance)} />
           <AttendanceValue label="Leave taken" value={payslip.attendance.paidLeaveDays} />
           <AttendanceValue label="Loss of pay" value={payslip.attendance.lossOfPayDays ?? payslip.attendance.unpaidLeaveDays} />
           <AttendanceValue label="Payable" value={payslip.payableDays} accent={template.accentColor} />

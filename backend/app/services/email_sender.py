@@ -1,11 +1,14 @@
 import asyncio
 import base64
 import binascii
+import logging
 import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr
 
 from app.core.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class EmailConfigurationError(RuntimeError):
@@ -47,7 +50,25 @@ def _send(
                 smtp.starttls()
             smtp.login(settings.smtp_username, settings.smtp_password)
             smtp.send_message(email)
+    except smtplib.SMTPAuthenticationError as exc:
+        logger.exception("SMTP authentication failed")
+        raise EmailDeliveryError(
+            "The ChanaX email service could not authenticate. Please contact support."
+        ) from exc
+    except smtplib.SMTPSenderRefused as exc:
+        logger.exception("SMTP provider rejected the configured sender")
+        raise EmailDeliveryError(
+            "The email provider rejected the ChanaX sender address. "
+            "Please contact support."
+        ) from exc
+    except smtplib.SMTPRecipientsRefused as exc:
+        logger.exception("SMTP provider rejected the recipient")
+        raise EmailDeliveryError(
+            "The email provider rejected this recipient address. "
+            "Check the employee email and try again."
+        ) from exc
     except (OSError, smtplib.SMTPException) as exc:
+        logger.exception("SMTP document delivery failed")
         raise EmailDeliveryError(
             "The email provider could not deliver this document. Please try again."
         ) from exc

@@ -1,7 +1,7 @@
 import type { jsPDF as JsPdfDocument } from "jspdf"
 
 import type { Company, Payslip, TemplateSettings } from "@/lib/mvp-store"
-import { amountInWords, cleanPayslipFileName, formatSalaryMonth, maskBankAccount } from "@/lib/payslip-calculations"
+import { amountInWords, attendancePresentDays, cleanPayslipFileName, formatSalaryMonth, maskBankAccount } from "@/lib/payslip-calculations"
 
 const pageWidth = 210
 const margin = 16
@@ -102,7 +102,7 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   if (payslip.attendance) {
     const attendanceItems = [
       ["Working", payslip.workingDays],
-      ["Full present", payslip.attendance.fullPresentDays],
+      ["Present", attendancePresentDays(payslip.attendance)],
       ["Leave taken", payslip.attendance.paidLeaveDays],
       ["Excess leave", payslip.attendance.excessLeaveDays || 0],
       ["LOP days", payslip.attendance.lossOfPayDays ?? payslip.attendance.unpaidLeaveDays],

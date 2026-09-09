@@ -6,7 +6,7 @@ type PayloadRow = { id: string; payload: Record<string, unknown> }
 type RelatedPayloadRow = PayloadRow & { entity_id: string }
 type PayslipPayloadRow = RelatedPayloadRow & { employee_id: string | null }
 type ProformaPayloadRow = RelatedPayloadRow & { customer_id: string | null }
-type LetterPayloadRow = RelatedPayloadRow & { employee_id: string; letter_type: "offer" | "termination" }
+type LetterPayloadRow = RelatedPayloadRow & { employee_id: string; letter_type: EmployeeLetter["letterType"] }
 
 function client() {
   if (!supabase) throw new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.")

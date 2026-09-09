@@ -71,12 +71,30 @@ class SupabaseGateway:
                 "Only the workspace owner can purchase a subscription."
             )
 
-    async def assert_workspace_employee_email(
-        self, workspace_id: str, email: str
+    async def assert_workspace_employee_letter(
+        self, workspace_id: str, letter_id: str, email: str
     ) -> None:
+        letters = await self._get(
+            "breezy_employee_letters",
+            {
+                "select": "employee_id",
+                "id": f"eq.{letter_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "limit": "1",
+            },
+        )
+        if not letters:
+            raise SupabaseGatewayError(
+                "This employee letter is not saved in the selected workspace."
+            )
         rows = await self._get(
             "breezy_employees",
-            {"select": "payload", "workspace_id": f"eq.{workspace_id}"},
+            {
+                "select": "payload",
+                "id": f"eq.{letters[0]['employee_id']}",
+                "workspace_id": f"eq.{workspace_id}",
+                "limit": "1",
+            },
         )
         normalized_email = email.strip().lower()
         if not any(

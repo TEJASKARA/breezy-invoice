@@ -13,6 +13,7 @@ function base64Bytes(bytes: Uint8Array) {
 
 export async function sendEmployeeLetterEmail(input: {
   workspaceId: string
+  letterId: string
   toEmail: string
   employeeName: string
   subject: string
@@ -29,6 +30,7 @@ export async function sendEmployeeLetterEmail(input: {
     headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       workspace_id: input.workspaceId,
+      letter_id: input.letterId,
       to_email: input.toEmail,
       employee_name: input.employeeName,
       subject: input.subject,

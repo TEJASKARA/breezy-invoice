@@ -67,8 +67,8 @@ async def email_employee_letter(
         await gateway.assert_workspace_permission(
             access_token, request.workspace_id, "payslips.manage"
         )
-        await gateway.assert_workspace_employee_email(
-            request.workspace_id, request.to_email
+        await gateway.assert_workspace_employee_letter(
+            request.workspace_id, request.letter_id, request.to_email
         )
         await send_employee_letter_email(
             settings,

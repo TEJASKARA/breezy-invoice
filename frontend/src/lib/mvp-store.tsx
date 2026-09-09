@@ -121,7 +121,7 @@ export type EmployeeLetter = {
   id: string
   entityId: string
   employeeId: string
-  letterType: "offer" | "termination"
+  letterType: "offer" | "internship_offer" | "termination"
   title: string
   issueDate: string
   effectiveDate: string
