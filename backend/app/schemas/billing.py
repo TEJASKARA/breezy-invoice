@@ -23,6 +23,9 @@ class BillingOrderResponse(BaseModel):
     order_id: str
     key_id: str
     amount: int
+    base_amount_paise: int
+    gst_amount_paise: int
+    gst_rate_percent: int = 18
     currency: Literal["INR"] = "INR"
     plan_key: PlanKey
     plan_name: str

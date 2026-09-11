@@ -19,6 +19,9 @@ export type BillingOrder = {
   order_id: string
   key_id: string
   amount: number
+  base_amount_paise: number
+  gst_amount_paise: number
+  gst_rate_percent: number
   currency: "INR"
   plan_key: BillingPlanKey
   plan_name: string

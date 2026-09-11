@@ -93,6 +93,8 @@ async def create_billing_order(
         order_id=str(provider_order["id"]),
         key_id=settings.razorpay_key_id,
         amount=plan.amount_paise,
+        base_amount_paise=plan.base_amount_paise,
+        gst_amount_paise=plan.gst_amount_paise,
         plan_key=plan.key,  # type: ignore[arg-type]
         plan_name=plan.name,
         credits=plan.credits,

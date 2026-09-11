@@ -21,9 +21,9 @@ import {
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const fixedPlans = [
-  { key: "monthly" as const, name: "Monthly", price: "₹100", term: "1 month", credits: 240, bonus: 20, seats: "Owner + 2", description: "A flexible monthly plan with 20% additional credits." },
-  { key: "quarterly" as const, name: "Quarterly", price: "₹300", term: "3 months", credits: 750, bonus: 25, seats: "Owner + 2", description: "Three months of access with 25% additional credits." },
-  { key: "annual" as const, name: "Annual", price: "₹1,200", term: "12 months", credits: 3120, bonus: 30, seats: "Owner + 2", description: "A full year with the highest 30% additional-credit allowance." },
+  { key: "monthly" as const, name: "Monthly", price: "₹100", term: "1 month", credits: 200, bonus: 20, seats: "Owner + 2", description: "₹18 GST is added at checkout. Total payable: ₹118." },
+  { key: "quarterly" as const, name: "Quarterly", price: "₹300", term: "3 months", credits: 625, bonus: 25, seats: "Owner + 2", description: "₹54 GST is added at checkout. Total payable: ₹354." },
+  { key: "annual" as const, name: "Annual", price: "₹1,200", term: "12 months", credits: 2600, bonus: 30, seats: "Owner + 2", description: "₹216 GST is added at checkout. Total payable: ₹1,416." },
 ]
 
 const customDurations = [
@@ -67,7 +67,9 @@ export function PricingPage() {
   const customRawMonthlyPrice = customExpectedDocuments * 0.6
   const customMonthlyPrice = customExpectedDocuments > 0 ? Math.max(100, customRawMonthlyPrice) : 0
   const customTotalCredits = Math.ceil(customExpectedDocuments * customDuration.months * (1 + customDuration.bonus / 100))
-  const customTotalPrice = customMonthlyPrice * customDuration.months
+  const customSubtotal = customMonthlyPrice * customDuration.months
+  const customGst = Math.round(customSubtotal * 18) / 100
+  const customTotalPrice = customSubtotal + customGst
 
   const refreshBillingHistory = useCallback(async () => {
     if (!workspace || !isOwner) return
@@ -99,7 +101,7 @@ export function PricingPage() {
           amount: order.amount,
           currency: order.currency,
           name: "ChanaX",
-          description: `${order.plan_name} · ${order.credits} document + ${order.quotation_credits} quotation credits`,
+          description: `${order.plan_name} · includes ${currency(order.gst_amount_paise / 100)} GST`,
           order_id: order.order_id,
           prefill: { name: String(user?.user_metadata?.full_name || ""), email: user?.email || "" },
           theme: { color: "#0f172a" },
@@ -161,6 +163,7 @@ export function PricingPage() {
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4"><p className="text-xs font-medium text-muted-foreground">Total for {customDuration.months} {customDuration.months === 1 ? "month" : "months"}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{currency(customTotalPrice)}</p><p className="mt-1 text-xs text-muted-foreground">₹0.60 per expected document; minimum ₹100/month</p></div>
           </div>
           {customExpectedDocuments > 0 && customRawMonthlyPrice < 100 ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">Your calculated monthly usage price is {currency(customRawMonthlyPrice)}. The ₹100 monthly minimum applies.</p> : null}
+          {customExpectedDocuments > 0 ? <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Base price: <strong className="text-foreground">{currency(customSubtotal)}</strong> · GST (18%): <strong className="text-foreground">{currency(customGst)}</strong> · Total payable: <strong className="text-foreground">{currency(customTotalPrice)}</strong></p> : null}
           <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-muted-foreground">Credits remain available until the end of the selected prepaid period.</p><Button disabled={!isOwner || purchasingPlan !== null || customExpectedDocuments < 1} onClick={() => void purchasePlan(customPlanKey, { monthlyInvoices: customInvoiceCount, employees: customEmployeeCount })}>{purchasingPlan === customPlanKey ? "Opening Razorpay…" : isOwner ? `Purchase custom plan · ${currency(customTotalPrice)}` : "Owner payment only"}</Button></div>
         </CardContent>
       </Card>

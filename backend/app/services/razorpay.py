@@ -20,15 +20,39 @@ class RazorpayRequestError(RuntimeError):
 class BillingPlan:
     key: str
     name: str
+    base_amount_paise: int
+    gst_amount_paise: int
     amount_paise: int
     credits: int
     duration_months: int
 
 
+GST_RATE_PERCENT = 18
+
+
+def _plan_with_gst(
+    key: str,
+    name: str,
+    base_amount_paise: int,
+    credits: int,
+    duration_months: int,
+) -> BillingPlan:
+    gst_amount_paise = (base_amount_paise * GST_RATE_PERCENT + 50) // 100
+    return BillingPlan(
+        key=key,
+        name=name,
+        base_amount_paise=base_amount_paise,
+        gst_amount_paise=gst_amount_paise,
+        amount_paise=base_amount_paise + gst_amount_paise,
+        credits=credits,
+        duration_months=duration_months,
+    )
+
+
 BILLING_PLANS = {
-    "monthly": BillingPlan("monthly", "Monthly", 10_000, 240, 1),
-    "quarterly": BillingPlan("quarterly", "Quarterly", 30_000, 750, 3),
-    "annual": BillingPlan("annual", "Annual", 120_000, 3_120, 12),
+    "monthly": _plan_with_gst("monthly", "Monthly", 10_000, 200, 1),
+    "quarterly": _plan_with_gst("quarterly", "Quarterly", 30_000, 625, 3),
+    "annual": _plan_with_gst("annual", "Annual", 120_000, 2_600, 12),
 }
 
 CUSTOM_PLAN_OPTIONS = {
@@ -69,12 +93,12 @@ def billing_plan(
         period_documents * (100 + bonus_percent) + 99
     ) // 100
     monthly_amount_paise = max(10_000, expected_documents * 60)
-    return BillingPlan(
-        key=plan_key,
-        name=name,
-        amount_paise=monthly_amount_paise * duration_months,
-        credits=credits,
-        duration_months=duration_months,
+    return _plan_with_gst(
+        plan_key,
+        name,
+        monthly_amount_paise * duration_months,
+        credits,
+        duration_months,
     )
 
 
@@ -127,6 +151,9 @@ class RazorpayClient:
                         "plan_key": plan.key,
                         "credits": str(plan.credits),
                         "duration_months": str(plan.duration_months),
+                        "base_amount_paise": str(plan.base_amount_paise),
+                        "gst_rate_percent": str(GST_RATE_PERCENT),
+                        "gst_amount_paise": str(plan.gst_amount_paise),
                     },
                 },
             )
