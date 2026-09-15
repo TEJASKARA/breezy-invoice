@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Calculator, Check, Coins, CreditCard, Users } from "lucide-react"
+import { Calculator, Check, Coins, CreditCard, Download, Users } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +18,7 @@ import {
   type BillingPlanKey,
   type CustomPlanUsage,
 } from "@/lib/billing-api"
+import { downloadBillingInvoice } from "@/lib/billing-invoice-pdf"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const fixedPlans = [
@@ -127,6 +128,15 @@ export function PricingPage() {
     }
   }
 
+  async function downloadPaymentInvoice(payment: BillingPayment) {
+    if (!workspace) return
+    try {
+      await downloadBillingInvoice({ payment, workspaceName: workspace.name, customerEmail: user?.email })
+    } catch (downloadError) {
+      showError(downloadError)
+    }
+  }
+
   if (!workspace || !membership) return <p className="text-sm text-muted-foreground">Loading pricing…</p>
 
   return (
@@ -168,7 +178,7 @@ export function PricingPage() {
         </CardContent>
       </Card>
 
-      {billingPayments.length ? <Card><CardHeader><CardTitle>Payment history</CardTitle><CardDescription>Your latest Razorpay plan purchases.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Plan</TableHead><TableHead>Document credits</TableHead><TableHead>Quotation credits</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{billingPayments.map((payment) => <TableRow key={payment.id}><TableCell>{readableDate(payment.paid_at || payment.created_at)}</TableCell><TableCell className="capitalize">{payment.plan_key.replaceAll("_", " ")}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{currency(payment.amount_paise / 100)}</TableCell><TableCell><Badge variant={payment.status === "paid" ? "secondary" : payment.status === "failed" ? "destructive" : "outline"} className="capitalize">{payment.status}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent></Card> : null}
+      {billingPayments.length ? <Card><CardHeader><CardTitle>Payment history</CardTitle><CardDescription>Your latest Razorpay plan purchases.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Plan</TableHead><TableHead>Document credits</TableHead><TableHead>Quotation credits</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Invoice</TableHead></TableRow></TableHeader><TableBody>{billingPayments.map((payment) => <TableRow key={payment.id}><TableCell>{readableDate(payment.paid_at || payment.created_at)}</TableCell><TableCell className="capitalize">{payment.plan_key.replaceAll("_", " ")}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{currency(payment.amount_paise / 100)}</TableCell><TableCell><Badge variant={payment.status === "paid" ? "secondary" : payment.status === "failed" ? "destructive" : "outline"} className="capitalize">{payment.status}</Badge></TableCell><TableCell className="text-right">{payment.status === "paid" ? <Button size="sm" variant="outline" onClick={() => void downloadPaymentInvoice(payment)}><Download />Download</Button> : <span className="text-xs text-muted-foreground">Available after payment</span>}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card> : null}
     </div>
   )
 }
