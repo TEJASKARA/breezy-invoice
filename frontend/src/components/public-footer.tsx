@@ -24,7 +24,7 @@ export function PublicFooter() {
           </nav>
         </div>
         <div className="mt-6 border-t border-white/15 pt-5 text-xs text-white/55">
-          © 2026 Azorix Technologies Private Limited
+          © 2026 Azorix Technologies Private Limited · Co-developed by <a href="https://rizeforge.in" target="_blank" rel="noreferrer" className="underline decoration-white/35 underline-offset-2 transition-colors hover:text-white">RizeForge</a>
         </div>
       </div>
     </footer>
