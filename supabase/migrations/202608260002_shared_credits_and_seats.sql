@@ -3,6 +3,11 @@
 
 begin;
 
+-- `breezy_invite_workspace_user` stores a SHA-256 token hash for pending
+-- invitations. Keep pgcrypto in Supabase's dedicated extension schema and
+-- qualify calls because the function deliberately has an empty search path.
+create extension if not exists pgcrypto with schema extensions;
+
 alter table public.breezy_subscriptions
   add column if not exists included_seats integer not null default 3 check (included_seats >= 1),
   add column if not exists extra_seats integer not null default 0 check (extra_seats >= 0);
@@ -222,7 +227,7 @@ begin
     (workspace_id, email, role, permissions, token_hash, invited_by, status, expires_at)
   values
     (target_workspace_id, normalized_email, target_role, coalesce(target_permissions, '{}'::text[]),
-     encode(digest(gen_random_uuid()::text || clock_timestamp()::text, 'sha256'), 'hex'), auth.uid(), 'pending', now() + interval '7 days')
+     encode(extensions.digest(gen_random_uuid()::text || clock_timestamp()::text, 'sha256'), 'hex'), auth.uid(), 'pending', now() + interval '7 days')
   on conflict (workspace_id, (lower(email))) where status = 'pending'
   do update set role = excluded.role, permissions = excluded.permissions, token_hash = excluded.token_hash,
     invited_by = excluded.invited_by, expires_at = excluded.expires_at, updated_at = now()
