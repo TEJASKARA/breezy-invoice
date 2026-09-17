@@ -20,6 +20,7 @@ import {
   decideCaAccessRequest,
   permissionOptions,
   permissionsForRole,
+  removeWorkspaceMember,
   revokeWorkspaceInvitation,
   updateWorkspaceMember,
   type WorkspaceInvitation,
@@ -212,6 +213,18 @@ export function WorkspaceSettingsPage() {
     } catch (memberError) { showError(memberError) } finally { setSaving(false) }
   }
 
+  async function removeMember(member: WorkspaceMember) {
+    if (!workspace || member.role === "owner" || member.status !== "disabled") return
+    const name = member.profile?.full_name || member.profile?.email || "this team member"
+    if (!window.confirm(`Permanently remove ${name} from this workspace? Their ChanaX account will not be deleted, but they will no longer appear here or have access.`)) return
+    setSaving(true)
+    try {
+      await removeWorkspaceMember(workspace.id, member.user_id)
+      await loadPeople()
+      showSuccess("Team member permanently removed from this workspace.")
+    } catch (memberError) { showError(memberError) } finally { setSaving(false) }
+  }
+
   async function revokeInvitation(invitationId: string) {
     if (!workspace) return
     try {
@@ -345,7 +358,7 @@ export function WorkspaceSettingsPage() {
               <TableBody>{members.map((member) => {
                 const name = member.profile?.full_name || member.profile?.email || "Workspace member"
                 const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()
-                return <TableRow key={member.id}><TableCell><div className="flex items-center gap-2"><Avatar className="size-8">{member.profile?.avatar_path ? <AvatarImage src={member.profile.avatar_path} alt={name} /> : null}<AvatarFallback>{initials}</AvatarFallback></Avatar><div><p className="font-medium">{name}</p><p className="text-xs text-muted-foreground">{member.profile?.email || (member.user_id === user?.id ? "You" : member.user_id)}</p></div></div></TableCell><TableCell className="capitalize">{member.role}</TableCell><TableCell><Badge variant={member.status === "active" ? "secondary" : "destructive"}>{member.status}</Badge></TableCell><TableCell>{readableDate(member.joined_at)}</TableCell><TableCell><div className="flex justify-end gap-2">{member.role === "owner" ? <Badge variant="outline"><Crown />Owner</Badge> : <><Button size="sm" variant="outline" onClick={() => beginEdit(member)}><UserCog />Edit access</Button><Button size="sm" variant="outline" className={member.status === "active" ? "text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30" : undefined} disabled={saving} onClick={() => void toggleMember(member)}>{member.status === "active" ? "Disable" : "Restore"}</Button></>}</div></TableCell></TableRow>
+                return <TableRow key={member.id}><TableCell><div className="flex items-center gap-2"><Avatar className="size-8">{member.profile?.avatar_path ? <AvatarImage src={member.profile.avatar_path} alt={name} /> : null}<AvatarFallback>{initials}</AvatarFallback></Avatar><div><p className="font-medium">{name}</p><p className="text-xs text-muted-foreground">{member.profile?.email || (member.user_id === user?.id ? "You" : member.user_id)}</p></div></div></TableCell><TableCell className="capitalize">{member.role}</TableCell><TableCell><Badge variant={member.status === "active" ? "secondary" : "destructive"}>{member.status}</Badge></TableCell><TableCell>{readableDate(member.joined_at)}</TableCell><TableCell><div className="flex justify-end gap-2">{member.role === "owner" ? <Badge variant="outline"><Crown />Owner</Badge> : <><Button size="sm" variant="outline" onClick={() => beginEdit(member)}><UserCog />Edit access</Button><Button size="sm" variant="outline" className={member.status === "active" ? "text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30" : undefined} disabled={saving} onClick={() => void toggleMember(member)}>{member.status === "active" ? "Disable" : "Restore"}</Button>{member.status === "disabled" ? <Button size="sm" variant="destructive" disabled={saving} onClick={() => void removeMember(member)}><Trash2 />Remove</Button> : null}</>}</div></TableCell></TableRow>
               })}</TableBody>
             </Table>
           ) : <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Your role is <strong className="capitalize text-foreground">{membership.role}</strong>. Contact the workspace owner to change your access.</div>}

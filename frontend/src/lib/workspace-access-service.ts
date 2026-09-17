@@ -318,6 +318,12 @@ export async function updateWorkspaceMember(workspaceId: string, userId: string,
   if (error) throw new Error(error.message)
 }
 
+export async function removeWorkspaceMember(workspaceId: string, userId: string) {
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { error } = await supabase.rpc("breezy_remove_workspace_member", { target_workspace_id: workspaceId, target_user_id: userId })
+  if (error) throw new Error(error.message)
+}
+
 export async function revokeWorkspaceInvitation(workspaceId: string, invitationId: string) {
   if (!supabase) throw new Error("Supabase is not configured.")
   const { error } = await supabase.rpc("breezy_revoke_workspace_invitation", { target_workspace_id: workspaceId, target_invitation_id: invitationId })
