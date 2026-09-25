@@ -60,7 +60,7 @@ const invoiceColumns = [
 ]
 
 export function InvoicesPage() {
-  const { loading, setup, companies, customers, invoices, proformas, payslips, template, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const { loading, setup, companies, customers, invoices, proformas, payslips, templateFor, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
   const location = useLocation()
   const navigate = useNavigate()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
@@ -347,14 +347,15 @@ export function InvoicesPage() {
   const downloadPdf = async (invoice: Invoice) => {
     try {
       const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+      const invoiceTemplate = templateFor(invoiceEntity?.id)
       await downloadInvoicePdf({
         invoice,
         entity: invoiceEntity,
         customer: customers.find((customer) => customer.id === invoice.customerId)
           || customers.find((customer) => customer.entityId === invoiceEntity?.id && customer.companyName === invoice.companyName),
-        template,
+        template: invoiceTemplate,
       })
-      showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the selected ${template.preset} template.`)
+      showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the ${invoiceTemplate.preset} template${invoiceEntity ? ` for ${invoiceEntity.companyName}` : ""}.`)
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "The invoice PDF could not be created.", true)
     }
@@ -367,7 +368,7 @@ export function InvoicesPage() {
     const result = await sharePdfViaWhatsApp({
       title: `Invoice ${invoice.sourceNumber || invoice.number}`,
       message: `Invoice ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
-      createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template }),
+      createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id) }),
     })
     if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
     if (result === "opened") showNotice("WhatsApp opened with the invoice message. This browser cannot attach the generated PDF automatically.")
@@ -378,7 +379,7 @@ export function InvoicesPage() {
     const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
     const customer = customers.find((item) => item.id === invoice.customerId)
       || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
-    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template })
+    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id) })
     const invoiceNumber = invoice.sourceNumber || invoice.number
     const message = await sendDocumentEmail({
       workspaceId: workspace.id,
@@ -408,7 +409,7 @@ export function InvoicesPage() {
         const savedCustomer = bulkCustomers.find((customer) => customer.companyName.trim().toLowerCase() === invoice.companyName.trim().toLowerCase())
         const newCustomer = bulkNewCustomers.find((customer) => customer.companyName.trim().toLowerCase() === invoice.companyName.trim().toLowerCase())
         const customer = savedCustomer || (newCustomer ? { ...newCustomer, id: `bulk-customer-${index}` } : undefined)
-        files.push(await createInvoicePdfFile({ invoice, entity: selectedBulkEntity, customer, template }))
+        files.push(await createInvoicePdfFile({ invoice, entity: selectedBulkEntity, customer, template: templateFor(selectedBulkEntity.id) }))
       }
       const downloadedOn = new Date().toISOString().slice(0, 10)
       downloadZip(files, `Invoices_${cleanInvoiceFileName(selectedBulkEntity.companyName)}_${downloadedOn}.zip`)
@@ -1213,7 +1214,7 @@ export function InvoicesPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
               <div>
                 <h2 className="font-semibold">Invoice preview</h2>
-                <p className="text-sm text-muted-foreground">Selected template: {template.preset}. The downloaded PDF will use this format.</p>
+                <p className="text-sm text-muted-foreground">Template: {templateFor(companies.find((company) => company.companyName === pdfPreview.entityName)?.id).preset}{companies.find((company) => company.companyName === pdfPreview.entityName) ? ` (${companies.find((company) => company.companyName === pdfPreview.entityName)?.companyName})` : ""}. The downloaded PDF will use this format.</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setShareTarget(pdfPreview)}><Share2 />Share</Button>
@@ -1227,7 +1228,7 @@ export function InvoicesPage() {
                 entity={companies.find((company) => company.companyName === pdfPreview.entityName)}
                 customer={customers.find((customer) => customer.id === pdfPreview.customerId)
                   || customers.find((customer) => customer.entityId === companies.find((company) => company.companyName === pdfPreview.entityName)?.id && customer.companyName === pdfPreview.companyName)}
-                template={template}
+                template={templateFor(companies.find((company) => company.companyName === pdfPreview.entityName)?.id)}
               />
             </div>
           </div>

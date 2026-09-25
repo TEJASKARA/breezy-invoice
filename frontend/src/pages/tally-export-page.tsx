@@ -41,7 +41,7 @@ function defaultTallySettings(companyName: string): TallySettings {
 }
 
 export function TallyExportPage() {
-  const { companies, customers, invoices, proformas, employees, payslips, expenses, setup, template, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
+  const { companies, customers, invoices, proformas, employees, payslips, expenses, setup, templateFor, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
   const { can } = useWorkspaceAccess()
   const canManage = can("data_export.manage")
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
@@ -222,7 +222,7 @@ export function TallyExportPage() {
         payslips: generatedPayslips,
         expenses: selectedExpenses,
         setup,
-        template,
+        template: templateFor(entity.id),
         tallySettings: settings,
         categories: archiveCategories,
         dateFrom,

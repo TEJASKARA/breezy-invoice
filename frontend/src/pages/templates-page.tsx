@@ -1,8 +1,9 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
-import { AlignCenter, AlignLeft, AlignRight, Check, Eye, EyeOff, FilePlus2, ImagePlus, Move, Plus, ReceiptText, RotateCcw, Trash2, Undo2, Upload } from "lucide-react"
+import { AlignCenter, AlignLeft, AlignRight, Building2, Check, Eye, EyeOff, FilePlus2, ImagePlus, Move, Plus, ReceiptText, RotateCcw, Trash2, Undo2, Upload } from "lucide-react"
 
 import { InvoicePreview } from "@/components/invoice-preview"
 import { PageHeader } from "@/components/page-header"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,6 +18,9 @@ const templates = [
   { id: "breeze" as const, name: "Modern Breeze", description: "Bold, modern and brand-forward" },
   { id: "minimal" as const, name: "Minimal Professional", description: "Clean layout with generous spacing" },
 ]
+
+const DEFAULT_SCOPE = "default"
+const selectClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
 
 const colors = ["#2563EB", "#0F172A", "#059669", "#E11D48", "#D97706", "#7C3AED"]
 const editableElements: { id: TemplateElementId; name: string; canRename: boolean }[] = [
@@ -77,10 +81,30 @@ function sampleInvoice(entityName: string, customerName: string): Invoice {
 }
 
 export function TemplatesPage() {
-  const { setup, companies, customers, template, updateTemplate: persistTemplate } = useMvpStore()
+  const {
+    setup,
+    companies,
+    customers,
+    template: workspaceTemplate,
+    updateTemplate: persistWorkspaceTemplate,
+    templateFor,
+    hasEntityTemplate,
+    updateEntityTemplate,
+    clearEntityTemplate,
+  } = useMvpStore()
   const { can } = useWorkspaceAccess()
   const canManage = can("templates.manage")
-  const updateTemplate = (changes: Partial<TemplateSettings>) => { if (canManage) persistTemplate(changes) }
+  const [scopeId, setScopeId] = useState<string>(DEFAULT_SCOPE)
+  const scopeEntity = scopeId === DEFAULT_SCOPE ? undefined : companies.find((company) => company.id === scopeId)
+  const activeScopeId = scopeEntity ? scopeEntity.id : DEFAULT_SCOPE
+  const scopeHasCustomTemplate = Boolean(scopeEntity && hasEntityTemplate(scopeEntity.id))
+  const template: TemplateSettings = scopeEntity ? templateFor(scopeEntity.id) : workspaceTemplate
+  const scopeName = scopeEntity ? scopeEntity.companyName : "all entities"
+  const updateTemplate = (changes: Partial<TemplateSettings>) => {
+    if (!canManage) return
+    if (scopeEntity) updateEntityTemplate(scopeEntity.id, changes)
+    else persistWorkspaceTemplate(changes)
+  }
   const logoInputRef = useRef<HTMLInputElement>(null)
   const signatureInputRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
@@ -89,7 +113,7 @@ export function TemplatesPage() {
   const [selectedElementId, setSelectedElementId] = useState<TemplateElementId | null>("invoiceTitle")
   const [previewDocumentType, setPreviewDocumentType] = useState<"invoice" | "quotation">("invoice")
 
-  const previewEntity: Company = companies[0] ?? {
+  const previewEntity: Company = scopeEntity ?? companies[0] ?? {
     id: "preview-entity",
     companyName: setup?.firmName || "Your Firm Name",
     billingAddress: setup?.mailingAddress || "Your mailing address will appear here",
@@ -98,7 +122,7 @@ export function TemplatesPage() {
     pan: setup?.gstin?.slice(2, 12) || "ABCDE1234F",
     hsnSac: "998311",
   }
-  const previewCustomer: Customer = customers[0] ?? {
+  const previewCustomer: Customer = customers.find((customer) => customer.entityId === previewEntity.id) ?? customers[0] ?? {
     id: "preview-customer",
     entityId: previewEntity.id,
     companyName: "Sample Client Private Limited",
@@ -123,6 +147,13 @@ export function TemplatesPage() {
   const selectedElement = selectedElementId ? template.elements[selectedElementId] : null
 
   useEffect(() => setColorDraft(template.accentColor), [template.accentColor])
+  useEffect(() => {
+    setSelectedTextId(null)
+    setSelectedElementId("invoiceTitle")
+  }, [activeScopeId])
+  useEffect(() => {
+    if (scopeId !== DEFAULT_SCOPE && !companies.some((company) => company.id === scopeId)) setScopeId(DEFAULT_SCOPE)
+  }, [companies, scopeId])
 
   const showMessage = (text: string, type: "success" | "error" = "success") => {
     setMessage({ text, type })
@@ -145,7 +176,7 @@ export function TemplatesPage() {
     reader.onload = () => {
       if (kind === "logo") updateTemplate({ logoDataUrl: String(reader.result) })
       else updateTemplate({ signatureDataUrl: String(reader.result), signatureMode: "uploaded" })
-      showMessage(`${kind === "logo" ? "Logo" : "Signature"} saved to this account.`)
+      showMessage(`${kind === "logo" ? "Logo" : "Signature"} saved for ${scopeName}.`)
     }
     reader.onerror = () => showMessage(`The ${kind} image could not be read.`, "error")
     reader.readAsDataURL(file)
@@ -189,7 +220,19 @@ export function TemplatesPage() {
       elements: resetElements(),
     })
     setSelectedTextId(null)
-    showMessage("Template reset to Modern Breeze.")
+    showMessage(`Template for ${scopeName} reset to Modern Breeze.`)
+  }
+
+  const switchToDefaultTemplate = () => {
+    if (!canManage || !scopeEntity) return
+    clearEntityTemplate(scopeEntity.id)
+    showMessage(`${scopeEntity.companyName} now uses the default template.`)
+  }
+
+  const createEntityTemplate = () => {
+    if (!canManage || !scopeEntity) return
+    updateEntityTemplate(scopeEntity.id, {})
+    showMessage(`Custom template created for ${scopeEntity.companyName}. Changes save automatically.`)
   }
 
   return (
@@ -197,9 +240,46 @@ export function TemplatesPage() {
       <PageHeader
         eyebrow="Document studio"
         title="Design sales invoices and quotations"
-        description="Switch between the final sales invoice and quotation previews. Downloaded PDFs use these same saved settings."
+        description="Pick an entity to give it its own logo, colours and layout. Entities without a custom template use the default. Downloaded PDFs use these same saved settings."
         actions={canManage ? <Button variant="outline" onClick={resetTemplate}><RotateCcw />Reset</Button> : null}
       />
+
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-end">
+          <div className="w-full space-y-2 md:max-w-sm">
+            <Label htmlFor="template-scope" className="flex items-center gap-2"><Building2 className="size-4" />Template for</Label>
+            <select id="template-scope" className={selectClass} value={activeScopeId} onChange={(event) => setScopeId(event.target.value)}>
+              <option value={DEFAULT_SCOPE}>Default template (all entities)</option>
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>{company.companyName}{hasEntityTemplate(company.id) ? " — custom" : ""}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm">
+            {!scopeEntity ? (
+              <>
+                <Badge variant="secondary">Default</Badge>
+                <span className="text-muted-foreground">
+                  Used by every entity without its own template
+                  {companies.length ? ` (${companies.filter((company) => !hasEntityTemplate(company.id)).length} of ${companies.length})` : ""}.
+                </span>
+              </>
+            ) : scopeHasCustomTemplate ? (
+              <>
+                <Badge>Custom template</Badge>
+                <span className="text-muted-foreground">Saved automatically for {scopeEntity.companyName}.</span>
+                {canManage ? <Button size="sm" variant="outline" className="md:ml-auto" onClick={switchToDefaultTemplate}><Undo2 />Use default template</Button> : null}
+              </>
+            ) : (
+              <>
+                <Badge variant="outline">Using default</Badge>
+                <span className="text-muted-foreground">Any change you make here creates a custom template for {scopeEntity.companyName}.</span>
+                {canManage ? <Button size="sm" className="md:ml-auto" onClick={createEntityTemplate}><Plus />Create custom template</Button> : null}
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to this template. Ask a workspace admin for template editing permission to make changes.</p> : null}
 

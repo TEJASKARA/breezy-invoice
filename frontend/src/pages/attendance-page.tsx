@@ -49,7 +49,7 @@ function applyAttendance<T extends { month: string; earnings: PayrollComponent[]
 }
 
 export function AttendancePage() {
-  const { setup, companies, employees, invoices, payslips, template, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
+  const { setup, companies, employees, invoices, payslips, templateFor, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
@@ -320,7 +320,7 @@ export function AttendancePage() {
     clearMessages()
     try {
       const files = []
-      for (const [index, item] of preview.entries()) files.push(await createPayslipPdfFile({ payslip: { ...item, id: `attendance-payslip-${index}` }, entity: selectedEntity, template }))
+      for (const [index, item] of preview.entries()) files.push(await createPayslipPdfFile({ payslip: { ...item, id: `attendance-payslip-${index}` }, entity: selectedEntity, template: templateFor(selectedEntity?.id) }))
       downloadZip(files, `Payslips_${cleanPayslipFileName(selectedEntity.companyName)}_${cleanPayslipFileName(month)}.zip`)
       setNotice(`${files.length} payslip PDFs downloaded in one ZIP folder.`)
     } catch (caught) {

@@ -214,6 +214,8 @@ export type TemplateSettings = {
   fontStyle: "sans" | "serif" | "mono"
   compact: boolean
   elements: Record<TemplateElementId, TemplateElementSetting>
+  /** Per-entity overrides keyed by entity (company) id. Entities without an entry use the workspace default. */
+  entityTemplates?: Record<string, TemplateSettings>
 }
 export type InvoiceNumbering = {
   mode: "default" | "continue"
@@ -284,6 +286,10 @@ type MvpStore = MvpState & {
   updateExpense: (expenseId: string, changes: Partial<Omit<Expense, "id">>) => Promise<void>
   deleteExpense: (expenseId: string) => Promise<void>
   updateTemplate: (template: Partial<TemplateSettings>) => void
+  templateFor: (entityId?: string | null) => TemplateSettings
+  hasEntityTemplate: (entityId?: string | null) => boolean
+  updateEntityTemplate: (entityId: string, template: Partial<TemplateSettings>) => void
+  clearEntityTemplate: (entityId: string) => void
 }
 
 const legacyStorageKey = "breezyaccounts-mvp-data"
@@ -373,20 +379,44 @@ function advanceCompanyNumbering(company: Company, issuedNumbers: string[]) {
     invoiceNumbering: { ...numbering, nextNumber: Math.max(numbering.nextNumber, highestIssued + 1) },
   }
 }
+function normalizeTemplate(saved: Partial<TemplateSettings> | undefined | null): TemplateSettings {
+  const { entityTemplates: _ignored, ...rest } = saved || {}
+  return {
+    ...defaultTemplate(),
+    ...rest,
+    customTexts: Array.isArray(saved?.customTexts) ? saved.customTexts : [],
+    elements: {
+      ...defaultTemplateElements(),
+      ...(saved?.elements || {}),
+    },
+  }
+}
+
+/** Standalone copy of a template without the per-entity map, safe to store as an entity override. */
+function baseTemplate(template: TemplateSettings): TemplateSettings {
+  const normalized = normalizeTemplate(template)
+  return {
+    ...normalized,
+    customTexts: normalized.customTexts.map((block) => ({ ...block })),
+    elements: Object.fromEntries(Object.entries(normalized.elements).map(([key, value]) => [key, { ...value }])) as TemplateSettings["elements"],
+  }
+}
+
+function normalizeWorkspaceTemplate(saved: Partial<TemplateSettings> | undefined | null): TemplateSettings {
+  const entityTemplates = Object.fromEntries(
+    Object.entries(saved?.entityTemplates || {})
+      .filter(([, value]) => value && typeof value === "object")
+      .map(([entityId, value]) => [entityId, normalizeTemplate(value)]),
+  )
+  return { ...normalizeTemplate(saved), entityTemplates }
+}
+
 const emptyState = (): MvpState => ({ setup: null, companies: [], customers: [], invoices: [], proformas: [], employees: [], employeeLetters: [], payslips: [], expenses: [], template: defaultTemplate() })
 function normalizeState(saved: Partial<MvpState>): MvpState {
   const restored = {
     ...emptyState(),
     ...saved,
-    template: {
-      ...defaultTemplate(),
-      ...saved.template,
-      customTexts: Array.isArray(saved.template?.customTexts) ? saved.template.customTexts : [],
-      elements: {
-        ...defaultTemplateElements(),
-        ...(saved.template?.elements || {}),
-      },
-    },
+    template: normalizeWorkspaceTemplate(saved.template),
   }
   const fallbackEntityId = restored.companies[0]?.id || ""
   const fallbackEntityName = restored.companies[0]?.companyName || ""
@@ -610,8 +640,15 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     deleteCompany: async (companyId) => {
       await persistAndWait((_userId, workspaceId) => deleteCompanyRow(workspaceId, companyId))
       const current = stateRef.current
+      let nextTemplate = current.template
+      if (current.template.entityTemplates?.[companyId]) {
+        const { [companyId]: _removed, ...remaining } = current.template.entityTemplates
+        nextTemplate = { ...current.template, entityTemplates: remaining }
+        persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, current.setup, nextTemplate))
+      }
       commit({
         ...current,
+        template: nextTemplate,
         companies: current.companies.filter((company) => company.id !== companyId),
         customers: current.customers.filter((customer) => customer.entityId !== companyId),
         employees: current.employees.filter((employee) => employee.entityId !== companyId),
@@ -790,6 +827,30 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     updateTemplate: (template) => {
       const updatedTemplate = { ...stateRef.current.template, ...template }
       const next = { ...stateRef.current, template: updatedTemplate }
+      commit(next)
+      persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, next.setup, updatedTemplate))
+    },
+    templateFor: (entityId) => {
+      const entityTemplate = entityId ? state.template.entityTemplates?.[entityId] : undefined
+      return baseTemplate(entityTemplate || state.template)
+    },
+    hasEntityTemplate: (entityId) => Boolean(entityId && state.template.entityTemplates?.[entityId]),
+    updateEntityTemplate: (entityId, changes) => {
+      const current = stateRef.current
+      const existing = current.template.entityTemplates?.[entityId]
+      const updatedEntityTemplate = { ...(existing ? baseTemplate(existing) : baseTemplate(current.template)), ...changes }
+      delete updatedEntityTemplate.entityTemplates
+      const updatedTemplate = { ...current.template, entityTemplates: { ...(current.template.entityTemplates || {}), [entityId]: updatedEntityTemplate } }
+      const next = { ...current, template: updatedTemplate }
+      commit(next)
+      persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, next.setup, updatedTemplate))
+    },
+    clearEntityTemplate: (entityId) => {
+      const current = stateRef.current
+      if (!current.template.entityTemplates?.[entityId]) return
+      const { [entityId]: _removed, ...remaining } = current.template.entityTemplates
+      const updatedTemplate = { ...current.template, entityTemplates: remaining }
+      const next = { ...current, template: updatedTemplate }
       commit(next)
       persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, next.setup, updatedTemplate))
     },
