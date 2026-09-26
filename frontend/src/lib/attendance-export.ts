@@ -1,5 +1,6 @@
 import type { AttendanceDayRecord, Company, PayslipAttendance } from "@/lib/mvp-store"
 import { attendancePresentDays, cleanPayslipFileName, formatSalaryMonth } from "@/lib/payslip-calculations"
+import { trackAction } from "@/lib/usage-tracking"
 
 export type AttendanceExportRow = {
   employeeName: string
@@ -222,4 +223,5 @@ export async function downloadAttendancePdf(input: AttendanceExportInput) {
     doc.text(`Page ${doc.getNumberOfPages()}`, pageWidth - margin, 202, { align: "right" })
   }
   doc.save(`${fileStem(input)}.pdf`)
+  trackAction("attendance_pdf_downloaded")
 }

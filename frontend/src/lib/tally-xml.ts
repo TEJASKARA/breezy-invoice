@@ -1,4 +1,5 @@
 import type { Customer, Employee, Invoice, Payslip, TallySettings } from "@/lib/mvp-store"
+import { trackAction } from "@/lib/usage-tracking"
 
 const xmlEscape = (value: string | number) => String(value)
   .replaceAll("&", "&amp;")
@@ -153,6 +154,7 @@ ${ledgers}
 }
 
 export function downloadXml(xml: string, fileName: string) {
+  trackAction("tally_xml_exported", { kind: /payroll/i.test(fileName) ? "payroll" : "sales" })
   const url = URL.createObjectURL(new Blob([xml], { type: "application/xml;charset=utf-8" }))
   const link = document.createElement("a")
   link.href = url

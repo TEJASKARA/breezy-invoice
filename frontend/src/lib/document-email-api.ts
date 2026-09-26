@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { trackAction } from "@/lib/usage-tracking"
 
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 
@@ -42,6 +43,7 @@ export async function sendEmployeeLetterEmail(input: {
   let payload: { detail?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
   if (!response.ok) throw new Error(payload.detail || "The employee letter email could not be sent.")
+  trackAction("email_sent", { document: "employee_letter" })
   return payload.message || `The letter was emailed to ${input.toEmail}.`
 }
 
@@ -78,5 +80,6 @@ export async function sendDocumentEmail(input: {
   let payload: { detail?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
   if (!response.ok) throw new Error(payload.detail || "The document email could not be sent.")
+  trackAction("email_sent", { document: input.documentType })
   return payload.message || `The document was emailed to ${input.toEmail}.`
 }

@@ -4,6 +4,7 @@ import type { Company, Customer, Employee, Expense, Invoice, Payslip, Proforma, 
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
 import { createTallyPayrollXml, createTallySalesXml } from "@/lib/tally-xml"
 import { downloadZip, type ZipFile } from "@/lib/zip-download"
+import { trackAction } from "@/lib/usage-tracking"
 
 export type ExportCategory = "invoices" | "proformas" | "expenses" | "employees" | "attendance" | "payslips"
 
@@ -48,6 +49,7 @@ function attendanceRows(setup: Setup | null, entityId: string, dateFrom: string,
 }
 
 export async function downloadCompleteDataExport(input: CompleteExportInput) {
+  trackAction("complete_data_export", { categories: input.categories.join(",") })
   const XLSX = await import("xlsx")
   const workbook = XLSX.utils.book_new()
   const files: ZipFile[] = []

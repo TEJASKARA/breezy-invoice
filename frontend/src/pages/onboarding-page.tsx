@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { verifyGstin, type GstVerification } from "@/lib/gst-api"
-import { parseExistingInvoiceNumber, useMvpStore } from "@/lib/mvp-store"
+import { defaultSequenceGroupIndex, formatInvoiceNumber, invoiceNumberDigitGroups, parseExistingInvoiceNumber, useMvpStore } from "@/lib/mvp-store"
+import { cn } from "@/lib/utils"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { setMyAccountType } from "@/lib/workspace-access-service"
 
@@ -42,6 +43,7 @@ export function OnboardingPage() {
   const [mailingAddress, setMailingAddress] = useState("")
   const [continueExistingNumbers, setContinueExistingNumbers] = useState(false)
   const [latestInvoiceNumber, setLatestInvoiceNumber] = useState("")
+  const [sequenceGroupIndex, setSequenceGroupIndex] = useState<number | null>(null)
   const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">("monthly")
   const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(1)
   const [numberingError, setNumberingError] = useState("")
@@ -131,10 +133,11 @@ export function OnboardingPage() {
     )
   }
 
-  const existingNumbering = continueExistingNumbers ? parseExistingInvoiceNumber(latestInvoiceNumber) : null
-  const nextNumberPreview = existingNumbering
-    ? `${existingNumbering.prefix}${String(existingNumbering.nextNumber).padStart(existingNumbering.padding, "0")}`
-    : ""
+  const existingNumbering = continueExistingNumbers ? parseExistingInvoiceNumber(latestInvoiceNumber, sequenceGroupIndex) : null
+  const nextNumberPreview = existingNumbering ? formatInvoiceNumber(existingNumbering, existingNumbering.nextNumber) : ""
+  const digitGroups = invoiceNumberDigitGroups(latestInvoiceNumber)
+  const activeGroupIndex = sequenceGroupIndex ?? defaultSequenceGroupIndex(latestInvoiceNumber)
+  const trimmedLatestNumber = latestInvoiceNumber.trim()
 
   async function fetchGstDetails() {
     const normalizedGstin = gstin.trim().toUpperCase()
@@ -196,7 +199,7 @@ export function OnboardingPage() {
       return
     }
     if (continueExistingNumbers && !existingNumbering) {
-      setNumberingError("Enter the complete latest invoice number ending in its sequence digits, for example ABC/2025-26/0047.")
+      setNumberingError("Enter your complete latest invoice number. It must contain a running number, for example ABC/2025-26/0047 or INV-25-A.")
       return
     }
     setSaving(true)
@@ -364,11 +367,29 @@ export function OnboardingPage() {
                       id="latestInvoiceNumber"
                       required
                       value={latestInvoiceNumber}
-                      onChange={(event) => { setLatestInvoiceNumber(event.target.value); setNumberingError("") }}
+                      onChange={(event) => { setLatestInvoiceNumber(event.target.value); setSequenceGroupIndex(null); setNumberingError("") }}
                       placeholder="ABC/2025-26/0047"
                       className="font-mono"
                     />
-                    <p className="text-xs text-muted-foreground">The changing sequence must be at the end. ChanaX preserves the complete prefix and the number of leading zeroes.</p>
+                    <p className="text-xs text-muted-foreground">The running number can be anywhere, for example rxy_rus25, INV-25-A or RT/001/2025-26. ChanaX keeps the text before and after it and the number of leading zeroes.</p>
+                    {digitGroups.length > 1 && (
+                      <div className="space-y-2 rounded-md border bg-background p-3">
+                        <p className="text-xs font-medium">Which number increases with each invoice?</p>
+                        <div className="flex flex-wrap gap-2">
+                          {digitGroups.map((group) => (
+                            <button
+                              key={group.index}
+                              type="button"
+                              onClick={() => setSequenceGroupIndex(group.index)}
+                              aria-pressed={activeGroupIndex === group.index}
+                              className={cn("rounded-md border px-2 py-1 font-mono text-sm", activeGroupIndex === group.index ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+                            >
+                              {trimmedLatestNumber.slice(0, group.start)}<span className="underline decoration-2 underline-offset-2">{group.digits}</span>{trimmedLatestNumber.slice(group.end)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {nextNumberPreview && <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Your next invoice will be {nextNumberPreview}</p>}
                     {numberingError && <p role="alert" className="text-sm font-medium text-destructive">{numberingError}</p>}
                   </div>

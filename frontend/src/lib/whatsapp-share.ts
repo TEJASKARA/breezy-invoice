@@ -1,3 +1,5 @@
+import { trackAction } from "@/lib/usage-tracking"
+
 type GeneratedPdf = {
   name: string
   data: Uint8Array
@@ -16,7 +18,14 @@ function isMobileDevice() {
     || (navigator.maxTouchPoints > 1 && window.matchMedia("(pointer: coarse)").matches)
 }
 
-export async function sharePdfViaWhatsApp({ title, message, createFile }: WhatsAppPdfShareInput): Promise<WhatsAppShareResult> {
+export async function sharePdfViaWhatsApp(input: WhatsAppPdfShareInput): Promise<WhatsAppShareResult> {
+  const result = await shareViaWhatsApp(input)
+  const document = /payslip/i.test(input.title) ? "payslip" : /quotation|proforma/i.test(input.title) ? "quotation" : /letter/i.test(input.title) ? "employee_letter" : "invoice"
+  if (result !== "cancelled") trackAction("whatsapp_share", { document, result })
+  return result
+}
+
+async function shareViaWhatsApp({ title, message, createFile }: WhatsAppPdfShareInput): Promise<WhatsAppShareResult> {
   const mobile = isMobileDevice()
   const shareUrl = `${mobile ? "https://wa.me/" : "https://web.whatsapp.com/send"}?text=${encodeURIComponent(message)}`
 

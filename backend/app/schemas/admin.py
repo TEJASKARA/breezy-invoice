@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,3 +33,16 @@ class SpecialCreditGrantResponse(BaseModel):
     quotation_credits_added: int
     topup_credits_remaining: int
     topup_quotation_credits_remaining: int
+
+
+class PlatformUsageReportResponse(BaseModel):
+    since_days: int
+    generated_at: str
+    scope: dict[str, Any]
+    totals: dict[str, Any]
+    pages: list[dict[str, Any]] = []
+    features: list[dict[str, Any]] = []
+    daily: list[dict[str, Any]] = []
+    users: list[dict[str, Any]] = []
+    workspaces: list[dict[str, Any]] = []
+    recent: list[dict[str, Any]] = []

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
-import { Coins, Mail, Search, ShieldCheck } from "lucide-react"
+import { BarChart3, Coins, Mail, Search, ShieldCheck } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
+import { PlatformUsageAnalytics } from "@/components/platform-usage-analytics"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +18,7 @@ import {
 
 export function PlatformAdminPage() {
   const [access, setAccess] = useState<"loading" | "allowed" | "denied">("loading")
+  const [tab, setTab] = useState<"usage" | "credits">("usage")
   const [subscriberQuery, setSubscriberQuery] = useState("")
   const [searchResults, setSearchResults] = useState<PlatformWorkspace[]>([])
   const [workspace, setWorkspace] = useState<PlatformWorkspace | null>(null)
@@ -97,8 +99,15 @@ export function PlatformAdminPage() {
     <PageHeader
       eyebrow="Private platform controls"
       title="ChanaX administration"
-      description="Find a subscriber by email address or subscription code and make an audited special-credit allocation. This area is restricted to approved platform administrators."
+      description="Track how subscribers use ChanaX and make audited special-credit allocations. This area is restricted to approved platform administrators."
     />
+
+    <div className="flex rounded-lg border bg-background p-1 sm:w-fit" role="tablist" aria-label="Administration sections">
+      <Button role="tab" aria-selected={tab === "usage"} size="sm" className="flex-1 sm:flex-none" variant={tab === "usage" ? "default" : "ghost"} onClick={() => setTab("usage")}><BarChart3 />Usage analytics</Button>
+      <Button role="tab" aria-selected={tab === "credits"} size="sm" className="flex-1 sm:flex-none" variant={tab === "credits" ? "default" : "ghost"} onClick={() => setTab("credits")}><Coins />Credits</Button>
+    </div>
+
+    {tab === "usage" ? <PlatformUsageAnalytics /> : <>
 
     {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
     {success ? <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">{success}</div> : null}
@@ -182,5 +191,6 @@ export function PlatformAdminPage() {
         </Button>
       </CardContent>
     </Card> : null}
+    </>}
   </div>
 }

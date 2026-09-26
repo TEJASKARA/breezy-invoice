@@ -2,6 +2,7 @@ import type { jsPDF as JsPdfDocument } from "jspdf"
 
 import type { Company, Payslip, TemplateSettings } from "@/lib/mvp-store"
 import { amountInWords, attendancePresentDays, cleanPayslipFileName, formatSalaryMonth, maskBankAccount } from "@/lib/payslip-calculations"
+import { trackAction } from "@/lib/usage-tracking"
 
 const pageWidth = 210
 const margin = 16
@@ -196,6 +197,7 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
 export async function downloadPayslipPdf(input: { payslip: Payslip; entity?: Company; template: TemplateSettings }) {
   const doc = await createPayslipPdf(input)
   doc.save(payslipPdfFileName(input.payslip))
+  trackAction("payslip_pdf_downloaded")
 }
 
 export function payslipPdfFileName(payslip: Payslip) {

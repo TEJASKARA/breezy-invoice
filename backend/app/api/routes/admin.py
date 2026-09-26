@@ -6,6 +6,7 @@ from app.api.routes.gst import _bearer_token
 from app.core.config import Settings, get_settings
 from app.schemas.admin import (
     PlatformAdminAccessResponse,
+    PlatformUsageReportResponse,
     PlatformWorkspaceResponse,
     PlatformWorkspaceSearchResponse,
     SpecialCreditGrantRequest,
@@ -111,3 +112,32 @@ async def grant_special_credits(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     return SpecialCreditGrantResponse(**result)
+
+
+@router.get("/usage", response_model=PlatformUsageReportResponse)
+async def platform_usage_report(
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+    query: Annotated[str | None, Query(max_length=320)] = None,
+) -> PlatformUsageReportResponse:
+    """Developer-only usage analytics for the platform, a workspace or a user."""
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        report = await gateway.admin_usage_report(
+            since_days=days,
+            identifier=query,
+            excluded_user_ids=list(settings.platform_admin_ids),
+        )
+    except SupabaseGatewayError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if message.startswith("No user matches")
+            or message.startswith("No workspace matches")
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return PlatformUsageReportResponse(**report)

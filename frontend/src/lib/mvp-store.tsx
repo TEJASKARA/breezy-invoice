@@ -21,6 +21,7 @@ import {
   upsertEmployeeLetters,
   upsertPayslips,
 } from "@/lib/workspace-repository"
+import { trackAction } from "@/lib/usage-tracking"
 
 export type TallySettings = {
   companyName: string
@@ -220,6 +221,8 @@ export type TemplateSettings = {
 export type InvoiceNumbering = {
   mode: "default" | "continue"
   prefix: string
+  /** Fixed text after the running number, e.g. "-A" in INV-25-A. Supports {FY}. */
+  suffix?: string
   nextNumber: number
   padding: number
   resetPolicy?: "financial_year" | "never"
@@ -309,18 +312,67 @@ const defaultTemplate = (): TemplateSettings => ({
   elements: defaultTemplateElements(),
 })
 
-export function parseExistingInvoiceNumber(value: string): InvoiceNumbering | null {
+export type InvoiceNumberDigitGroup = { index: number; start: number; end: number; digits: string; looksLikeYear: boolean }
+
+/** Every run of digits in an invoice number, flagging the ones that look like a year or financial year (2025, 2025-26, 25-26). */
+export function invoiceNumberDigitGroups(value: string): InvoiceNumberDigitGroup[] {
   const normalized = value.trim()
-  const match = normalized.match(/^(.*?)(\d+)$/)
-  if (!match) return null
-  const currentNumber = Number(match[2])
+  const groups: InvoiceNumberDigitGroup[] = [...normalized.matchAll(/\d+/g)].map((match, index) => ({
+    index,
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    digits: match[0],
+    looksLikeYear: match[0].length === 4 && /^(19|20)\d{2}$/.test(match[0]),
+  }))
+  // Financial-year ranges such as 2025-26, 25-26 or 2025/26: both halves are years, not the running number.
+  for (let i = 0; i < groups.length - 1; i++) {
+    const first = groups[i]
+    const second = groups[i + 1]
+    const separator = normalized.slice(first.end, second.start)
+    if (!["-", "/"].includes(separator) || second.digits.length !== 2) continue
+    if (first.digits.length !== 2 && first.digits.length !== 4) continue
+    if ((Number(first.digits.slice(-2)) + 1) % 100 === Number(second.digits)) {
+      first.looksLikeYear = true
+      second.looksLikeYear = true
+    }
+  }
+  return groups
+}
+
+/** The digit group most likely to be the running number: the last one that is not part of a year. */
+export function defaultSequenceGroupIndex(value: string): number | null {
+  const groups = invoiceNumberDigitGroups(value)
+  if (!groups.length) return null
+  const candidate = [...groups].reverse().find((group) => !group.looksLikeYear)
+  return (candidate ?? groups[groups.length - 1]).index
+}
+
+/**
+ * Reads the user's latest invoice number and returns the numbering that continues it.
+ * The running number can sit anywhere: rxy_rus25 -> rxy_rus26, INV-25-A -> INV-26-A, RT/001/2025-26 -> RT/002/2025-26.
+ * Pass sequenceGroupIndex to choose which digit group is the running number when there are several.
+ */
+export function parseExistingInvoiceNumber(value: string, sequenceGroupIndex?: number | null): InvoiceNumbering | null {
+  const normalized = value.trim()
+  const groups = invoiceNumberDigitGroups(normalized)
+  if (!groups.length) return null
+  const chosenIndex = sequenceGroupIndex ?? defaultSequenceGroupIndex(normalized)
+  const group = groups.find((item) => item.index === chosenIndex) ?? groups[groups.length - 1]
+  const currentNumber = Number(group.digits)
   if (!Number.isSafeInteger(currentNumber)) return null
   return {
     mode: "continue",
-    prefix: match[1],
+    prefix: normalized.slice(0, group.start),
+    suffix: normalized.slice(group.end),
     nextNumber: currentNumber + 1,
-    padding: match[2].length,
+    padding: group.digits.length,
   }
+}
+
+/** Builds the visible invoice number from a numbering rule. */
+export function formatInvoiceNumber(numbering: Pick<InvoiceNumbering, "prefix" | "suffix" | "padding">, sequence: number, financialYear?: string) {
+  const fy = financialYear || financialYearFor()
+  return `${numbering.prefix.replaceAll("{FY}", fy)}${String(sequence).padStart(numbering.padding, "0")}${(numbering.suffix || "").replaceAll("{FY}", fy)}`
 }
 
 function nextDefaultInvoiceNumber(invoices: Invoice[], offset = 0) {
@@ -337,7 +389,7 @@ function nextDefaultInvoiceNumber(invoices: Invoice[], offset = 0) {
 export function nextInvoiceNumber(setup: Setup | null, invoices: Invoice[]) {
   const numbering = setup?.invoiceNumbering
   if (numbering?.mode === "continue") {
-    return `${numbering.prefix}${String(numbering.nextNumber).padStart(numbering.padding, "0")}`
+    return formatInvoiceNumber(numbering, numbering.nextNumber)
   }
   return nextDefaultInvoiceNumber(invoices)
 }
@@ -357,22 +409,25 @@ function normalizedCompanyNumbering(company: Company | undefined): InvoiceNumber
   return { ...numbering, financialYear: numbering.financialYear || currentFinancialYear }
 }
 
-function numberFromCompany(company: Company | undefined, setup: Setup | null, invoices: Invoice[]) {
+/** The number the next invoice issued by this entity will get (falls back to the workspace numbering). */
+export function nextInvoiceNumberForEntity(company: Company | undefined, setup: Setup | null, invoices: Invoice[]) {
   const numbering = normalizedCompanyNumbering(company)
   if (!numbering) return nextInvoiceNumber(setup, invoices)
-  const prefix = numbering.prefix.replaceAll("{FY}", numbering.financialYear || financialYearFor())
-  return `${prefix}${String(numbering.nextNumber).padStart(numbering.padding, "0")}`
+  return formatInvoiceNumber(numbering, numbering.nextNumber, numbering.financialYear)
 }
+const numberFromCompany = nextInvoiceNumberForEntity
 
 function advanceCompanyNumbering(company: Company, issuedNumbers: string[]) {
   const numbering = normalizedCompanyNumbering(company)
   if (!numbering) return company
-  const resolvedPrefix = numbering.prefix.replaceAll("{FY}", numbering.financialYear || financialYearFor())
+  const fy = numbering.financialYear || financialYearFor()
+  const resolvedPrefix = numbering.prefix.replaceAll("{FY}", fy)
+  const resolvedSuffix = (numbering.suffix || "").replaceAll("{FY}", fy)
   const highestIssued = issuedNumbers.reduce((highest, value) => {
-    if (!value.startsWith(resolvedPrefix)) return highest
-    const suffix = value.slice(resolvedPrefix.length)
-    if (!/^\d+$/.test(suffix)) return highest
-    return Math.max(highest, Number(suffix))
+    if (!value.startsWith(resolvedPrefix) || !value.endsWith(resolvedSuffix)) return highest
+    const sequence = value.slice(resolvedPrefix.length, value.length - resolvedSuffix.length)
+    if (!/^\d+$/.test(sequence)) return highest
+    return Math.max(highest, Number(sequence))
   }, numbering.nextNumber - 1)
   return {
     ...company,
@@ -621,6 +676,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const nextSetup = { ...current.setup, attendanceDrafts: { ...(current.setup.attendanceDrafts || {}), [key]: draft } }
       await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template))
       commit({ ...stateRef.current, setup: nextSetup })
+      trackAction("attendance_saved")
     },
     addCompanies: async (companies) => {
       const added = companies.map((company) => {
@@ -629,6 +685,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       })
       await persistAndWait((userId, workspaceId) => upsertCompanies(userId, workspaceId, added))
       commit({ ...stateRef.current, companies: [...added, ...stateRef.current.companies] })
+      trackAction("entity_created", { count: added.length })
     },
     updateCompany: async (companyId, changes) => {
       const existing = stateRef.current.companies.find((company) => company.id === companyId)
@@ -663,6 +720,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       })
       await persistAndWait((userId, workspaceId) => upsertCustomers(userId, workspaceId, added))
       commit({ ...stateRef.current, customers: [...added, ...stateRef.current.customers] })
+      trackAction("customer_created", { count: added.length })
     },
     updateCustomer: async (customerId, changes) => {
       const existing = stateRef.current.customers.find((customer) => customer.id === customerId)
@@ -693,6 +751,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         await upsertInvoices(userId, workspaceId, [added])
       })
       commit({ ...stateRef.current, setup: nextSetup, companies: nextCompanies, invoices: [added, ...stateRef.current.invoices] })
+      trackAction("invoice_created")
       return added
     },
     addInvoices: async (invoices) => {
@@ -705,8 +764,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         if (!numbering) return { ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }
         const offset = counters.get(company.id) || 0
         counters.set(company.id, offset + 1)
-        const prefix = numbering.prefix.replaceAll("{FY}", numbering.financialYear || financialYearFor())
-        return { ...invoice, id: id(), number: `${prefix}${String(numbering.nextNumber + offset).padStart(numbering.padding, "0")}` }
+        return { ...invoice, id: id(), number: formatInvoiceNumber(numbering, numbering.nextNumber + offset, numbering.financialYear) }
       })
       const nextCompanies = current.companies.map((company) => {
         const related = added.filter((invoice) => invoice.entityName === company.companyName)
@@ -719,10 +777,12 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         await upsertInvoices(userId, workspaceId, added)
       })
       commit({ ...stateRef.current, companies: nextCompanies, invoices: [...added, ...stateRef.current.invoices] })
+      trackAction("invoices_bulk_imported", { count: added.length })
     },
     deleteInvoice: async (invoiceId) => {
       await persistAndWait((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))
       commit({ ...stateRef.current, invoices: stateRef.current.invoices.filter((invoice) => invoice.id !== invoiceId) })
+      trackAction("invoice_deleted")
     },
     addProforma: async (proforma) => {
       const current = stateRef.current
@@ -734,6 +794,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const added: Proforma = { ...proforma, id: id(), number: `${prefix}${String(highest + 1).padStart(4, "0")}` }
       await persistAndWait((userId, workspaceId) => upsertProformas(userId, workspaceId, [added]))
       commit({ ...stateRef.current, proformas: [added, ...stateRef.current.proformas] })
+      trackAction("quotation_created")
     },
     updateProforma: async (proformaId, changes) => {
       const existing = stateRef.current.proformas.find((item) => item.id === proformaId)
@@ -751,12 +812,14 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const added = { ...employee, id: employeeId }
       await persistAndWait((userId, workspaceId) => upsertEmployees(userId, workspaceId, [added]))
       commit({ ...stateRef.current, employees: [added, ...stateRef.current.employees] })
+      trackAction("employee_created")
       return employeeId
     },
     addEmployees: async (employees) => {
       const added = employees.map((employee) => ({ ...employee, id: id() }))
       await persistAndWait((userId, workspaceId) => upsertEmployees(userId, workspaceId, added))
       commit({ ...stateRef.current, employees: [...added, ...stateRef.current.employees] })
+      trackAction("employees_imported", { count: added.length })
     },
     updateEmployee: async (employeeId, changes) => {
       const existing = stateRef.current.employees.find((employee) => employee.id === employeeId)
@@ -773,6 +836,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const added: EmployeeLetter = { ...letter, id: id() }
       await persistAndWait((userId, workspaceId) => upsertEmployeeLetters(userId, workspaceId, [added]))
       commit({ ...stateRef.current, employeeLetters: [added, ...stateRef.current.employeeLetters] })
+      trackAction("employee_letter_created", { letter_type: added.letterType })
     },
     updateEmployeeLetter: async (letterId, changes) => {
       const existing = stateRef.current.employeeLetters.find((letter) => letter.id === letterId)
@@ -789,11 +853,13 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const added = { ...payslip, id: id() }
       await persistAndWait((userId, workspaceId) => upsertPayslips(userId, workspaceId, [added]))
       commit({ ...stateRef.current, payslips: [added, ...stateRef.current.payslips] })
+      trackAction("payslip_created")
     },
     addPayslips: async (payslips) => {
       const added = payslips.map((payslip) => ({ ...payslip, id: id() }))
       await persistAndWait((userId, workspaceId) => upsertPayslips(userId, workspaceId, added))
       commit({ ...stateRef.current, payslips: [...added, ...stateRef.current.payslips] })
+      trackAction("payslips_bulk_created", { count: added.length })
     },
     updatePayslip: async (payslipId, changes) => {
       const existing = stateRef.current.payslips.find((payslip) => payslip.id === payslipId)
@@ -811,6 +877,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const added = { ...expense, id: expenseId }
       await persistAndWait((userId, workspaceId) => upsertExpenses(userId, workspaceId, [added]))
       commit({ ...stateRef.current, expenses: [added, ...stateRef.current.expenses] })
+      trackAction("expense_created")
       return expenseId
     },
     updateExpense: async (expenseId, changes) => {

@@ -16,7 +16,7 @@ import { sendDocumentEmail } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
-import { nextInvoiceNumber, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
+import { nextInvoiceNumberForEntity, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
 import { normalizeSpreadsheetDate, parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
@@ -248,7 +248,7 @@ export function InvoicesPage() {
 
   const buildDraftInvoice = (): Invoice => ({
     id: "invoice-preview",
-    number: nextInvoiceNumber(setup, invoices),
+    number: nextInvoiceNumberForEntity(companies.find((company) => company.companyName === entityName), setup, invoices),
     entityName,
     customerId: individualCustomers.find((customer) => customer.companyName === companyName)?.id,
     companyName,

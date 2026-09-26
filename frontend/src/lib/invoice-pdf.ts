@@ -2,6 +2,7 @@ import type { jsPDF as JsPdfDocument } from "jspdf"
 
 import { calculateInvoiceTotals, getInvoiceLineItems } from "@/lib/invoice-calculations"
 import type { Company, Customer, Invoice, TemplateElementId, TemplateSettings } from "@/lib/mvp-store"
+import { trackAction } from "@/lib/usage-tracking"
 
 const pageWidth = 210
 const pageHeight = 297
@@ -370,6 +371,7 @@ export async function createInvoicePdf({
 export async function downloadInvoicePdf(input: InvoicePdfInput) {
   const doc = await createInvoicePdf(input)
   doc.save(invoicePdfFileName(input.invoice))
+  trackAction(input.documentType === "quotation" ? "quotation_pdf_downloaded" : "invoice_pdf_downloaded")
 }
 
 export function invoicePdfFileName(invoice: Invoice) {

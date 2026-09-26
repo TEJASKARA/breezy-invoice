@@ -66,3 +66,28 @@ export function grantPlatformCredits(subscriptionCode: string, creditAmount: num
     }),
   })
 }
+
+export type UsageScope =
+  | { type: "platform" }
+  | { type: "workspace"; workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string }
+  | { type: "user"; user_id: string; email: string; signed_up_at: string; last_sign_in_at: string | null; workspaces: { workspace_id: string; name: string; subscription_code: string; role: string }[] }
+
+export type UsageReport = {
+  since_days: number
+  generated_at: string
+  scope: UsageScope
+  totals: { page_views: number; actions: number; active_users: number; active_workspaces: number; last_activity_at: string | null }
+  pages: { name: string; views: number; users: number; workspaces: number; last_used_at: string }[]
+  features: { name: string; uses: number; items: number; users: number; workspaces: number; last_used_at: string }[]
+  daily: { day: string; page_views: number; actions: number; active_users: number }[]
+  users: { user_id: string; email: string | null; events: number; actions: number; last_seen_at: string; last_page: string | null }[]
+  workspaces: { workspace_id: string; name: string; subscription_code: string; owner_email: string | null; events: number; actions: number; users: number; last_seen_at: string }[]
+  recent: { occurred_at: string; event_type: "page_view" | "action"; event_name: string; email: string | null; subscription_code: string | null }[]
+}
+
+/** Developer-only usage report: whole platform, one subscription code, or one user email. */
+export function loadUsageReport(days: number, identifier?: string) {
+  const query = new URLSearchParams({ days: String(days) })
+  if (identifier?.trim()) query.set("query", identifier.trim())
+  return adminRequest<UsageReport>(`/api/v1/admin/usage?${query}`)
+}

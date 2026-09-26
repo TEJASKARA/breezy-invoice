@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { trackAction } from "@/lib/usage-tracking"
 
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 
@@ -37,5 +38,6 @@ export async function verifyGstin(gstin: string, workspaceId: string): Promise<G
       : ""
     throw new Error(detail || "GSTIN verification could not be completed.")
   }
+  trackAction("gstin_verified")
   return payload as GstVerification
 }

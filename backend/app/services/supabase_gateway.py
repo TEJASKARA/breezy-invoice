@@ -324,6 +324,26 @@ class SupabaseGateway:
             )
         return result
 
+    async def admin_usage_report(
+        self,
+        *,
+        since_days: int,
+        identifier: str | None = None,
+        excluded_user_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        normalized_identifier = (identifier or "").strip() or None
+        result = await self.service_rpc(
+            "breezy_admin_usage_report",
+            {
+                "since_days": since_days,
+                "search_identifier": normalized_identifier,
+                "excluded_user_ids": sorted(excluded_user_ids or []),
+            },
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("Supabase returned an invalid usage report.")
+        return result
+
     async def apply_razorpay_payment(
         self,
         *,

@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom"
 import type { Session } from "@supabase/supabase-js"
 
 import { AppShell } from "@/components/app-shell"
+import { UsageTracker } from "@/components/usage-tracker"
 import { LandingPage } from "@/pages/landing-page"
 import { LoginPage } from "@/pages/login-page"
 import { MvpStoreProvider, useMvpStore } from "@/lib/mvp-store"
@@ -73,7 +74,7 @@ function PermissionGate({ permission, children }: { permission: WorkspacePermiss
 }
 
 function WorkspaceProviders() {
-  return <WorkspaceAccessProvider><MvpStoreProvider><Outlet /></MvpStoreProvider></WorkspaceAccessProvider>
+  return <WorkspaceAccessProvider><UsageTracker /><MvpStoreProvider><Outlet /></MvpStoreProvider></WorkspaceAccessProvider>
 }
 
 function App() {

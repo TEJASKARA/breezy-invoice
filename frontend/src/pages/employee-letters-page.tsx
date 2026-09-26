@@ -13,6 +13,7 @@ import { sendEmployeeLetterEmail } from "@/lib/document-email-api"
 import { useMvpStore, type EmployeeLetter } from "@/lib/mvp-store"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { trackAction } from "@/lib/usage-tracking"
 
 const today = () => new Date().toISOString().slice(0, 10)
 const selectClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -71,7 +72,7 @@ export function EmployeeLettersPage() {
     if (!targetEmployee) throw new Error("The linked employee could not be found.")
     return { doc: await createEmployeeLetterPdf({ letter, employee: targetEmployee, entity: companies.find((item) => item.id === letter.entityId), template: templateFor(letter.entityId) }), employee: targetEmployee }
   }
-  async function download(letter: EmployeeLetter) { const { doc, employee: target } = await documentFor(letter); doc.save(employeeLetterFileName(letter, target)) }
+  async function download(letter: EmployeeLetter) { const { doc, employee: target } = await documentFor(letter); doc.save(employeeLetterFileName(letter, target)); trackAction("employee_letter_pdf_downloaded", { letter_type: letter.letterType }) }
   async function share(letter: EmployeeLetter) { const target = employees.find((item) => item.id === letter.employeeId); if (!target) return; await sharePdfViaWhatsApp({ title: letter.title, message: `${letter.title} for ${target.employeeName}.`, createFile: async () => { const { doc } = await documentFor(letter); return { name: employeeLetterFileName(letter, target), data: new Uint8Array(doc.output("arraybuffer")) } } }) }
   async function email(letter: EmployeeLetter) {
     setError(""); setNotice("")

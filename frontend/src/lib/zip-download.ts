@@ -1,3 +1,5 @@
+import { trackAction } from "@/lib/usage-tracking"
+
 export type ZipFile = {
   name: string
   data: Uint8Array
@@ -98,6 +100,7 @@ export function createZip(files: ZipFile[]) {
 
 export function downloadZip(files: ZipFile[], archiveName: string) {
   if (!files.length) throw new Error("There are no PDF files to download.")
+  trackAction("zip_downloaded", { kind: archiveName.split("_")[0].slice(0, 30), count: files.length })
   const zip = createZip(files)
   const bytes = zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength) as ArrayBuffer
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }))

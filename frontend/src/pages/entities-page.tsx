@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Building2, Pencil, Plus, Trash2, X } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
@@ -9,12 +9,28 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { verifyGstin } from "@/lib/gst-api"
-import { type Company, useMvpStore } from "@/lib/mvp-store"
+import { type Company, type Setup, formatInvoiceNumber, useMvpStore } from "@/lib/mvp-store"
 import { useAuthUser } from "@/lib/use-auth-user"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type EntityForm = Omit<Company, "id">
-const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", hasGstin: true, gstin: "", pan: "", premisesAddress: "", hsnSac: "", hsnSacCodes: [], invoiceNumbering: { mode: "continue", prefix: "CHX/{FY}/", nextNumber: 1, padding: 4, resetPolicy: "financial_year" } })
+const emptyCompany = (): EntityForm => ({ companyName: "", billingAddress: "", hasGstin: true, gstin: "", pan: "", premisesAddress: "", hsnSac: "", hsnSacCodes: [], invoiceNumbering: { mode: "continue", prefix: "CHX/{FY}/", suffix: "", nextNumber: 1, padding: 4, resetPolicy: "financial_year" } })
+/** The first entity continues the invoice sequence entered at signup; later entities start fresh. */
+const newCompanyForm = (setup: Setup | null, existingEntityCount: number): EntityForm => {
+  const signupNumbering = setup?.invoiceNumbering
+  if (existingEntityCount > 0 || signupNumbering?.mode !== "continue") return emptyCompany()
+  return {
+    ...emptyCompany(),
+    invoiceNumbering: {
+      mode: "continue",
+      prefix: signupNumbering.prefix,
+      suffix: signupNumbering.suffix || "",
+      nextNumber: signupNumbering.nextNumber,
+      padding: signupNumbering.padding,
+      resetPolicy: "never",
+    },
+  }
+}
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
@@ -29,12 +45,16 @@ const hasFormData = (form: EntityForm) => [
 ].some((value) => value.trim()) || Boolean(form.hsnSacCodes?.length)
 
 export function EntitiesPage() {
-  const { companies, addCompanies, updateCompany, deleteCompany } = useMvpStore()
+  const { setup, companies, addCompanies, updateCompany, deleteCompany } = useMvpStore()
+  const blankForm = () => newCompanyForm(setup, companies.length)
+  const blankFormRef = useRef(blankForm)
+  blankFormRef.current = blankForm
+  const continuesSignupSequence = companies.length === 0 && setup?.invoiceNumbering?.mode === "continue"
   const { user } = useAuthUser()
   const { can, workspace } = useWorkspaceAccess()
   const canManage = can("entities.manage")
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(emptyCompany)
+  const [form, setForm] = useState(blankForm)
   const [draftReady, setDraftReady] = useState(false)
   const [saving, setSaving] = useState(false)
   const [verifyingGstin, setVerifyingGstin] = useState(false)
@@ -49,12 +69,12 @@ export function EntitiesPage() {
   useEffect(() => {
     if (!draftStorageKey) return
     setDraftReady(false)
-    setForm(emptyCompany())
+    setForm(blankFormRef.current())
     setShowForm(false)
     try {
       const saved = window.localStorage.getItem(draftStorageKey)
       if (saved) {
-        const draft = { ...emptyCompany(), ...JSON.parse(saved) } as EntityForm
+        const draft = { ...blankFormRef.current(), ...JSON.parse(saved) } as EntityForm
         setForm(draft)
         setShowForm(hasFormData(draft))
       }
@@ -72,7 +92,7 @@ export function EntitiesPage() {
   }, [draftReady, draftStorageKey, form])
 
   const discardForm = () => {
-    setForm(emptyCompany())
+    setForm(blankForm())
     if (draftStorageKey) window.localStorage.removeItem(draftStorageKey)
     setShowForm(false)
     setNotice("")
@@ -273,8 +293,14 @@ export function EntitiesPage() {
             </div>
             <section className="space-y-3 rounded-xl border bg-muted/20 p-4 md:col-span-2">
               <div><h3 className="font-medium">Invoice numbering</h3><p className="text-xs text-muted-foreground">Use {"{FY}"} in the prefix to insert the current Indian financial year.</p></div>
-              <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-2 sm:col-span-2"><Label htmlFor="entity-invoice-prefix">Prefix</Label><Input id="entity-invoice-prefix" value={form.invoiceNumbering?.prefix || ""} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", nextNumber: 1, padding: 4 }), prefix: event.target.value } })} placeholder="CHX/{FY}/" /></div><div className="space-y-2"><Label htmlFor="entity-invoice-start">Starting number</Label><Input id="entity-invoice-start" type="number" min="1" value={form.invoiceNumbering?.nextNumber || 1} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", padding: 4 }), nextNumber: Math.max(1, Number(event.target.value) || 1) } })} /></div><div className="space-y-2"><Label htmlFor="entity-invoice-reset">Sequence</Label><select id="entity-invoice-reset" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.invoiceNumbering?.resetPolicy || "financial_year"} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", nextNumber: 1, padding: 4 }), resetPolicy: event.target.value as "financial_year" | "never" } })}><option value="financial_year">Reset each FY</option><option value="never">Never reset</option></select></div></div>
-              <p className="text-xs text-muted-foreground">Example: {(form.invoiceNumbering?.prefix || "CHX/{FY}/").replace("{FY}", "2026-27")}{String(form.invoiceNumbering?.nextNumber || 1).padStart(form.invoiceNumbering?.padding || 4, "0")}</p>
+              {continuesSignupSequence ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">Continuing the invoice sequence you entered at signup. You can change it below.</p> : null}
+              <div className="grid gap-3 sm:grid-cols-5">
+                <div className="space-y-2 sm:col-span-2"><Label htmlFor="entity-invoice-prefix">Prefix</Label><Input id="entity-invoice-prefix" value={form.invoiceNumbering?.prefix || ""} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", nextNumber: 1, padding: 4 }), prefix: event.target.value } })} placeholder="CHX/{FY}/" /></div>
+                <div className="space-y-2"><Label htmlFor="entity-invoice-suffix">Suffix</Label><Input id="entity-invoice-suffix" value={form.invoiceNumbering?.suffix || ""} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", nextNumber: 1, padding: 4 }), suffix: event.target.value } })} placeholder="-A (optional)" /></div>
+                <div className="space-y-2"><Label htmlFor="entity-invoice-start">Starting number</Label><Input id="entity-invoice-start" type="number" min="1" value={form.invoiceNumbering?.nextNumber || 1} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", padding: 4 }), nextNumber: Math.max(1, Number(event.target.value) || 1) } })} /></div>
+                <div className="space-y-2"><Label htmlFor="entity-invoice-reset">Sequence</Label><select id="entity-invoice-reset" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.invoiceNumbering?.resetPolicy || "financial_year"} onChange={(event) => setForm({ ...form, invoiceNumbering: { ...(form.invoiceNumbering || { mode: "continue", prefix: "", nextNumber: 1, padding: 4 }), resetPolicy: event.target.value as "financial_year" | "never" } })}><option value="financial_year">Reset each FY</option><option value="never">Never reset</option></select></div>
+              </div>
+              <p className="text-xs text-muted-foreground">Example: {formatInvoiceNumber({ prefix: form.invoiceNumbering?.prefix ?? "CHX/{FY}/", suffix: form.invoiceNumbering?.suffix || "", padding: form.invoiceNumbering?.padding || 4 }, form.invoiceNumbering?.nextNumber || 1, "2026-27")}</p>
             </section>
             <div className="space-y-3 md:col-span-2">
               <Label htmlFor="entity-hsnSac">HSN/SAC codes</Label>

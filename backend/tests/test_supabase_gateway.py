@@ -84,3 +84,27 @@ async def test_admin_workspace_search_accepts_email_or_subscription_code() -> No
         "breezy_admin_find_workspaces",
         {"search_identifier": "owner@example.com"},
     )
+
+
+@pytest.mark.asyncio
+async def test_admin_usage_report_uses_deployed_parameter_names() -> None:
+    gateway = SupabaseGateway(Settings())
+    gateway.service_rpc = AsyncMock(return_value={"since_days": 7})  # type: ignore[method-assign]
+
+    await gateway.admin_usage_report(since_days=7, identifier="  Owner@Example.com ")
+    gateway.service_rpc.assert_awaited_with(
+        "breezy_admin_usage_report",
+        {
+            "since_days": 7,
+            "search_identifier": "Owner@Example.com",
+            "excluded_user_ids": [],
+        },
+    )
+
+    await gateway.admin_usage_report(
+        since_days=30, identifier="   ", excluded_user_ids=["b", "a"]
+    )
+    gateway.service_rpc.assert_awaited_with(
+        "breezy_admin_usage_report",
+        {"since_days": 30, "search_identifier": None, "excluded_user_ids": ["a", "b"]},
+    )

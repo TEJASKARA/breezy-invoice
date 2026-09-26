@@ -18,6 +18,7 @@ import { cleanInvoiceFileName, createInvoicePdf } from "@/lib/invoice-pdf"
 import { useMvpStore, type InvoiceLineItem, type Proforma } from "@/lib/mvp-store"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { trackAction } from "@/lib/usage-tracking"
 
 const today = () => new Date().toISOString().slice(0, 10)
 const plusDays = (days: number) => { const value = new Date(); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10) }
@@ -151,6 +152,7 @@ export function ProformasPage() {
   async function download(record: Proforma) {
     const doc = await pdf(record)
     doc.save(`${cleanInvoiceFileName(record.companyName)}_${record.date}_proforma.pdf`)
+    trackAction("quotation_pdf_downloaded")
   }
 
   async function share(record: Proforma) {
