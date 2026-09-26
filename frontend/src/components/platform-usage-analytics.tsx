@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Activity, BarChart3, Building2, Clock, MousePointerClick, RefreshCw, Search, Users, X } from "lucide-react"
+import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, RefreshCw, Search, Users, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -63,11 +63,12 @@ const dateTime = (value: string | null | undefined) => value
   ? new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
   : "—"
 
-function Stat({ icon: Icon, label, value, small = false }: { icon: typeof Activity; label: string; value: string; small?: boolean }) {
+function Stat({ icon: Icon, label, value, small = false, detail }: { icon: typeof Activity; label: string; value: string; small?: boolean; detail?: string }) {
   return (
     <div className="rounded-xl border bg-muted/30 p-4">
       <div className="flex items-center gap-2 text-sm text-muted-foreground"><Icon className="size-4" />{label}</div>
       <p className={cn("mt-2 font-semibold tabular-nums", small ? "text-lg" : "text-2xl")}>{value}</p>
+      {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
     </div>
   )
 }
@@ -231,7 +232,12 @@ export function PlatformUsageAnalytics() {
             <Stat icon={Activity} label="Page views" value={number(totals.page_views)} />
             <Stat icon={MousePointerClick} label="Feature actions" value={number(totals.actions)} />
             <Stat icon={Users} label="Active users" value={number(totals.active_users)} />
-            <Stat icon={Building2} label="Active workspaces" value={number(totals.active_workspaces)} />
+            <Stat
+              icon={Building2}
+              label="Active workspaces"
+              value={totals.total_workspaces !== undefined ? `${number(totals.active_workspaces)} of ${number(totals.total_workspaces)}` : number(totals.active_workspaces)}
+              detail={totals.total_workspaces !== undefined ? `${number(totals.new_workspaces)} new sign-ups in this period` : undefined}
+            />
             <Stat icon={Clock} label="Last activity" value={dateTime(totals.last_activity_at)} small />
           </div>
 
@@ -286,6 +292,33 @@ export function PlatformUsageAnalytics() {
                     )) : <TableRow><TableCell colSpan={7} className="h-20 text-center text-muted-foreground">No workspace activity in this period.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {scope.type === "platform" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><MoonStar className="size-4" />Inactive workspaces ({number(report.inactive_workspaces.length)})</CardTitle>
+                <CardDescription>Subscribers with no activity in this period — useful for follow-ups. &ldquo;Never&rdquo; means nothing has been recorded for them yet. Click a row to see that workspace.</CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Workspace</TableHead><TableHead>Subscription code</TableHead><TableHead>Owner</TableHead><TableHead>Signed up</TableHead><TableHead>Last activity</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {report.inactive_workspaces.length ? report.inactive_workspaces.map((item) => (
+                      <TableRow key={item.workspace_id} className="cursor-pointer" onClick={() => lookUp(item.subscription_code)}>
+                        <TableCell className="font-medium">{item.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{item.subscription_code}</TableCell>
+                        <TableCell className="text-muted-foreground">{item.owner_email || "—"}</TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(item.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</TableCell>
+                        <TableCell className="whitespace-nowrap">{item.last_activity_at ? dateTime(item.last_activity_at) : <Badge variant="outline">Never</Badge>}</TableCell>
+                        <TableCell><Badge variant={item.status === "active" ? "secondary" : "destructive"} className="capitalize">{item.status}</Badge></TableCell>
+                      </TableRow>
+                    )) : <TableRow><TableCell colSpan={6} className="h-20 text-center text-muted-foreground">Every workspace was active in this period.</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+                {report.inactive_workspaces.length >= 500 ? <p className="mt-3 text-xs text-muted-foreground">Showing the first 500.</p> : null}
               </CardContent>
             </Card>
           ) : null}

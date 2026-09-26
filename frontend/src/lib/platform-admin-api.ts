@@ -76,12 +76,23 @@ export type UsageReport = {
   since_days: number
   generated_at: string
   scope: UsageScope
-  totals: { page_views: number; actions: number; active_users: number; active_workspaces: number; last_activity_at: string | null }
+  totals: {
+    page_views: number
+    actions: number
+    active_users: number
+    active_workspaces: number
+    last_activity_at: string | null
+    /** Platform view only: every subscriber workspace, and those created in the period. */
+    total_workspaces?: number
+    new_workspaces?: number
+  }
   pages: { name: string; views: number; users: number; workspaces: number; last_used_at: string }[]
   features: { name: string; uses: number; items: number; users: number; workspaces: number; last_used_at: string }[]
   daily: { day: string; page_views: number; actions: number; active_users: number }[]
   users: { user_id: string; email: string | null; events: number; actions: number; last_seen_at: string; last_page: string | null }[]
   workspaces: { workspace_id: string; name: string; subscription_code: string; owner_email: string | null; events: number; actions: number; users: number; last_seen_at: string }[]
+  /** Platform view only: subscriber workspaces with no activity in the period. */
+  inactive_workspaces: { workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string; last_activity_at: string | null }[]
   recent: { occurred_at: string; event_type: "page_view" | "action"; event_name: string; email: string | null; subscription_code: string | null }[]
 }
 

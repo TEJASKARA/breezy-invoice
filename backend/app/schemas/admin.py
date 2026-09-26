@@ -45,4 +45,5 @@ class PlatformUsageReportResponse(BaseModel):
     daily: list[dict[str, Any]] = []
     users: list[dict[str, Any]] = []
     workspaces: list[dict[str, Any]] = []
+    inactive_workspaces: list[dict[str, Any]] = []
     recent: list[dict[str, Any]] = []
