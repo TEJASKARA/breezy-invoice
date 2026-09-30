@@ -79,6 +79,7 @@ export async function createInvoicePdf({
   const isGstInvoice = entity?.hasGstin ?? Boolean(entity?.gstin)
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
+  const hasCorrectionNotice = !isQuotation && (invoice.status === "Cancelled" || invoice.status === "Amended" || Boolean(invoice.correctsInvoiceNumber))
   const shift = (id: TemplateElementId) => ({
     x: (element(id).offsetX / 100) * pageWidth,
     y: (element(id).offsetY / 100) * pageHeight,
@@ -150,7 +151,24 @@ export async function createInvoicePdf({
     )
   }
 
-  const infoY = dividerY + (isQuotation ? 20 : 10)
+  if (hasCorrectionNotice) {
+    const isOriginalCorrection = invoice.status === "Cancelled" || invoice.status === "Amended"
+    doc.setFillColor(isOriginalCorrection ? 254 : 239, isOriginalCorrection ? 242 : 246, isOriginalCorrection ? 242 : 255)
+    doc.setDrawColor(isOriginalCorrection ? 220 : 37, isOriginalCorrection ? 38 : 99, isOriginalCorrection ? 38 : 235)
+    doc.roundedRect(margin, dividerY + 4, pageWidth - margin * 2, 8, 1.5, 1.5, "FD")
+    doc.setFont(baseFont, "bold")
+    doc.setFontSize(7.2)
+    doc.setTextColor(isOriginalCorrection ? 153 : 30, isOriginalCorrection ? 27 : 64, isOriginalCorrection ? 27 : 175)
+    const replacement = invoice.correction?.replacementInvoiceNumber ? ` REPLACEMENT: ${invoice.correction.replacementInvoiceNumber}.` : ""
+    doc.text(
+      invoice.status === "Cancelled" ? `CANCELLED INVOICE — DO NOT USE FOR PAYMENT OR TAX REPORTING.${replacement}` : invoice.status === "Amended" ? "AMENDED INVOICE — REFER TO THE RECORDED CORRECTION BEFORE USE." : `CORRECTED REPLACEMENT FOR INVOICE ${invoice.correctsInvoiceNumber}.`,
+      pageWidth / 2,
+      dividerY + 9,
+      { align: "center" },
+    )
+  }
+
+  const infoY = dividerY + (isQuotation || hasCorrectionNotice ? 20 : 10)
   if (element("customer").visible) {
     const customerShift = shift("customer")
     doc.setFont(baseFont, "bold")

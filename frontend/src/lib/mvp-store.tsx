@@ -48,6 +48,16 @@ export type InvoiceLineItem = {
   sgstAmount: number
   igstAmount: number
 }
+export type InvoiceStatus = "Draft" | "Generated" | "Cancelled" | "Amended"
+export type InvoiceCorrectionMethod = "cancel_and_replace" | "irn_cancelled_and_replace" | "gstr1_amendment" | "credit_note" | "debit_note"
+export type InvoiceCorrection = {
+  method: InvoiceCorrectionMethod
+  reason: string
+  referenceNumber?: string
+  recordedAt: string
+  replacementInvoiceId?: string
+  replacementInvoiceNumber?: string
+}
 export type Invoice = {
   id: string
   number: string
@@ -69,7 +79,10 @@ export type Invoice = {
   otherDeduction?: number
   netReceivable?: number
   lineItems?: InvoiceLineItem[]
-  status: "Draft" | "Generated"
+  status: InvoiceStatus
+  correction?: InvoiceCorrection
+  correctsInvoiceId?: string
+  correctsInvoiceNumber?: string
 }
 export type Proforma = Invoice & { entityId: string; validUntil?: string; convertedInvoiceId?: string; convertedInvoiceNumber?: string }
 export type PayrollComponent = { id: string; label: string; amount: number }
@@ -270,6 +283,8 @@ type MvpStore = MvpState & {
   deleteCustomer: (customerId: string) => Promise<void>
   addInvoice: (invoice: Omit<Invoice, "id" | "number">) => Promise<Invoice>
   addInvoices: (invoices: Omit<Invoice, "id" | "number">[]) => Promise<void>
+  updateInvoice: (invoiceId: string, changes: Partial<Omit<Invoice, "id" | "number">>) => Promise<void>
+  replaceInvoice: (invoiceId: string, replacement: Omit<Invoice, "id" | "number">, correction: InvoiceCorrection) => Promise<Invoice>
   deleteInvoice: (invoiceId: string) => Promise<void>
   addProforma: (proforma: Omit<Proforma, "id" | "number">) => Promise<void>
   updateProforma: (proformaId: string, changes: Partial<Omit<Proforma, "id">>) => Promise<void>
@@ -779,7 +794,63 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       commit({ ...stateRef.current, companies: nextCompanies, invoices: [...added, ...stateRef.current.invoices] })
       trackAction("invoices_bulk_imported", { count: added.length })
     },
+    updateInvoice: async (invoiceId, changes) => {
+      const existing = stateRef.current.invoices.find((invoice) => invoice.id === invoiceId)
+      if (!existing) throw new Error("The invoice could not be found.")
+      const updated = { ...existing, ...changes, id: existing.id, number: existing.number }
+      await persistAndWait((userId, workspaceId) => upsertInvoices(userId, workspaceId, [updated]))
+      commit({ ...stateRef.current, invoices: stateRef.current.invoices.map((invoice) => invoice.id === invoiceId ? updated : invoice) })
+      trackAction("invoice_updated", { invoice_id: invoiceId })
+    },
+    replaceInvoice: async (invoiceId, replacement, correction) => {
+      const current = stateRef.current
+      const original = current.invoices.find((invoice) => invoice.id === invoiceId)
+      if (!original) throw new Error("The original invoice could not be found.")
+      if (original.status === "Draft") throw new Error("Draft invoices should be edited instead of replaced.")
+      if (original.status === "Cancelled") throw new Error("This invoice has already been cancelled.")
+      const company = current.companies.find((candidate) => candidate.companyName === replacement.entityName)
+      const issuedNumber = numberFromCompany(company, current.setup, current.invoices)
+      const added: Invoice = {
+        ...replacement,
+        id: id(),
+        number: issuedNumber,
+        correctsInvoiceId: original.id,
+        correctsInvoiceNumber: original.sourceNumber || original.number,
+      }
+      const correctedOriginal: Invoice = {
+        ...original,
+        status: "Cancelled",
+        correction: {
+          ...correction,
+          replacementInvoiceId: added.id,
+          replacementInvoiceNumber: added.number,
+        },
+      }
+      const updatedCompany = company ? advanceCompanyNumbering(company, [issuedNumber]) : undefined
+      const nextCompanies = updatedCompany
+        ? current.companies.map((candidate) => candidate.id === updatedCompany.id ? updatedCompany : candidate)
+        : current.companies
+      const nextSetup = !company && current.setup?.invoiceNumbering?.mode === "continue"
+        ? { ...current.setup, invoiceNumbering: { ...current.setup.invoiceNumbering, nextNumber: current.setup.invoiceNumbering.nextNumber + 1 } }
+        : current.setup
+      await persistAndWait(async (userId, workspaceId) => {
+        if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
+        if (updatedCompany) await upsertCompanies(userId, workspaceId, [updatedCompany])
+        await upsertInvoices(userId, workspaceId, [correctedOriginal, added])
+      })
+      commit({
+        ...stateRef.current,
+        setup: nextSetup,
+        companies: nextCompanies,
+        invoices: [added, ...stateRef.current.invoices.map((invoice) => invoice.id === invoiceId ? correctedOriginal : invoice)],
+      })
+      trackAction("invoice_corrected", { invoice_id: invoiceId, replacement_invoice_id: added.id, method: correction.method })
+      return added
+    },
     deleteInvoice: async (invoiceId) => {
+      const existing = stateRef.current.invoices.find((invoice) => invoice.id === invoiceId)
+      if (!existing) throw new Error("The invoice could not be found.")
+      if (existing.status !== "Draft") throw new Error("Issued invoices cannot be deleted. Use Correct invoice to preserve the audit trail.")
       await persistAndWait((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))
       commit({ ...stateRef.current, invoices: stateRef.current.invoices.filter((invoice) => invoice.id !== invoiceId) })
       trackAction("invoice_deleted")

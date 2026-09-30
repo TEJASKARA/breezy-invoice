@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
-import { Download, Eye, LoaderCircle, Plus, Search, Share2, Star, Trash2, Upload, X } from "lucide-react"
+import { Download, Eye, FilePenLine, LoaderCircle, Plus, Search, Share2, Star, Trash2, TriangleAlert, Upload, X } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { InvoicePreview } from "@/components/invoice-preview"
@@ -16,7 +16,7 @@ import { sendDocumentEmail } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
-import { nextInvoiceNumberForEntity, type Customer, type Invoice, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
+import { nextInvoiceNumberForEntity, type Customer, type Invoice, type InvoiceCorrectionMethod, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
 import { normalizeSpreadsheetDate, parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
@@ -44,6 +44,22 @@ type InvoiceDraft = {
   tdsAmount: string
   otherDeduction: string
   sourceProforma: { id: string; number: string } | null
+  editingInvoiceId: string | null
+  correctionSource: CorrectionSource | null
+}
+type CorrectionSource = {
+  invoiceId: string
+  invoiceNumber: string
+  method: InvoiceCorrectionMethod
+  reason: string
+  referenceNumber?: string
+}
+const correctionLabels: Record<InvoiceCorrectionMethod, string> = {
+  cancel_and_replace: "Cancel and replace (not reported / no IRN)",
+  irn_cancelled_and_replace: "IRN cancelled within 24 hours, then replace",
+  gstr1_amendment: "GSTR-1 amendment",
+  credit_note: "Credit note",
+  debit_note: "Debit note",
 }
 const roundMoney = (value: number) => Math.round(value * 100) / 100
 const rateFromAmount = (amount: number, taxableAmount: number) => taxableAmount > 0 ? roundMoney(amount * 100 / taxableAmount) : 0
@@ -98,7 +114,7 @@ const invoiceColumns = [
 ]
 
 export function InvoicesPage() {
-  const { loading, setup, companies, customers, invoices, proformas, payslips, templateFor, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, deleteInvoice } = useMvpStore()
+  const { loading, setup, companies, customers, invoices, proformas, payslips, templateFor, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, updateInvoice, replaceInvoice, deleteInvoice } = useMvpStore()
   const location = useLocation()
   const navigate = useNavigate()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
@@ -115,6 +131,14 @@ export function InvoicesPage() {
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
   const [sourceProforma, setSourceProforma] = useState<{ id: string; number: string } | null>(null)
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)
+  const [correctionSource, setCorrectionSource] = useState<CorrectionSource | null>(null)
+  const [correctionTarget, setCorrectionTarget] = useState<Invoice | null>(null)
+  const [correctionMethod, setCorrectionMethod] = useState<InvoiceCorrectionMethod>("cancel_and_replace")
+  const [correctionReason, setCorrectionReason] = useState("")
+  const [correctionReference, setCorrectionReference] = useState("")
+  const [correctionSaving, setCorrectionSaving] = useState(false)
+  const [correctionError, setCorrectionError] = useState("")
   const [draftFormError, setDraftFormError] = useState("")
   const [invoiceSaving, setInvoiceSaving] = useState(false)
   const [preview, setPreview] = useState<ImportInvoice[]>([])
@@ -160,7 +184,7 @@ export function InvoicesPage() {
   const maximumInvoiceAmount = invoiceAmountMax === "" ? null : Number(invoiceAmountMax)
   const hasInvoiceFilters = Boolean(normalizedInvoiceSearch || invoiceEntityFilter || invoiceDateFilter || invoiceAmountMin || invoiceAmountMax)
   const filteredInvoices = invoices.filter((invoice) => {
-    const searchableText = [invoice.sourceNumber, invoice.number, invoice.entityName, invoice.companyName]
+    const searchableText = [invoice.sourceNumber, invoice.number, invoice.entityName, invoice.companyName, invoice.correctsInvoiceNumber, invoice.correction?.replacementInvoiceNumber]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -239,6 +263,8 @@ export function InvoicesPage() {
       setTdsAmount(String(draft.tdsAmount || ""))
       setOtherDeduction(String(draft.otherDeduction || ""))
       setSourceProforma(draft.sourceProforma || null)
+      setEditingInvoiceId(draft.editingInvoiceId || null)
+      setCorrectionSource(draft.correctionSource || null)
       setShowForm(Boolean(draft.showForm))
     } catch {
       localStorage.removeItem(draftStorageKey)
@@ -257,8 +283,10 @@ export function InvoicesPage() {
       tdsAmount,
       otherDeduction,
       sourceProforma,
+      editingInvoiceId,
+      correctionSource,
     } satisfies InvoiceDraft))
-  }, [companyName, date, draftStorageKey, entityName, lineItems, otherDeduction, showForm, sourceProforma, status, tdsAmount])
+  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, lineItems, otherDeduction, showForm, sourceProforma, status, tdsAmount])
 
   useEffect(() => {
     if (!preview.length || bulkImportPending || bulkImportHasError) return
@@ -318,6 +346,105 @@ export function InvoicesPage() {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }, [companies, customers, loading, location.pathname, location.state, navigate, proformas])
 
+  const fillFormFromInvoice = (invoice: Invoice, replacement: boolean) => {
+    const sourceItems = invoice.lineItems?.length ? invoice.lineItems : [{
+      id: crypto.randomUUID(),
+      description: invoice.description || "",
+      hsnSac: invoice.hsnSac || "",
+      taxableAmount: invoice.taxableAmount || 0,
+      cgstAmount: invoice.cgstAmount || 0,
+      sgstAmount: invoice.sgstAmount || 0,
+      igstAmount: invoice.igstAmount || 0,
+    }]
+    setEntityName(invoice.entityName || "")
+    setCompanyName(invoice.companyName)
+    setDate(replacement ? new Date().toISOString().slice(0, 10) : invoice.date)
+    setStatus(replacement ? "Generated" : invoice.status === "Generated" ? "Generated" : "Draft")
+    setLineItems(sourceItems.map((item) => ({
+      ...item,
+      id: replacement ? crypto.randomUUID() : item.id,
+      taxableAmount: String(item.taxableAmount || ""),
+      cgstAmount: String(item.cgstAmount || ""),
+      sgstAmount: String(item.sgstAmount || ""),
+      igstAmount: String(item.igstAmount || ""),
+      cgstRate: String(rateFromAmount(item.cgstAmount, item.taxableAmount) || ""),
+      sgstRate: String(rateFromAmount(item.sgstAmount, item.taxableAmount) || ""),
+      igstRate: String(rateFromAmount(item.igstAmount, item.taxableAmount) || ""),
+    })))
+    setTdsAmount(invoice.tdsAmount ? String(invoice.tdsAmount) : "")
+    setOtherDeduction(invoice.otherDeduction ? String(invoice.otherDeduction) : "")
+    setSourceProforma(!replacement && invoice.sourceProformaId && invoice.sourceProformaNumber
+      ? { id: invoice.sourceProformaId, number: invoice.sourceProformaNumber }
+      : null)
+    setDraftFormError("")
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const editDraftInvoice = (invoice: Invoice) => {
+    setCorrectionSource(null)
+    setEditingInvoiceId(invoice.id)
+    fillFormFromInvoice(invoice, false)
+    showNotice(`${invoice.sourceNumber || invoice.number} is open for editing. Saving changes does not use another credit.`)
+  }
+
+  const openCorrection = (invoice: Invoice) => {
+    setCorrectionTarget(invoice)
+    setCorrectionMethod("cancel_and_replace")
+    setCorrectionReason("")
+    setCorrectionReference("")
+    setCorrectionError("")
+  }
+
+  const submitCorrection = async () => {
+    if (!correctionTarget) return
+    const reason = correctionReason.trim()
+    const referenceNumber = correctionReference.trim()
+    if (!reason) {
+      setCorrectionError("Explain what was wrong with the original invoice.")
+      return
+    }
+    if (correctionMethod !== "cancel_and_replace" && !referenceNumber) {
+      setCorrectionError("Enter the IRN cancellation, amendment, credit-note, or debit-note reference.")
+      return
+    }
+    const replacementMethod = correctionMethod === "cancel_and_replace" || correctionMethod === "irn_cancelled_and_replace"
+    if (replacementMethod) {
+      setEditingInvoiceId(null)
+      setCorrectionSource({
+        invoiceId: correctionTarget.id,
+        invoiceNumber: correctionTarget.sourceNumber || correctionTarget.number,
+        method: correctionMethod,
+        reason,
+        referenceNumber: referenceNumber || undefined,
+      })
+      fillFormFromInvoice(correctionTarget, true)
+      setCorrectionTarget(null)
+      showNotice(`${correctionTarget.sourceNumber || correctionTarget.number} remains unchanged until you save its replacement. The replacement will receive the next invoice number.`)
+      return
+    }
+    setCorrectionSaving(true)
+    setCorrectionError("")
+    try {
+      await updateInvoice(correctionTarget.id, {
+        status: "Amended",
+        correction: {
+          method: correctionMethod,
+          reason,
+          referenceNumber,
+          recordedAt: new Date().toISOString(),
+        },
+      })
+      const correctedNumber = correctionTarget.sourceNumber || correctionTarget.number
+      setCorrectionTarget(null)
+      showNotice(`${correctedNumber} was marked as amended and its correction reference was recorded.`)
+    } catch (error) {
+      setCorrectionError(error instanceof Error ? error.message : "The correction could not be recorded.")
+    } finally {
+      setCorrectionSaving(false)
+    }
+  }
+
   const draftError = () => {
     if (!entityName || !companyName) return "Select the issuing entity and customer."
     if (!date) return "Select the invoice date."
@@ -358,6 +485,8 @@ export function InvoicesPage() {
     setTdsAmount("")
     setOtherDeduction("")
     setSourceProforma(null)
+    setEditingInvoiceId(null)
+    setCorrectionSource(null)
     setDraftFormError("")
     setShowForm(false)
   }
@@ -377,12 +506,14 @@ export function InvoicesPage() {
       setDraftFormError(error)
       return
     }
-    const allowanceError = freeAllowanceError(invoiceAllowance, 1)
-    if (allowanceError) {
-      setDraftFormError(allowanceError)
-      return
+    if (!editingInvoiceId) {
+      const allowanceError = freeAllowanceError(invoiceAllowance, 1)
+      if (allowanceError) {
+        setDraftFormError(allowanceError)
+        return
+      }
     }
-    if (sourceProforma && proformas.find((record) => record.id === sourceProforma.id)?.convertedInvoiceId) {
+    if (!editingInvoiceId && sourceProforma && proformas.find((record) => record.id === sourceProforma.id)?.convertedInvoiceId) {
       setDraftFormError(`${sourceProforma.number} has already been converted into an invoice.`)
       return
     }
@@ -390,10 +521,28 @@ export function InvoicesPage() {
     setInvoiceSaving(true)
     setDraftFormError("")
     try {
-      const savedInvoice = await addInvoice(invoice)
+      let savedInvoice: Invoice | null = null
+      if (editingInvoiceId) {
+        await updateInvoice(editingInvoiceId, invoice)
+      } else if (correctionSource) {
+        savedInvoice = await replaceInvoice(correctionSource.invoiceId, invoice, {
+          method: correctionSource.method,
+          reason: correctionSource.reason,
+          referenceNumber: correctionSource.referenceNumber,
+          recordedAt: new Date().toISOString(),
+        })
+      } else {
+        savedInvoice = await addInvoice(invoice)
+      }
       await refresh()
       resetForm()
-      showNotice(sourceProforma ? `${sourceProforma.number} was converted into invoice ${savedInvoice.number}.` : "Invoice saved to your workspace.")
+      if (editingInvoiceId) {
+        showNotice("The draft invoice was updated without using another credit.")
+      } else if (correctionSource && savedInvoice) {
+        showNotice(`${correctionSource.invoiceNumber} was cancelled and linked to replacement invoice ${savedInvoice.number}.`)
+      } else {
+        showNotice(sourceProforma && savedInvoice ? `${sourceProforma.number} was converted into invoice ${savedInvoice.number}.` : "Invoice saved to your workspace.")
+      }
     } catch (saveError) {
       setDraftFormError(saveError instanceof Error ? saveError.message : "The invoice could not be saved. Please try again.")
     } finally {
@@ -920,9 +1069,10 @@ export function InvoicesPage() {
 
       {showForm && canManage && (
         <Card>
-          <CardHeader><CardTitle>{sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{editingInvoiceId ? "Edit draft invoice" : correctionSource ? `Replace invoice ${correctionSource.invoiceNumber}` : sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{editingInvoiceId ? "Update this draft in place. Its invoice number remains unchanged and no additional credit is used." : correctionSource ? "Review the corrected details carefully. Saving creates the next invoice number and permanently links it to the cancelled original." : sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
           <CardContent className="space-y-6" onKeyDown={moveToNextInvoiceField}>
             {sourceProforma ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"><strong>Source quotation: {sourceProforma.number}</strong><p className="mt-1">The quotation remains saved. Previewing uses no credit. One document credit is used only when this invoice is saved.</p></div> : null}
+            {correctionSource ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><strong>Correction of {correctionSource.invoiceNumber}</strong><p className="mt-1">Original reason: {correctionSource.reason}</p><p className="mt-1">The original is not changed until this replacement is saved. One document credit is used for the new invoice.</p></div> : null}
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
@@ -984,8 +1134,8 @@ export function InvoicesPage() {
             {draftFormError ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{draftFormError}</p> : null}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={status === "Generated"} onChange={(event) => setStatus(event.target.checked ? "Generated" : "Draft")} /> Mark as generated</label>
-              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Review preview policy</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : "Save invoice"}</Button></div>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={status === "Generated"} disabled={Boolean(correctionSource)} onChange={(event) => setStatus(event.target.checked ? "Generated" : "Draft")} /> {correctionSource ? "Replacement will be generated" : "Mark as generated"}</label>
+              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Review preview policy</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : editingInvoiceId ? "Save changes" : correctionSource ? "Create replacement invoice" : "Save invoice"}</Button></div>
             </div>
           </CardContent>
         </Card>
@@ -1302,7 +1452,7 @@ export function InvoicesPage() {
             <TableBody>
               {visibleInvoices.length ? visibleInvoices.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge></TableCell>
+                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}{invoice.correctsInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaces {invoice.correctsInvoiceNumber}</p> : null}{invoice.correction?.replacementInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaced by {invoice.correction.replacementInvoiceNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant={invoice.status === "Cancelled" ? "destructive" : invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge>{invoice.correction ? <p className="max-w-40 text-xs text-muted-foreground" title={invoice.correction.reason}>{correctionLabels[invoice.correction.method]}{invoice.correction.referenceNumber ? ` · ${invoice.correction.referenceNumber}` : ""}</p> : null}</div></TableCell>
                   <TableCell className="text-right">
                     {pendingDelete === invoice.id && canManage ? (
                       <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The invoice could not be deleted.", true) } }}>Confirm delete</Button></div>
@@ -1310,8 +1460,10 @@ export function InvoicesPage() {
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
-                        <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title="Share invoice" onClick={() => setShareTarget(invoice)}><Share2 /></Button>
-                        {canManage ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
+                        {invoice.status === "Draft" || invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title="Share invoice" onClick={() => setShareTarget(invoice)}><Share2 /></Button> : null}
+                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Edit ${invoice.sourceNumber || invoice.number}`} title="Edit draft" onClick={() => editDraftInvoice(invoice)}><FilePenLine /></Button> : null}
+                        {canManage && invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Correct ${invoice.sourceNumber || invoice.number}`} title="Correct issued invoice" onClick={() => openCorrection(invoice)}><FilePenLine /></Button> : null}
+                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} title="Delete draft" onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>
                     )}
                   </TableCell>
@@ -1322,6 +1474,23 @@ export function InvoicesPage() {
         </CardContent>
       </Card>
 
+      {correctionTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="invoice-correction-title">
+          <div className="w-full max-w-xl space-y-5 rounded-xl border bg-background p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div><h2 id="invoice-correction-title" className="text-lg font-semibold">Correct invoice {correctionTarget.sourceNumber || correctionTarget.number}</h2><p className="mt-1 text-sm text-muted-foreground">The issued invoice will remain in the register. It will never be overwritten or renumbered.</p></div>
+              <Button size="icon" variant="ghost" aria-label="Close correction dialog" onClick={() => setCorrectionTarget(null)} disabled={correctionSaving}><X /></Button>
+            </div>
+            <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><TriangleAlert className="mt-0.5 size-5 shrink-0" /><p>ChanaX records this workflow but does not cancel an IRN, amend GSTR-1, or issue a statutory credit/debit note on the GST portal. Complete that step with the CA before recording its reference here.</p></div>
+            <div className="space-y-2"><Label htmlFor="invoice-correction-method">Correction method</Label><select id="invoice-correction-method" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={correctionMethod} onChange={(event) => { setCorrectionMethod(event.target.value as InvoiceCorrectionMethod); setCorrectionReference(""); setCorrectionError("") }}><option value="cancel_and_replace">Cancel and replace — not reported / no IRN</option><option value="irn_cancelled_and_replace">IRN cancelled within 24 hours — replace invoice</option><option value="gstr1_amendment">Record GSTR-1 amendment</option><option value="credit_note">Record credit note</option><option value="debit_note">Record debit note</option></select></div>
+            <div className="space-y-2"><Label htmlFor="invoice-correction-reason">What was wrong?</Label><textarea id="invoice-correction-reason" className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={correctionReason} onChange={(event) => { setCorrectionReason(event.target.value); setCorrectionError("") }} placeholder="For example: incorrect customer GSTIN or taxable amount." /></div>
+            {correctionMethod !== "cancel_and_replace" ? <div className="space-y-2"><Label htmlFor="invoice-correction-reference">External correction reference</Label><Input id="invoice-correction-reference" value={correctionReference} onChange={(event) => { setCorrectionReference(event.target.value); setCorrectionError("") }} placeholder={correctionMethod === "irn_cancelled_and_replace" ? "IRN cancellation acknowledgement" : correctionMethod === "gstr1_amendment" ? "GSTR-1 amendment reference" : correctionMethod === "credit_note" ? "Credit note number" : "Debit note number"} /></div> : null}
+            {correctionError ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{correctionError}</p> : null}
+            <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setCorrectionTarget(null)} disabled={correctionSaving}>Cancel</Button><Button onClick={() => void submitCorrection()} disabled={correctionSaving}>{correctionSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : correctionMethod === "cancel_and_replace" || correctionMethod === "irn_cancelled_and_replace" ? "Prepare replacement" : "Record correction"}</Button></div>
+          </div>
+        </div>
+      ) : null}
+
       {pdfPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 md:p-6" role="dialog" aria-modal="true" aria-label="Invoice preview">
           <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-background shadow-2xl">
@@ -1331,7 +1500,7 @@ export function InvoicesPage() {
                 <p className="text-sm text-muted-foreground">Template: {templateFor(companies.find((company) => company.companyName === pdfPreview.entityName)?.id).preset}{companies.find((company) => company.companyName === pdfPreview.entityName) ? ` (${companies.find((company) => company.companyName === pdfPreview.entityName)?.companyName})` : ""}. The downloaded PDF will use this format.</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setShareTarget(pdfPreview)}><Share2 />Share</Button>
+                {pdfPreview.status === "Draft" || pdfPreview.status === "Generated" ? <Button variant="outline" onClick={() => setShareTarget(pdfPreview)}><Share2 />Share</Button> : null}
                 <Button variant="outline" onClick={() => void downloadPdf(pdfPreview)}><Download />Download PDF</Button>
                 <Button size="icon" variant="ghost" aria-label="Close invoice preview" onClick={() => setPdfPreview(null)}><X /></Button>
               </div>

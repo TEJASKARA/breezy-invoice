@@ -187,6 +187,17 @@ export function InvoicePreview({
           This is a quotation, not a sales or tax invoice. It does not record a completed sale.
         </div>
       )}
+      {!isQuotation && (invoice.status === "Cancelled" || invoice.status === "Amended") ? (
+        <div className="mt-4 rounded-md border border-red-400 bg-red-50 px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-red-900">
+          {invoice.status === "Cancelled" ? "Cancelled invoice — do not use for payment or tax reporting." : "Amended invoice — refer to the recorded correction before use."}
+          {invoice.correction?.replacementInvoiceNumber ? ` Replacement: ${invoice.correction.replacementInvoiceNumber}.` : ""}
+        </div>
+      ) : null}
+      {!isQuotation && invoice.correctsInvoiceNumber ? (
+        <div className="mt-4 rounded-md border border-blue-400 bg-blue-50 px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-blue-900">
+          Corrected replacement for invoice {invoice.correctsInvoiceNumber}.
+        </div>
+      ) : null}
 
       <section className={`grid gap-8 md:grid-cols-2 ${isQuotation ? "py-5" : "py-7"}`}>
         <EditableInvoiceElement id="customer" setting={element("customer")} editor={editor} onPointerDown={startElementDrag}>
