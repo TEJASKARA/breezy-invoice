@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 
 import type { Company, Customer, Invoice, TemplateElementId, TemplateElementSetting, TemplateSettings } from "@/lib/mvp-store"
 import { calculateInvoiceTotals, getInvoiceLineItems } from "@/lib/invoice-calculations"
@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils"
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
+
+const verticalSnapGuides = [8, 50, 92]
+const snapDistancePixels = 8
 
 type PreviewEditor = {
   selectedTextId: string | null
@@ -69,6 +72,7 @@ export function InvoicePreview({
   editor?: PreviewEditor
 }) {
   const pageRef = useRef<HTMLElement>(null)
+  const [activeVerticalGuide, setActiveVerticalGuide] = useState<number | null>(null)
   const items = getInvoiceLineItems(invoice)
   const totals = calculateInvoiceTotals(items)
   const netReceivable = invoice.netReceivable ?? totals.amount - (invoice.tdsAmount || 0) - (invoice.otherDeduction || 0)
@@ -89,11 +93,20 @@ export function InvoicePreview({
     const page = pageRef.current
     const move = (pointerEvent: PointerEvent) => {
       const bounds = page.getBoundingClientRect()
-      const x = Math.min(96, Math.max(2, ((pointerEvent.clientX - bounds.left) / bounds.width) * 100))
+      const rawX = Math.min(96, Math.max(2, ((pointerEvent.clientX - bounds.left) / bounds.width) * 100))
+      const snapThreshold = (snapDistancePixels / bounds.width) * 100
+      const guide = verticalSnapGuides.reduce<number | null>((closest, candidate) => {
+        if (Math.abs(candidate - rawX) > snapThreshold) return closest
+        if (closest === null || Math.abs(candidate - rawX) < Math.abs(closest - rawX)) return candidate
+        return closest
+      }, null)
+      const x = guide ?? rawX
       const y = Math.min(96, Math.max(2, ((pointerEvent.clientY - bounds.top) / bounds.height) * 100))
+      setActiveVerticalGuide(guide)
       editor.onMoveText(id, x, y)
     }
     const stop = () => {
+      setActiveVerticalGuide(null)
       window.removeEventListener("pointermove", move)
       window.removeEventListener("pointerup", stop)
     }
@@ -109,14 +122,33 @@ export function InvoicePreview({
     const page = pageRef.current
     const startX = event.clientX
     const startY = event.clientY
+    const draggedBounds = event.currentTarget.getBoundingClientRect()
     const initial = element(id)
     const move = (pointerEvent: PointerEvent) => {
       const bounds = page.getBoundingClientRect()
-      const offsetX = initial.offsetX + ((pointerEvent.clientX - startX) / bounds.width) * 100
+      const deltaX = pointerEvent.clientX - startX
+      const anchors = [draggedBounds.left + deltaX, draggedBounds.left + draggedBounds.width / 2 + deltaX, draggedBounds.right + deltaX]
+      let snappedDeltaX = deltaX
+      let activeGuide: number | null = null
+      let closestDistance = Number.POSITIVE_INFINITY
+      verticalSnapGuides.forEach((guide) => {
+        const guidePixels = bounds.left + bounds.width * guide / 100
+        anchors.forEach((anchor) => {
+          const distance = Math.abs(guidePixels - anchor)
+          if (distance <= snapDistancePixels && distance < closestDistance) {
+            closestDistance = distance
+            activeGuide = guide
+            snappedDeltaX = deltaX + guidePixels - anchor
+          }
+        })
+      })
+      setActiveVerticalGuide(activeGuide)
+      const offsetX = initial.offsetX + (snappedDeltaX / bounds.width) * 100
       const offsetY = initial.offsetY + ((pointerEvent.clientY - startY) / bounds.height) * 100
       editor.onMoveElement(id, Math.min(35, Math.max(-35, offsetX)), Math.min(35, Math.max(-35, offsetY)))
     }
     const stop = () => {
+      setActiveVerticalGuide(null)
       window.removeEventListener("pointermove", move)
       window.removeEventListener("pointerup", stop)
     }
@@ -130,6 +162,7 @@ export function InvoicePreview({
       className={`${fontClass} relative mx-auto aspect-[210/297] min-h-[920px] w-full max-w-[760px] overflow-hidden bg-white p-8 text-zinc-900 shadow-sm md:p-12 ${isClassic ? "border-4 border-double" : "border"}`}
       style={{ borderColor: isClassic ? template.accentColor : undefined, containerType: "inline-size" }}
     >
+      {editor && activeVerticalGuide !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-50 border-l-2 border-blue-500" style={{ left: `${activeVerticalGuide}%` }} /> : null}
       {!isClassic && !isMinimal && <div className="-mx-8 -mt-8 mb-8 h-2 md:-mx-12 md:-mt-12" style={{ backgroundColor: template.accentColor }} />}
       <header className="flex items-start justify-between gap-6 border-b pb-7" style={{ borderColor: template.accentColor }}>
         <div className="flex min-w-0 gap-4">

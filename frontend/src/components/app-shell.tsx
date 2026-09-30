@@ -67,7 +67,7 @@ const navigation = [
   { label: "Entities", href: "/entities", icon: Building2, permission: "entities.read" },
   { label: "Invoices", href: "/invoices", icon: ReceiptText, permission: "invoices.read" },
   { label: "Quotations", href: "/proformas", icon: FilePlus2, permission: "invoices.read" },
-  { label: "Employees", href: "/employees", icon: Users, permission: "payslips.read" },
+  { label: "Employees", href: "/employees", icon: Users, end: true, permission: "payslips.read" },
   { label: "Employee letters", href: "/employees/letters", icon: FileSignature, permission: "payslips.read" },
   { label: "Attendance", href: "/attendance", icon: CalendarCheck2, permission: "payslips.read" },
   { label: "Expenses", href: "/expenses", icon: WalletCards, permission: "expenses.read" },

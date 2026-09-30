@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Download, Eye, LoaderCircle, Plus, Search, Share2, Star, Trash2, Upload, X } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 
@@ -30,7 +30,23 @@ type DraftLineItem = Omit<InvoiceLineItem, "taxableAmount" | "cgstAmount" | "sgs
   cgstAmount: string
   sgstAmount: string
   igstAmount: string
+  cgstRate: string
+  sgstRate: string
+  igstRate: string
 }
+type InvoiceDraft = {
+  showForm: boolean
+  entityName: string
+  companyName: string
+  date: string
+  status: "Draft" | "Generated"
+  lineItems: DraftLineItem[]
+  tdsAmount: string
+  otherDeduction: string
+  sourceProforma: { id: string; number: string } | null
+}
+const roundMoney = (value: number) => Math.round(value * 100) / 100
+const rateFromAmount = (amount: number, taxableAmount: number) => taxableAmount > 0 ? roundMoney(amount * 100 / taxableAmount) : 0
 const newDraftLine = (hsnSac = ""): DraftLineItem => ({
   id: crypto.randomUUID(),
   description: "",
@@ -39,7 +55,29 @@ const newDraftLine = (hsnSac = ""): DraftLineItem => ({
   cgstAmount: "",
   sgstAmount: "",
   igstAmount: "",
+  cgstRate: "",
+  sgstRate: "",
+  igstRate: "",
 })
+const restoreDraftLine = (value: Partial<DraftLineItem>): DraftLineItem => {
+  const taxableAmount = Math.max(0, Number(value.taxableAmount) || 0)
+  const cgstAmount = Math.max(0, Number(value.cgstAmount) || 0)
+  const sgstAmount = Math.max(0, Number(value.sgstAmount) || 0)
+  const igstAmount = Math.max(0, Number(value.igstAmount) || 0)
+  return {
+    ...newDraftLine(String(value.hsnSac || "")),
+    ...value,
+    id: String(value.id || crypto.randomUUID()),
+    description: String(value.description || ""),
+    taxableAmount: taxableAmount ? String(taxableAmount) : "",
+    cgstAmount: cgstAmount ? String(cgstAmount) : "",
+    sgstAmount: sgstAmount ? String(sgstAmount) : "",
+    igstAmount: igstAmount ? String(igstAmount) : "",
+    cgstRate: String(value.cgstRate || rateFromAmount(cgstAmount, taxableAmount) || ""),
+    sgstRate: String(value.sgstRate || rateFromAmount(sgstAmount, taxableAmount) || ""),
+    igstRate: String(value.igstRate || rateFromAmount(igstAmount, taxableAmount) || ""),
+  }
+}
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
@@ -107,6 +145,7 @@ export function InvoicesPage() {
   const invoiceFileInput = useRef<HTMLInputElement>(null)
   const customerFileInput = useRef<HTMLInputElement>(null)
   const bulkPreviewRef = useRef<HTMLDivElement>(null)
+  const loadedDraftKey = useRef("")
   const selectedEntity = companies.find((company) => company.companyName === entityName)
   const selectedEntityHsnCodes = entityHsnCodes(selectedEntity)
   const selectedBulkEntity = companies.find((company) => company.companyName === bulkEntityName)
@@ -133,6 +172,7 @@ export function InvoicesPage() {
     return true
   })
   const visibleInvoices = showAllInvoices ? filteredInvoices : filteredInvoices.slice(0, 5)
+  const draftStorageKey = workspace?.id ? `chanax.invoice-draft.${workspace.id}` : ""
   const showNotice = (text: string, isError = false) => { setNotice(text); setNoticeIsError(isError) }
 
   const verifyManualCustomerGstin = async () => {
@@ -183,6 +223,44 @@ export function InvoicesPage() {
   const draftTotals = calculateInvoiceTotals(parsedLineItems)
 
   useEffect(() => {
+    if (!draftStorageKey || loadedDraftKey.current === draftStorageKey) return
+    loadedDraftKey.current = draftStorageKey
+    const conversionId = (location.state as { convertProformaId?: string } | null)?.convertProformaId
+    if (conversionId) return
+    try {
+      const saved = localStorage.getItem(draftStorageKey)
+      if (!saved) return
+      const draft = JSON.parse(saved) as Partial<InvoiceDraft>
+      setEntityName(String(draft.entityName || ""))
+      setCompanyName(String(draft.companyName || ""))
+      if (draft.date) setDate(draft.date)
+      if (draft.status === "Draft" || draft.status === "Generated") setStatus(draft.status)
+      if (Array.isArray(draft.lineItems) && draft.lineItems.length) setLineItems(draft.lineItems.map(restoreDraftLine))
+      setTdsAmount(String(draft.tdsAmount || ""))
+      setOtherDeduction(String(draft.otherDeduction || ""))
+      setSourceProforma(draft.sourceProforma || null)
+      setShowForm(Boolean(draft.showForm))
+    } catch {
+      localStorage.removeItem(draftStorageKey)
+    }
+  }, [draftStorageKey, location.state])
+
+  useEffect(() => {
+    if (!draftStorageKey || loadedDraftKey.current !== draftStorageKey || !showForm) return
+    localStorage.setItem(draftStorageKey, JSON.stringify({
+      showForm,
+      entityName,
+      companyName,
+      date,
+      status,
+      lineItems,
+      tdsAmount,
+      otherDeduction,
+      sourceProforma,
+    } satisfies InvoiceDraft))
+  }, [companyName, date, draftStorageKey, entityName, lineItems, otherDeduction, showForm, sourceProforma, status, tdsAmount])
+
+  useEffect(() => {
     if (!preview.length || bulkImportPending || bulkImportHasError) return
     bulkPreviewRef.current?.focus({ preventScroll: true })
     bulkPreviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -227,6 +305,9 @@ export function InvoicesPage() {
       cgstAmount: String(item.cgstAmount || ""),
       sgstAmount: String(item.sgstAmount || ""),
       igstAmount: String(item.igstAmount || ""),
+      cgstRate: String(rateFromAmount(item.cgstAmount, item.taxableAmount) || ""),
+      sgstRate: String(rateFromAmount(item.sgstAmount, item.taxableAmount) || ""),
+      igstRate: String(rateFromAmount(item.igstAmount, item.taxableAmount) || ""),
     })))
     setTdsAmount(record.tdsAmount ? String(record.tdsAmount) : "")
     setOtherDeduction(record.otherDeduction ? String(record.otherDeduction) : "")
@@ -270,6 +351,7 @@ export function InvoicesPage() {
   })
 
   const resetForm = () => {
+    if (draftStorageKey) localStorage.removeItem(draftStorageKey)
     setEntityName("")
     setCompanyName("")
     setLineItems([newDraftLine()])
@@ -333,15 +415,47 @@ export function InvoicesPage() {
     setLineItems((items) => items.map((item) => {
       if (item.id !== itemId) return item
       const updated = { ...item, [field]: value }
-      if (field === "igstAmount" && Number(value) > 0) {
+      const taxableAmount = Math.max(0, Number(updated.taxableAmount) || 0)
+      if (field === "taxableAmount") {
+        updated.cgstAmount = String(roundMoney(taxableAmount * (Number(updated.cgstRate) || 0) / 100) || "")
+        updated.sgstAmount = String(roundMoney(taxableAmount * (Number(updated.sgstRate) || 0) / 100) || "")
+        updated.igstAmount = String(roundMoney(taxableAmount * (Number(updated.igstRate) || 0) / 100) || "")
+      }
+      if (field === "igstRate") {
+        const rate = Math.min(100, Math.max(0, Number(value) || 0))
+        updated.igstRate = value === "" ? "" : String(rate)
+        updated.igstAmount = String(roundMoney(taxableAmount * rate / 100) || "")
+      }
+      if (field === "igstRate" && Number(value) > 0) {
+        updated.cgstRate = ""
+        updated.sgstRate = ""
         updated.cgstAmount = ""
         updated.sgstAmount = ""
       }
-      if ((field === "cgstAmount" || field === "sgstAmount") && Number(value) > 0) {
+      if (field === "cgstRate" || field === "sgstRate") {
+        const rate = Math.min(100, Math.max(0, Number(value) || 0))
+        updated[field] = value === "" ? "" : String(rate)
+        updated[field === "cgstRate" ? "cgstAmount" : "sgstAmount"] = String(roundMoney(taxableAmount * rate / 100) || "")
+      }
+      if ((field === "cgstRate" || field === "sgstRate") && Number(value) > 0) {
+        updated.igstRate = ""
         updated.igstAmount = ""
       }
       return updated
     }))
+  }
+
+  const moveToNextInvoiceField = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return
+    const target = event.target as HTMLElement
+    if (!target.matches("input, select") || target.closest("[data-enter-navigation='off']")) return
+    const container = event.currentTarget
+    const fields = Array.from(container.querySelectorAll<HTMLElement>("input:not([type='hidden']):not(:disabled), select:not(:disabled)"))
+      .filter((field) => field.offsetParent !== null)
+    const index = fields.indexOf(target)
+    if (index < 0 || index >= fields.length - 1) return
+    event.preventDefault()
+    fields[index + 1].focus()
   }
 
   const downloadPdf = async (invoice: Invoice) => {
@@ -807,7 +921,7 @@ export function InvoicesPage() {
       {showForm && canManage && (
         <Card>
           <CardHeader><CardTitle>{sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6" onKeyDown={moveToNextInvoiceField}>
             {sourceProforma ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"><strong>Source quotation: {sourceProforma.number}</strong><p className="mt-1">The quotation remains saved. Previewing uses no credit. One document credit is used only when this invoice is saved.</p></div> : null}
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
@@ -832,23 +946,23 @@ export function InvoicesPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-medium">Invoice descriptions</h3>
-                  <p className="text-xs text-muted-foreground">{isGstInvoice ? "Choose an HSN/SAC saved for the issuing entity on each line. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices." : "Add the description and amount. HSN/SAC is optional for this non-GST invoice."}</p>
+                  <p className="text-xs text-muted-foreground">{isGstInvoice ? "Enter GST percentages. Tax amounts and the invoice total are calculated automatically. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices." : "Add the description and amount. HSN/SAC is optional for this non-GST invoice."}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => setLineItems((items) => [...items, newDraftLine(selectedEntityHsnCodes[0] || "")])}><Plus />Add description</Button>
               </div>
               <div className="overflow-x-auto rounded-lg border">
                 <div className={isGstInvoice ? "min-w-[980px]" : "min-w-[620px]"}>
                   <div className={`grid gap-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(4,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
-                    <span>Description</span><span>HSN/SAC</span><span>{isGstInvoice ? "Taxable amount" : "Amount"}</span>{isGstInvoice ? <><span>CGST</span><span>SGST</span><span>IGST</span></> : null}<span />
+                    <span>Description</span><span>HSN/SAC</span><span>{isGstInvoice ? "Taxable amount" : "Amount"}</span>{isGstInvoice ? <><span>CGST %</span><span>SGST %</span><span>IGST %</span></> : null}<span />
                   </div>
                   {lineItems.map((item, index) => (
                     <div key={item.id} className={`grid gap-2 border-t p-3 ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(4,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
                       <Input aria-label={`Description ${index + 1}`} value={item.description} onChange={(event) => updateLineItem(item.id, "description", event.target.value)} placeholder="Service or item description" />
                       {selectedEntityHsnCodes.length ? <select aria-label={`HSN/SAC ${index + 1}`} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value)}><option value="">Select code</option>{selectedEntityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN/SAC ${index + 1}`} inputMode="numeric" maxLength={8} value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value.replace(/\D/g, ""))} placeholder="998222" />}
                       <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" value={item.taxableAmount} onChange={(event) => updateLineItem(item.id, "taxableAmount", event.target.value)} placeholder="0.00" />
-                      {isGstInvoice ? <><Input aria-label={`CGST ${index + 1}`} type="number" min="0" step="0.01" value={item.cgstAmount} onChange={(event) => updateLineItem(item.id, "cgstAmount", event.target.value)} placeholder="0.00" />
-                      <Input aria-label={`SGST ${index + 1}`} type="number" min="0" step="0.01" value={item.sgstAmount} onChange={(event) => updateLineItem(item.id, "sgstAmount", event.target.value)} placeholder="0.00" />
-                      <Input aria-label={`IGST ${index + 1}`} type="number" min="0" step="0.01" value={item.igstAmount} onChange={(event) => updateLineItem(item.id, "igstAmount", event.target.value)} placeholder="0.00" /></> : null}
+                      {isGstInvoice ? <><div><Input aria-label={`CGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.cgstRate} onChange={(event) => updateLineItem(item.id, "cgstRate", event.target.value)} placeholder="CGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.cgstAmount) || 0).toLocaleString("en-IN")}</p></div>
+                      <div><Input aria-label={`SGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.sgstRate} onChange={(event) => updateLineItem(item.id, "sgstRate", event.target.value)} placeholder="SGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.sgstAmount) || 0).toLocaleString("en-IN")}</p></div>
+                      <div><Input aria-label={`IGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.igstRate} onChange={(event) => updateLineItem(item.id, "igstRate", event.target.value)} placeholder="IGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.igstAmount) || 0).toLocaleString("en-IN")}</p></div></> : null}
                       <Button type="button" size="icon" variant="ghost" disabled={lineItems.length === 1} aria-label={`Remove description ${index + 1}`} onClick={() => setLineItems((items) => items.filter((line) => line.id !== item.id))}><Trash2 /></Button>
                     </div>
                   ))}

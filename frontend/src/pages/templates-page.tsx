@@ -506,7 +506,7 @@ export function TemplatesPage() {
               <Button size="sm" variant={previewDocumentType === "invoice" ? "default" : "ghost"} onClick={() => setPreviewDocumentType("invoice")}><ReceiptText />Sales invoice</Button>
               <Button size="sm" variant={previewDocumentType === "quotation" ? "default" : "ghost"} onClick={() => setPreviewDocumentType("quotation")}><FilePlus2 />Quotation / proforma</Button>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Move className="size-4" />Select and drag elements. Use arrow keys for precise movement.</div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Move className="size-4" />Drag elements toward the left, centre, or right guide to align them. Coordinates and arrow-key movement remain available.</div>
           </div>
           {previewDocumentType === "quotation" ? <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Quotation previews and PDFs are always marked as not being sales or tax invoices.</p> : null}
           <InvoicePreview
