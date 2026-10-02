@@ -13,12 +13,13 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { type Employee, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
 import { calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultDeductions, defaultEarnings, defaultPayslipAttendance, formatSalaryMonth, indianNationalHolidays, nextSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
-import { createPayslipPdfFile, downloadPayslipPdf } from "@/lib/payslip-pdf"
+import { createPayslipPdfFile, downloadPayslipPdf as downloadPayslipPdfFile } from "@/lib/payslip-pdf"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 
 type PayslipDraft = Omit<Payslip, "id">
 type ImportPayslip = Omit<Payslip, "id">
@@ -118,6 +119,8 @@ export function EmployeesPage() {
   } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
+  const downloadPayslipPdf = (input: Parameters<typeof downloadPayslipPdfFile>[0]) => downloadPayslipPdfFile({ ...input, canRemoveBranding: brandingCanBeRemoved })
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
@@ -631,7 +634,7 @@ export function EmployeesPage() {
       const files = []
       for (const [index, importedPayslip] of bulkPreview.entries()) {
         const payslip: Payslip = { ...importedPayslip, id: `bulk-payslip-${index}` }
-        files.push(await createPayslipPdfFile({ payslip, entity: selectedEntity, template: templateFor(selectedEntity.id) }))
+        files.push(await createPayslipPdfFile({ payslip, entity: selectedEntity, template: templateFor(selectedEntity.id), canRemoveBranding: brandingCanBeRemoved }))
       }
       downloadZip(files, `Payslips_${cleanPayslipFileName(selectedEntity.companyName)}_${cleanPayslipFileName(bulkMonth)}.zip`)
       setNotice(`${files.length} payslip PDFs downloaded in one ZIP folder.`)
@@ -649,7 +652,7 @@ export function EmployeesPage() {
       const result = await sharePdfViaWhatsApp({
         title: `${formatSalaryMonth(payslip.month)} payslip`,
         message: `${payslip.employeeName}'s payslip for ${formatSalaryMonth(payslip.month)} from ${entity?.companyName || payslip.entityName || "the employer"}.`,
-        createFile: () => createPayslipPdfFile({ payslip, entity, template: templateFor(payslip.entityId) }),
+        createFile: () => createPayslipPdfFile({ payslip, entity, template: templateFor(payslip.entityId), canRemoveBranding: brandingCanBeRemoved }),
       })
       if (result === "shared") setNotice("Payslip prepared. Choose WhatsApp in the share panel to send the PDF.")
       if (result === "opened") setNotice("WhatsApp opened with the payslip message. This browser cannot attach the generated PDF automatically.")
@@ -782,7 +785,7 @@ export function EmployeesPage() {
       {previewPayslip && (
         <Card>
           <CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Payslip preview</CardTitle><CardDescription>Check the final layout before downloading.</CardDescription></div><Button size="icon" variant="ghost" aria-label="Close preview" onClick={() => setPreviewPayslip(null)}><X /></Button></CardHeader>
-          <CardContent className="space-y-4"><div className="overflow-auto rounded-xl bg-muted p-3 sm:p-6"><PayslipPreview payslip={previewPayslip} entity={companies.find((company) => company.id === previewPayslip.entityId)} template={templateFor(previewPayslip.entityId)} /></div><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => void sharePayslipOnWhatsApp(previewPayslip)}><Share2 />Share via WhatsApp</Button><Button onClick={() => void downloadPayslipPdf({ payslip: previewPayslip, entity: companies.find((company) => company.id === previewPayslip.entityId), template: templateFor(previewPayslip.entityId) })}><Download />Download PDF</Button></div></CardContent>
+          <CardContent className="space-y-4"><div className="overflow-auto rounded-xl bg-muted p-3 sm:p-6"><PayslipPreview payslip={previewPayslip} entity={companies.find((company) => company.id === previewPayslip.entityId)} template={templateFor(previewPayslip.entityId)} canRemoveBranding={brandingCanBeRemoved} /></div><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => void sharePayslipOnWhatsApp(previewPayslip)}><Share2 />Share via WhatsApp</Button><Button onClick={() => void downloadPayslipPdf({ payslip: previewPayslip, entity: companies.find((company) => company.id === previewPayslip.entityId), template: templateFor(previewPayslip.entityId), canRemoveBranding: brandingCanBeRemoved })}><Download />Download PDF</Button></div></CardContent>
         </Card>
       )}
 

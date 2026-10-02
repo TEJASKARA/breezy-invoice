@@ -63,6 +63,7 @@ export function InvoicePreview({
   template,
   documentType = "invoice",
   editor,
+  canRemoveBranding = false,
 }: {
   invoice: Invoice
   entity?: Company
@@ -70,6 +71,7 @@ export function InvoicePreview({
   template: TemplateSettings
   documentType?: "invoice" | "quotation"
   editor?: PreviewEditor
+  canRemoveBranding?: boolean
 }) {
   const pageRef = useRef<HTMLElement>(null)
   const [activeVerticalGuide, setActiveVerticalGuide] = useState<number | null>(null)
@@ -84,6 +86,9 @@ export function InvoicePreview({
   const isQuotation = documentType === "quotation"
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
+  const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
+  const logoSize = Math.min(120, Math.max(40, template.logoSize))
+  const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
 
   const startTextDrag = (event: ReactPointerEvent<HTMLDivElement>, id: string) => {
     if (!editor || !pageRef.current) return
@@ -163,10 +168,12 @@ export function InvoicePreview({
       style={{ backgroundColor: template.pageColor, borderColor: isClassic ? template.accentColor : undefined, containerType: "inline-size" }}
     >
       {editor && activeVerticalGuide !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-50 border-l-2 border-blue-500" style={{ left: `${activeVerticalGuide}%` }} /> : null}
+      {template.watermarkEnabled && template.watermarkText.trim() ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden"><span className="max-w-[85%] -rotate-[32deg] break-words text-center text-6xl font-bold uppercase tracking-[0.2em] text-zinc-700" style={{ opacity: watermarkOpacity }}>{template.watermarkText}</span></div> : null}
+      {showChanaxBranding ? <p className="pointer-events-none absolute bottom-3 right-4 z-30 text-[9px] font-medium tracking-wide text-zinc-400">Created by ChanaX</p> : null}
       {!isClassic && !isMinimal && <div className="-mx-8 -mt-8 mb-8 h-2 md:-mx-12 md:-mt-12" style={{ backgroundColor: template.accentColor }} />}
       <header className="flex items-start justify-between gap-6 border-b pb-7" style={{ borderColor: template.accentColor }}>
         <div className="flex min-w-0 gap-4">
-          {template.logoDataUrl && <EditableInvoiceElement id="logo" setting={element("logo")} editor={editor} onPointerDown={startElementDrag}><img src={template.logoDataUrl} alt="Company logo" className="h-16 w-16 shrink-0 rounded object-contain" /></EditableInvoiceElement>}
+          {template.logoDataUrl && <EditableInvoiceElement id="logo" setting={element("logo")} editor={editor} onPointerDown={startElementDrag}><img src={template.logoDataUrl} alt="Company logo" className="shrink-0 rounded object-contain" style={{ width: logoSize, height: logoSize }} /></EditableInvoiceElement>}
           <EditableInvoiceElement id="issuer" setting={element("issuer")} editor={editor} onPointerDown={startElementDrag}>
             <h2 className="text-2xl font-bold">{entity?.companyName || invoice.entityName || "Issuing entity"}</h2>
             <p className="mt-2 max-w-sm text-sm text-zinc-500">{entity?.billingAddress || entity?.premisesAddress || "Address not provided"}</p>

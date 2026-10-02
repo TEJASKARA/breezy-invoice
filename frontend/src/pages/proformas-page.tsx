@@ -18,6 +18,7 @@ import { cleanInvoiceFileName, createInvoicePdf } from "@/lib/invoice-pdf"
 import { useMvpStore, type InvoiceLineItem, type Proforma } from "@/lib/mvp-store"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { trackAction } from "@/lib/usage-tracking"
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -55,6 +56,7 @@ export function ProformasPage() {
   const navigate = useNavigate()
   const { can, refresh, workspace, subscription, creditAccount } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const quotationAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "quotation", proformas.length)
   const [entityId, setEntityId] = useState(companies[0]?.id || "")
   const availableCustomers = customers.filter((customer) => customer.entityId === entityId)
@@ -146,7 +148,7 @@ export function ProformasPage() {
   async function pdf(record: Proforma) {
     const recordEntity = companies.find((company) => company.id === record.entityId)
     const recordCustomer = customers.find((item) => item.id === record.customerId)
-    return createInvoicePdf({ invoice: record, entity: recordEntity, customer: recordCustomer, template: proformaTemplate(record.entityId), documentType: "quotation" })
+    return createInvoicePdf({ invoice: record, entity: recordEntity, customer: recordCustomer, template: proformaTemplate(record.entityId), documentType: "quotation", canRemoveBranding: brandingCanBeRemoved })
   }
 
   async function download(record: Proforma) {
@@ -208,7 +210,7 @@ export function ProformasPage() {
       <div className="flex justify-end"><Button disabled={!canManage || !companies.length || !availableCustomers.length || quotationAllowance?.remaining === 0} onClick={() => void save()}><ReceiptText />Generate quotation</Button></div>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>Quotation register</CardTitle><CardDescription>Generated quotations can be downloaded, shared or converted without changing their original record.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{proformas.length ? proformas.map((record) => <TableRow key={record.id}><TableCell className="font-medium">{record.number}</TableCell><TableCell>{record.companyName}</TableCell><TableCell>{record.date}</TableCell><TableCell>₹{record.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant="outline">{record.convertedInvoiceId ? "Converted" : record.status}</Badge>{record.convertedInvoiceId ? <p className="text-xs text-muted-foreground">{record.convertedInvoiceNumber ? `Invoice ${record.convertedInvoiceNumber}` : "Invoice created"}</p> : null}</div></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" aria-label="Preview quotation" onClick={() => setPreview(record)}><Eye /></Button><Button size="icon" variant="ghost" aria-label="Download quotation" onClick={() => void download(record)}><Download /></Button><Button size="icon" variant="ghost" aria-label="Share quotation" onClick={() => setShareTarget(record)}><Share2 /></Button><Button size="sm" variant="outline" disabled={!canManage || Boolean(record.convertedInvoiceId)} onClick={() => convert(record)}>Convert to invoice</Button><Button size="icon" variant="ghost" aria-label="Delete quotation" disabled={!canManage} onClick={() => void deleteProforma(record.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No quotations yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
-    {preview ? <div className="fixed inset-0 z-50 overflow-auto bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Quotation preview"><div className="mx-auto max-w-5xl space-y-3"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShareTarget(preview)}><Share2 />Share</Button><Button variant="secondary" onClick={() => setPreview(null)}>Close preview</Button></div><InvoicePreview invoice={preview} entity={companies.find((item) => item.id === preview.entityId)} customer={customers.find((item) => item.id === preview.customerId)} template={proformaTemplate(preview.entityId)} documentType="quotation" /></div></div> : null}
+    {preview ? <div className="fixed inset-0 z-50 overflow-auto bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Quotation preview"><div className="mx-auto max-w-5xl space-y-3"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShareTarget(preview)}><Share2 />Share</Button><Button variant="secondary" onClick={() => setPreview(null)}>Close preview</Button></div><InvoicePreview invoice={preview} entity={companies.find((item) => item.id === preview.entityId)} customer={customers.find((item) => item.id === preview.customerId)} template={proformaTemplate(preview.entityId)} documentType="quotation" canRemoveBranding={brandingCanBeRemoved} /></div></div> : null}
     <DocumentShareDialog open={Boolean(shareTarget)} title={shareTarget ? `quotation ${shareTarget.number}` : "quotation"} onClose={() => setShareTarget(null)} onEmail={async (toEmail) => { if (!shareTarget) return; await email(shareTarget, toEmail); setShareTarget(null) }} onWhatsApp={async () => { if (!shareTarget) return; await share(shareTarget); setShareTarget(null) }} />
   </div>
 }

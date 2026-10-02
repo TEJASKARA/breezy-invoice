@@ -9,19 +9,26 @@ export function PayslipPreview({
   payslip,
   entity,
   template,
+  canRemoveBranding = false,
 }: {
   payslip: Payslip
   entity?: Company
   template: TemplateSettings
+  canRemoveBranding?: boolean
 }) {
   const fontClass = template.fontStyle === "serif" ? "font-serif" : template.fontStyle === "mono" ? "font-mono" : "font-sans"
+  const logoSize = Math.min(120, Math.max(40, template.logoSize))
+  const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
+  const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
 
   return (
-    <article className={`${fontClass} mx-auto min-h-[760px] w-full max-w-[820px] border p-8 text-zinc-900 shadow-sm md:p-12`} style={{ backgroundColor: template.pageColor }}>
+    <article className={`${fontClass} relative mx-auto min-h-[760px] w-full max-w-[820px] overflow-hidden border p-8 text-zinc-900 shadow-sm md:p-12`} style={{ backgroundColor: template.pageColor }}>
+      {template.watermarkEnabled && template.watermarkText.trim() ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden"><span className="max-w-[85%] -rotate-[32deg] break-words text-center text-6xl font-bold uppercase tracking-[0.2em] text-zinc-700" style={{ opacity: watermarkOpacity }}>{template.watermarkText}</span></div> : null}
+      {showChanaxBranding ? <p className="pointer-events-none absolute bottom-3 right-4 z-30 text-[9px] font-medium tracking-wide text-zinc-400">Created by ChanaX</p> : null}
       <header className="flex items-start justify-between gap-6 border-b pb-8">
         <div className="flex min-w-0 items-start gap-4">
           {template.logoDataUrl ? (
-            <img src={template.logoDataUrl} alt="Company logo" className="h-16 w-16 shrink-0 rounded-lg object-contain" />
+            <img src={template.logoDataUrl} alt="Company logo" className="shrink-0 rounded-lg object-contain" style={{ width: logoSize, height: logoSize }} />
           ) : (
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg text-2xl font-bold text-white" style={{ backgroundColor: template.accentColor }}>
               {(entity?.companyName || payslip.entityName || "B").charAt(0)}

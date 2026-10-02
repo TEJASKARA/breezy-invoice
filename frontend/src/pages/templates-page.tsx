@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { type Company, type Customer, type Invoice, type TemplateElementId, type TemplateSettings, type TemplateTextBlock, useMvpStore } from "@/lib/mvp-store"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { cn } from "@/lib/utils"
 import { trackAction } from "@/lib/usage-tracking"
 
@@ -94,8 +95,9 @@ export function TemplatesPage() {
     updateEntityTemplate,
     clearEntityTemplate,
   } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, subscription } = useWorkspaceAccess()
   const canManage = can("templates.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const [scopeId, setScopeId] = useState<string>(DEFAULT_SCOPE)
   const scopeEntity = scopeId === DEFAULT_SCOPE ? undefined : companies.find((company) => company.id === scopeId)
   const activeScopeId = scopeEntity ? scopeEntity.id : DEFAULT_SCOPE
@@ -227,6 +229,11 @@ export function TemplatesPage() {
       accentColor: "#2563EB",
       pageColor: "#FFFFFF",
       logoDataUrl: null,
+      logoSize: 64,
+      watermarkEnabled: false,
+      watermarkText: "DRAFT",
+      watermarkOpacity: 0.1,
+      showChanaxBranding: true,
       signatureDataUrl: null,
       signatureMode: "system",
       showTerms: true,
@@ -242,7 +249,8 @@ export function TemplatesPage() {
 
   const saveTemplate = () => {
     if (!canManage || !draft) return
-    const { entityTemplates: _entityTemplates, ...changes } = draft
+    const securedDraft = brandingCanBeRemoved ? draft : { ...draft, showChanaxBranding: true }
+    const { entityTemplates: _entityTemplates, ...changes } = securedDraft
     if (scopeEntity) updateEntityTemplate(scopeEntity.id, changes)
     else persistWorkspaceTemplate(changes)
     setDraft(null)
@@ -272,7 +280,8 @@ export function TemplatesPage() {
 
   const createEntityTemplate = () => {
     if (!canManage || !scopeEntity) return
-    const { entityTemplates: _entityTemplates, ...changes } = template
+    const securedTemplate = brandingCanBeRemoved ? template : { ...template, showChanaxBranding: true }
+    const { entityTemplates: _entityTemplates, ...changes } = securedTemplate
     updateEntityTemplate(scopeEntity.id, changes)
     setDraft(null)
     showMessage(`Custom template created for ${scopeEntity.companyName}.`)
@@ -422,6 +431,11 @@ export function TemplatesPage() {
                 </Button>
               )}
               {template.logoDataUrl && <Button variant="outline" className="w-full" onClick={() => logoInputRef.current?.click()}><Upload />Replace logo</Button>}
+              <div className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-3"><Label htmlFor="template-logo-size" className="text-xs">Logo size</Label><span className="text-xs tabular-nums text-muted-foreground">{template.logoSize}px</span></div>
+                <Input id="template-logo-size" type="range" min="40" max="120" step="4" value={template.logoSize} onChange={(event) => updateTemplate({ logoSize: Number(event.target.value) })} className="h-5 cursor-pointer p-0" />
+                <p className="text-xs text-muted-foreground">Enlarge or reduce the logo in previews and downloaded documents.</p>
+              </div>
             </section>
 
             <Separator />
@@ -505,6 +519,38 @@ export function TemplatesPage() {
               </div>
             </section>
 
+            <Separator />
+
+            <section className="space-y-3">
+              <label className="flex cursor-pointer items-center justify-between gap-4">
+                <span><span className="block text-sm font-medium">Document watermark</span><span className="block text-xs text-muted-foreground">Place light text behind the document content</span></span>
+                <input type="checkbox" checked={template.watermarkEnabled} onChange={(event) => updateTemplate({ watermarkEnabled: event.target.checked })} className="size-4 accent-foreground" />
+              </label>
+              {template.watermarkEnabled ? (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <div><Label htmlFor="template-watermark-text" className="text-xs">Watermark text</Label><Input id="template-watermark-text" maxLength={48} value={template.watermarkText} onChange={(event) => updateTemplate({ watermarkText: event.target.value })} placeholder="DRAFT, PAID or CONFIDENTIAL" /></div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3"><Label htmlFor="template-watermark-opacity" className="text-xs">Visibility</Label><span className="text-xs tabular-nums text-muted-foreground">{Math.round(template.watermarkOpacity * 100)}%</span></div>
+                    <Input id="template-watermark-opacity" type="range" min="0.05" max="0.3" step="0.01" value={template.watermarkOpacity} onChange={(event) => updateTemplate({ watermarkOpacity: Number(event.target.value) })} className="h-5 cursor-pointer p-0" />
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-3">
+              <label className={cn("flex items-center justify-between gap-4", brandingCanBeRemoved ? "cursor-pointer" : "cursor-not-allowed")}>
+                <span><span className="block text-sm font-medium">Created by ChanaX</span><span className="block text-xs text-muted-foreground">Small mark at the bottom-right of every document</span></span>
+                <input
+                  type="checkbox"
+                  checked={brandingCanBeRemoved ? template.showChanaxBranding : true}
+                  disabled={!brandingCanBeRemoved}
+                  onChange={(event) => updateTemplate({ showChanaxBranding: event.target.checked })}
+                  className="size-4 accent-foreground"
+                />
+              </label>
+              <p className="text-xs text-muted-foreground">{brandingCanBeRemoved ? "Your paid subscription lets you remove this mark. It remains enabled by default." : "The mark is included on the free plan. An active paid subscription unlocks the option to remove it."}</p>
+            </section>
+
             <section className="space-y-3">
               <Label>Typography</Label>
               <div className="grid grid-cols-3 gap-2">{(["sans", "serif", "mono"] as const).map((font) => <Button key={font} type="button" variant={template.fontStyle === font ? "default" : "outline"} onClick={() => updateTemplate({ fontStyle: font })}>{font === "sans" ? "Modern" : font === "serif" ? "Classic" : "Mono"}</Button>)}</div>
@@ -529,6 +575,7 @@ export function TemplatesPage() {
             customer={previewCustomer}
             template={template}
             documentType={previewDocumentType}
+            canRemoveBranding={brandingCanBeRemoved}
             editor={{
               selectedTextId,
               selectedElementId,

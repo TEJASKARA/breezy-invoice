@@ -17,6 +17,7 @@ import { attendancePresentDays, calculateLeaveAdjustedAttendance, calculatePaysl
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
 import { downloadZip } from "@/lib/zip-download"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 
 type AttendanceException = Pick<PayslipAttendance, "halfDays" | "paidLeaveDays" | "unpaidLeaveDays"> & { dailyRecords?: AttendanceDayRecord[] }
 type AttendanceMode = "daily" | "monthly"
@@ -52,6 +53,7 @@ export function AttendancePage() {
   const { setup, companies, employees, invoices, payslips, templateFor, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
   const initialEntityId = companies[0]?.id || ""
   const initialMonth = currentMonth()
@@ -320,7 +322,7 @@ export function AttendancePage() {
     clearMessages()
     try {
       const files = []
-      for (const [index, item] of preview.entries()) files.push(await createPayslipPdfFile({ payslip: { ...item, id: `attendance-payslip-${index}` }, entity: selectedEntity, template: templateFor(selectedEntity?.id) }))
+      for (const [index, item] of preview.entries()) files.push(await createPayslipPdfFile({ payslip: { ...item, id: `attendance-payslip-${index}` }, entity: selectedEntity, template: templateFor(selectedEntity?.id), canRemoveBranding: brandingCanBeRemoved }))
       downloadZip(files, `Payslips_${cleanPayslipFileName(selectedEntity.companyName)}_${cleanPayslipFileName(month)}.zip`)
       setNotice(`${files.length} payslip PDFs downloaded in one ZIP folder.`)
     } catch (caught) {

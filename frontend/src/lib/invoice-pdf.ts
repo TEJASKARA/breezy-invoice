@@ -51,6 +51,7 @@ type InvoicePdfInput = {
   customer?: Customer
   template: TemplateSettings
   documentType?: "invoice" | "quotation"
+  canRemoveBranding?: boolean
 }
 
 export async function createInvoicePdf({
@@ -59,6 +60,7 @@ export async function createInvoicePdf({
   customer,
   template,
   documentType = "invoice",
+  canRemoveBranding = false,
 }: InvoicePdfInput) {
   const { jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true })
@@ -79,14 +81,32 @@ export async function createInvoicePdf({
   const isGstInvoice = entity?.hasGstin ?? Boolean(entity?.gstin)
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
+  const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
+  const logoSize = Math.min(36, Math.max(14, template.logoSize / 3))
   const hasCorrectionNotice = !isQuotation && (invoice.status === "Cancelled" || invoice.status === "Amended" || Boolean(invoice.correctsInvoiceNumber))
   const shift = (id: TemplateElementId) => ({
     x: (element(id).offsetX / 100) * pageWidth,
     y: (element(id).offsetY / 100) * pageHeight,
   })
   const paintPageBackground = () => {
-    doc.setFillColor(...colour(template.pageColor))
+    const background = colour(template.pageColor)
+    doc.setFillColor(...background)
     doc.rect(0, 0, pageWidth, pageHeight, "F")
+    if (template.watermarkEnabled && template.watermarkText.trim()) {
+      const opacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
+      const watermarkInk = 82
+      const watermarkColour = background.map((channel) => Math.round(channel * (1 - opacity) + watermarkInk * opacity)) as [number, number, number]
+      doc.setTextColor(...watermarkColour)
+      doc.setFont(baseFont, "bold")
+      doc.setFontSize(31)
+      doc.text(template.watermarkText.trim().slice(0, 48).toUpperCase(), pageWidth / 2, pageHeight / 2, { align: "center", angle: 32 })
+    }
+    if (showChanaxBranding) {
+      doc.setTextColor(148, 163, 184)
+      doc.setFont(baseFont, "normal")
+      doc.setFontSize(6.5)
+      doc.text("Created by ChanaX", pageWidth - margin, pageHeight - 7, { align: "right" })
+    }
   }
 
   paintPageBackground()
@@ -106,9 +126,9 @@ export async function createInvoicePdf({
 
   const headerY = template.preset === "breeze" ? 20 : 16
   const logoShift = shift("logo")
-  const logoShown = Boolean(element("logo").visible && template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin + logoShift.x, headerY + logoShift.y, 22, 22))
+  const logoShown = Boolean(element("logo").visible && template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin + logoShift.x, headerY + logoShift.y, logoSize, logoSize))
   const issuerShift = shift("issuer")
-  const issuerX = (logoShown ? 43 : margin) + issuerShift.x
+  const issuerX = (logoShown ? margin + logoSize + 5 : margin) + issuerShift.x
   if (element("issuer").visible) {
     doc.setFont(baseFont, "bold")
     doc.setFontSize(template.preset === "minimal" ? 15 : 17)
@@ -372,9 +392,6 @@ export async function createInvoicePdf({
       doc.text(declaration, pageWidth - margin + signatureShift.x, footerY + 15 + signatureShift.y, { align: "right" })
     }
   }
-  doc.setFontSize(7)
-  doc.text("Generated with ChanaX", pageWidth / 2, pageHeight - 8, { align: "center" })
-
   if (template.customTexts.length) {
     doc.setPage(1)
     template.customTexts.forEach((block) => {

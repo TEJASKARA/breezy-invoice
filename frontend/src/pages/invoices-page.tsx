@@ -21,6 +21,7 @@ import { normalizeSpreadsheetDate, parseDocumentStatus, parseMoney, pickCell, re
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 
 type ImportInvoice = Omit<Invoice, "id" | "number">
 type ImportCustomer = Omit<Customer, "id">
@@ -119,6 +120,7 @@ export function InvoicesPage() {
   const navigate = useNavigate()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
   const [showForm, setShowForm] = useState(false)
   const [entityName, setEntityName] = useState("")
@@ -617,6 +619,7 @@ export function InvoicesPage() {
         customer: customers.find((customer) => customer.id === invoice.customerId)
           || customers.find((customer) => customer.entityId === invoiceEntity?.id && customer.companyName === invoice.companyName),
         template: invoiceTemplate,
+        canRemoveBranding: brandingCanBeRemoved,
       })
       showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the ${invoiceTemplate.preset} template${invoiceEntity ? ` for ${invoiceEntity.companyName}` : ""}.`)
     } catch (error) {
@@ -631,7 +634,7 @@ export function InvoicesPage() {
     const result = await sharePdfViaWhatsApp({
       title: `Invoice ${invoice.sourceNumber || invoice.number}`,
       message: `Invoice ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
-      createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id) }),
+      createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved }),
     })
     if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
     if (result === "opened") showNotice("WhatsApp opened with the invoice message. This browser cannot attach the generated PDF automatically.")
@@ -642,7 +645,7 @@ export function InvoicesPage() {
     const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
     const customer = customers.find((item) => item.id === invoice.customerId)
       || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
-    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id) })
+    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
     const invoiceNumber = invoice.sourceNumber || invoice.number
     const message = await sendDocumentEmail({
       workspaceId: workspace.id,
@@ -672,7 +675,7 @@ export function InvoicesPage() {
         const savedCustomer = bulkCustomers.find((customer) => customer.companyName.trim().toLowerCase() === invoice.companyName.trim().toLowerCase())
         const newCustomer = bulkNewCustomers.find((customer) => customer.companyName.trim().toLowerCase() === invoice.companyName.trim().toLowerCase())
         const customer = savedCustomer || (newCustomer ? { ...newCustomer, id: `bulk-customer-${index}` } : undefined)
-        files.push(await createInvoicePdfFile({ invoice, entity: selectedBulkEntity, customer, template: templateFor(selectedBulkEntity.id) }))
+        files.push(await createInvoicePdfFile({ invoice, entity: selectedBulkEntity, customer, template: templateFor(selectedBulkEntity.id), canRemoveBranding: brandingCanBeRemoved }))
       }
       const downloadedOn = new Date().toISOString().slice(0, 10)
       downloadZip(files, `Invoices_${cleanInvoiceFileName(selectedBulkEntity.companyName)}_${downloadedOn}.zip`)
@@ -1512,6 +1515,7 @@ export function InvoicesPage() {
                 customer={customers.find((customer) => customer.id === pdfPreview.customerId)
                   || customers.find((customer) => customer.entityId === companies.find((company) => company.companyName === pdfPreview.entityName)?.id && customer.companyName === pdfPreview.companyName)}
                 template={templateFor(companies.find((company) => company.companyName === pdfPreview.entityName)?.id)}
+                canRemoveBranding={brandingCanBeRemoved}
               />
             </div>
           </div>

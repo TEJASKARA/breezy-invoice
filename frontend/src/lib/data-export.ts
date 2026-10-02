@@ -18,6 +18,7 @@ type CompleteExportInput = {
   expenses: Expense[]
   setup: Setup | null
   template: TemplateSettings
+  canRemoveBranding?: boolean
   tallySettings: TallySettings
   categories: ExportCategory[]
   dateFrom: string
@@ -116,7 +117,7 @@ export async function downloadCompleteDataExport(input: CompleteExportInput) {
   if (selected.has("invoices")) {
     for (const invoice of input.invoices) {
       const customer = input.customers.find((item) => item.id === invoice.customerId)
-      const pdf = await createInvoicePdfFile({ invoice, entity: input.entity, customer, template: input.template })
+      const pdf = await createInvoicePdfFile({ invoice, entity: input.entity, customer, template: input.template, canRemoveBranding: input.canRemoveBranding })
       files.push({ ...pdf, name: `Invoices/PDF/${pdf.name}` })
     }
     const xml = createTallySalesXml({ companyName: input.tallySettings.companyName, invoices: input.invoices, customers: input.customers, settings: input.tallySettings })
@@ -127,14 +128,14 @@ export async function downloadCompleteDataExport(input: CompleteExportInput) {
     const proformaTemplate = { ...input.template, elements: { ...input.template.elements, invoiceTitle: { ...input.template.elements.invoiceTitle, label: "QUOTATION / PROFORMA" } } }
     for (const proforma of input.proformas) {
       const customer = input.customers.find((item) => item.id === proforma.customerId)
-      const pdf = await createInvoicePdfFile({ invoice: proforma, entity: input.entity, customer, template: proformaTemplate, documentType: "quotation" })
+      const pdf = await createInvoicePdfFile({ invoice: proforma, entity: input.entity, customer, template: proformaTemplate, documentType: "quotation", canRemoveBranding: input.canRemoveBranding })
       files.push({ ...pdf, name: `Quotations/PDF/${pdf.name.replace(/\.pdf$/i, "_quotation.pdf")}` })
     }
   }
 
   if (selected.has("payslips")) {
     for (const payslip of input.payslips) {
-      const pdf = await createPayslipPdfFile({ payslip, entity: input.entity, template: input.template })
+      const pdf = await createPayslipPdfFile({ payslip, entity: input.entity, template: input.template, canRemoveBranding: input.canRemoveBranding })
       files.push({ ...pdf, name: `Payslips/PDF/${pdf.name}` })
     }
     const xml = createTallyPayrollXml({ companyName: input.tallySettings.companyName, payslips: input.payslips, employees: input.employees, settings: input.tallySettings })

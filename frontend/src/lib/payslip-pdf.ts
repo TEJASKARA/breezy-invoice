@@ -22,16 +22,18 @@ function fontName(style: TemplateSettings["fontStyle"]) {
   return "helvetica"
 }
 
-function addLogo(doc: JsPdfDocument, logoDataUrl: string, x: number, y: number) {
+function addLogo(doc: JsPdfDocument, logoDataUrl: string, x: number, y: number, size: number) {
   try {
-    doc.addImage(logoDataUrl, logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", x, y, 20, 20, undefined, "FAST")
+    doc.addImage(logoDataUrl, logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", x, y, size, size, undefined, "FAST")
     return true
   } catch {
     return false
   }
 }
 
-export async function createPayslipPdf({ payslip, entity, template }: { payslip: Payslip; entity?: Company; template: TemplateSettings }) {
+type PayslipPdfInput = { payslip: Payslip; entity?: Company; template: TemplateSettings; canRemoveBranding?: boolean }
+
+export async function createPayslipPdf({ payslip, entity, template, canRemoveBranding = false }: PayslipPdfInput) {
   const { jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true })
   const accent = colour(template.accentColor)
@@ -41,13 +43,31 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   const red: [number, number, number] = [225, 29, 72]
   const baseFont = fontName(template.fontStyle)
   const entityName = entity?.companyName || payslip.entityName || "Issuing entity"
+  const logoSize = Math.min(36, Math.max(14, template.logoSize / 3))
+  const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
 
-  doc.setFillColor(...colour(template.pageColor))
+  const background = colour(template.pageColor)
+  doc.setFillColor(...background)
   doc.rect(0, 0, 210, 297, "F")
+  if (template.watermarkEnabled && template.watermarkText.trim()) {
+    const opacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
+    const watermarkInk = 82
+    const watermarkColour = background.map((channel) => Math.round(channel * (1 - opacity) + watermarkInk * opacity)) as [number, number, number]
+    doc.setTextColor(...watermarkColour)
+    doc.setFont(baseFont, "bold")
+    doc.setFontSize(31)
+    doc.text(template.watermarkText.trim().slice(0, 48).toUpperCase(), 105, 148.5, { align: "center", angle: 32 })
+  }
+  if (showChanaxBranding) {
+    doc.setTextColor(148, 163, 184)
+    doc.setFont(baseFont, "normal")
+    doc.setFontSize(6.5)
+    doc.text("Created by ChanaX", pageWidth - margin, 290, { align: "right" })
+  }
   doc.setFont(baseFont, "normal")
   doc.setTextColor(...ink)
-  const logoShown = Boolean(template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin, 18))
-  const headerX = 42
+  const logoShown = Boolean(template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin, 18, logoSize))
+  const headerX = logoShown ? margin + logoSize + 6 : 42
   if (!logoShown) {
     doc.setFillColor(...accent)
     doc.roundedRect(margin, 18, 20, 20, 2, 2, "F")
@@ -196,7 +216,7 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   return doc
 }
 
-export async function downloadPayslipPdf(input: { payslip: Payslip; entity?: Company; template: TemplateSettings }) {
+export async function downloadPayslipPdf(input: PayslipPdfInput) {
   const doc = await createPayslipPdf(input)
   doc.save(payslipPdfFileName(input.payslip))
   trackAction("payslip_pdf_downloaded")
@@ -207,7 +227,7 @@ export function payslipPdfFileName(payslip: Payslip) {
   return `${cleanPayslipFileName(payslip.employeeName)}_${cleanPayslipFileName(date)}.pdf`
 }
 
-export async function createPayslipPdfFile(input: { payslip: Payslip; entity?: Company; template: TemplateSettings }) {
+export async function createPayslipPdfFile(input: PayslipPdfInput) {
   const doc = await createPayslipPdf(input)
   return {
     name: payslipPdfFileName(input.payslip),

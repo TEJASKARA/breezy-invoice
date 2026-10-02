@@ -13,6 +13,7 @@ import { sendEmployeeLetterEmail } from "@/lib/document-email-api"
 import { useMvpStore, type EmployeeLetter } from "@/lib/mvp-store"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { trackAction } from "@/lib/usage-tracking"
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -31,8 +32,9 @@ function templateBody(type: EmployeeLetter["letterType"], name: string, effectiv
 
 export function EmployeeLettersPage() {
   const { companies, employees, employeeLetters, templateFor, addEmployeeLetter, deleteEmployeeLetter } = useMvpStore()
-  const { can, workspace } = useWorkspaceAccess()
+  const { can, workspace, subscription } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const [employeeId, setEmployeeId] = useState(employees[0]?.id || "")
   const employee = employees.find((item) => item.id === employeeId)
   const entity = companies.find((item) => item.id === employee?.entityId)
@@ -70,7 +72,7 @@ export function EmployeeLettersPage() {
   async function documentFor(letter: EmployeeLetter) {
     const targetEmployee = employees.find((item) => item.id === letter.employeeId)
     if (!targetEmployee) throw new Error("The linked employee could not be found.")
-    return { doc: await createEmployeeLetterPdf({ letter, employee: targetEmployee, entity: companies.find((item) => item.id === letter.entityId), template: templateFor(letter.entityId) }), employee: targetEmployee }
+    return { doc: await createEmployeeLetterPdf({ letter, employee: targetEmployee, entity: companies.find((item) => item.id === letter.entityId), template: templateFor(letter.entityId), canRemoveBranding: brandingCanBeRemoved }), employee: targetEmployee }
   }
   async function download(letter: EmployeeLetter) { const { doc, employee: target } = await documentFor(letter); doc.save(employeeLetterFileName(letter, target)); trackAction("employee_letter_pdf_downloaded", { letter_type: letter.letterType }) }
   async function share(letter: EmployeeLetter) { const target = employees.find((item) => item.id === letter.employeeId); if (!target) return; await sharePdfViaWhatsApp({ title: letter.title, message: `${letter.title} for ${target.employeeName}.`, createFile: async () => { const { doc } = await documentFor(letter); return { name: employeeLetterFileName(letter, target), data: new Uint8Array(doc.output("arraybuffer")) } } }) }

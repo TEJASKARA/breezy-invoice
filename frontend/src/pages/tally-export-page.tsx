@@ -13,6 +13,7 @@ import { pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { createTallyPayrollXml, createTallySalesXml, downloadXml } from "@/lib/tally-xml"
 import { downloadCompleteDataExport, type ExportCategory } from "@/lib/data-export"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
+import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 
 const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 const today = () => new Date().toISOString().slice(0, 10)
@@ -42,8 +43,9 @@ function defaultTallySettings(companyName: string): TallySettings {
 
 export function TallyExportPage() {
   const { companies, customers, invoices, proformas, employees, payslips, expenses, setup, templateFor, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, subscription } = useWorkspaceAccess()
   const canManage = can("data_export.manage")
+  const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [dateFrom, setDateFrom] = useState(financialYearStart())
   const [dateTo, setDateTo] = useState(today())
@@ -223,6 +225,7 @@ export function TallyExportPage() {
         expenses: selectedExpenses,
         setup,
         template: templateFor(entity.id),
+        canRemoveBranding: brandingCanBeRemoved,
         tallySettings: settings,
         categories: archiveCategories,
         dateFrom,

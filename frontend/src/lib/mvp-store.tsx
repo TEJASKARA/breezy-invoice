@@ -221,6 +221,11 @@ export type TemplateSettings = {
   accentColor: string
   pageColor: string
   logoDataUrl: string | null
+  logoSize: number
+  watermarkEnabled: boolean
+  watermarkText: string
+  watermarkOpacity: number
+  showChanaxBranding: boolean
   signatureDataUrl: string | null
   signatureMode: "uploaded" | "system" | "none"
   showTerms: boolean
@@ -319,6 +324,11 @@ const defaultTemplate = (): TemplateSettings => ({
   accentColor: "#2563EB",
   pageColor: "#FFFFFF",
   logoDataUrl: null,
+  logoSize: 64,
+  watermarkEnabled: false,
+  watermarkText: "DRAFT",
+  watermarkOpacity: 0.1,
+  showChanaxBranding: true,
   signatureDataUrl: null,
   signatureMode: "system",
   showTerms: true,
