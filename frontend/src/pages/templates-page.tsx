@@ -24,6 +24,7 @@ const DEFAULT_SCOPE = "default"
 const selectClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
 
 const colors = ["#2563EB", "#0F172A", "#059669", "#E11D48", "#D97706", "#7C3AED"]
+const pageColors = ["#FFFFFF", "#F8FAFC", "#FFF7ED", "#FFFBEB", "#F0FDF4", "#EFF6FF", "#FAF5FF"]
 const editableElements: { id: TemplateElementId; name: string; canRename: boolean }[] = [
   { id: "logo", name: "Company logo", canRename: false },
   { id: "issuer", name: "Company details", canRename: false },
@@ -47,9 +48,9 @@ const resetElements = (): TemplateSettings["elements"] => ({
   signature: { visible: true, offsetX: 0, offsetY: 0, label: "Authorised signatory" },
 })
 
-function TemplateThumbnail({ preset, color }: { preset: TemplateSettings["preset"]; color: string }) {
+function TemplateThumbnail({ preset, color, pageColor }: { preset: TemplateSettings["preset"]; color: string; pageColor: string }) {
   return (
-    <div className="aspect-[1.45] rounded-md border bg-white p-2 shadow-sm">
+    <div className="aspect-[1.45] rounded-md border p-2 shadow-sm" style={{ backgroundColor: pageColor }}>
       {preset === "breeze" && <div className="mb-2 h-3 rounded-sm" style={{ backgroundColor: color }} />}
       <div className="flex justify-between gap-2">
         <div className="space-y-1"><div className="h-1.5 w-12 rounded-full" style={{ backgroundColor: color }} /><div className="h-1 w-8 rounded-full bg-slate-200" /></div>
@@ -113,6 +114,7 @@ export function TemplatesPage() {
   const signatureInputRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
   const [colorDraft, setColorDraft] = useState(template.accentColor)
+  const [pageColorDraft, setPageColorDraft] = useState(template.pageColor)
   const [selectedTextId, setSelectedTextId] = useState<string | null>(template.customTexts[0]?.id ?? null)
   const [selectedElementId, setSelectedElementId] = useState<TemplateElementId | null>("invoiceTitle")
   const [previewDocumentType, setPreviewDocumentType] = useState<"invoice" | "quotation">("invoice")
@@ -151,6 +153,7 @@ export function TemplatesPage() {
   const selectedElement = selectedElementId ? template.elements[selectedElementId] : null
 
   useEffect(() => setColorDraft(template.accentColor), [template.accentColor])
+  useEffect(() => setPageColorDraft(template.pageColor), [template.pageColor])
   useEffect(() => {
     setSelectedTextId(null)
     setSelectedElementId("invoiceTitle")
@@ -222,6 +225,7 @@ export function TemplatesPage() {
     updateTemplate({
       preset: "breeze",
       accentColor: "#2563EB",
+      pageColor: "#FFFFFF",
       logoDataUrl: null,
       signatureDataUrl: null,
       signatureMode: "system",
@@ -356,7 +360,7 @@ export function TemplatesPage() {
               <div className="space-y-3">
                 {templates.map((item) => (
                   <button key={item.id} type="button" onClick={() => updateTemplate({ preset: item.id })} className={cn("grid w-full grid-cols-[88px_1fr_auto] items-center gap-3 rounded-lg border p-2 text-left transition hover:bg-muted/50", template.preset === item.id && "border-foreground ring-1 ring-foreground")}>
-                    <TemplateThumbnail preset={item.id} color={template.accentColor} />
+                    <TemplateThumbnail preset={item.id} color={template.accentColor} pageColor={template.pageColor} />
                     <span className="min-w-0"><span className="block text-sm font-medium">{item.name}</span><span className="block text-xs text-muted-foreground">{item.description}</span></span>
                     {template.preset === item.id && <Check className="size-4" aria-label="Selected" />}
                   </button>
@@ -488,6 +492,16 @@ export function TemplatesPage() {
                 {colors.map((color) => <button key={color} type="button" aria-label={`Use brand color ${color}`} onClick={() => { setColorDraft(color); updateTemplate({ accentColor: color }) }} className={cn("size-8 rounded-full border-2 border-background shadow-sm ring-offset-2", template.accentColor.toUpperCase() === color && "ring-2 ring-foreground")} style={{ backgroundColor: color }} />)}
                 <Input type="color" value={template.accentColor} onChange={(event) => { const value = event.target.value.toUpperCase(); setColorDraft(value); updateTemplate({ accentColor: value }) }} className="size-9 p-1" aria-label="Choose a custom brand color" />
                 <Input value={colorDraft} onChange={(event) => { const value = event.target.value.toUpperCase(); if (/^#[0-9A-F]{0,6}$/.test(value)) setColorDraft(value) }} onBlur={() => /^#[0-9A-F]{6}$/.test(colorDraft) ? updateTemplate({ accentColor: colorDraft }) : setColorDraft(template.accentColor)} className="h-9 w-28 font-mono text-xs" aria-label="Brand color hex value" />
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div><Label>Page color</Label><p className="mt-1 text-xs text-muted-foreground">Changes the document paper colour in previews and downloaded PDFs. Light colours provide the best readability.</p></div>
+              <div className="flex flex-wrap items-center gap-2">
+                {pageColors.map((color) => <button key={color} type="button" aria-label={`Use page color ${color}`} onClick={() => { setPageColorDraft(color); updateTemplate({ pageColor: color }) }} className={cn("size-8 rounded-full border shadow-sm ring-offset-2", template.pageColor.toUpperCase() === color && "ring-2 ring-foreground")} style={{ backgroundColor: color }} />)}
+                <Input type="color" value={template.pageColor} onChange={(event) => { const value = event.target.value.toUpperCase(); setPageColorDraft(value); updateTemplate({ pageColor: value }) }} className="size-9 p-1" aria-label="Choose a custom page color" />
+                <Input value={pageColorDraft} onChange={(event) => { const value = event.target.value.toUpperCase(); if (/^#[0-9A-F]{0,6}$/.test(value)) setPageColorDraft(value) }} onBlur={() => /^#[0-9A-F]{6}$/.test(pageColorDraft) ? updateTemplate({ pageColor: pageColorDraft }) : setPageColorDraft(template.pageColor)} className="h-9 w-28 font-mono text-xs" aria-label="Page color hex value" />
+                <Button type="button" size="sm" variant="outline" onClick={() => { setPageColorDraft("#FFFFFF"); updateTemplate({ pageColor: "#FFFFFF" }) }}>Reset white</Button>
               </div>
             </section>
 

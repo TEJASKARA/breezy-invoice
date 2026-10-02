@@ -159,8 +159,8 @@ export function InvoicePreview({
   return (
     <article
       ref={pageRef}
-      className={`${fontClass} relative mx-auto aspect-[210/297] min-h-[920px] w-full max-w-[760px] overflow-hidden bg-white p-8 text-zinc-900 shadow-sm md:p-12 ${isClassic ? "border-4 border-double" : "border"}`}
-      style={{ borderColor: isClassic ? template.accentColor : undefined, containerType: "inline-size" }}
+      className={`${fontClass} relative mx-auto aspect-[210/297] min-h-[920px] w-full max-w-[760px] overflow-hidden p-8 text-zinc-900 shadow-sm md:p-12 ${isClassic ? "border-4 border-double" : "border"}`}
+      style={{ backgroundColor: template.pageColor, borderColor: isClassic ? template.accentColor : undefined, containerType: "inline-size" }}
     >
       {editor && activeVerticalGuide !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-50 border-l-2 border-blue-500" style={{ left: `${activeVerticalGuide}%` }} /> : null}
       {!isClassic && !isMinimal && <div className="-mx-8 -mt-8 mb-8 h-2 md:-mx-12 md:-mt-12" style={{ backgroundColor: template.accentColor }} />}

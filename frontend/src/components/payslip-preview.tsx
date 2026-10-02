@@ -17,7 +17,7 @@ export function PayslipPreview({
   const fontClass = template.fontStyle === "serif" ? "font-serif" : template.fontStyle === "mono" ? "font-mono" : "font-sans"
 
   return (
-    <article className={`${fontClass} mx-auto min-h-[760px] w-full max-w-[820px] border bg-white p-8 text-zinc-900 shadow-sm md:p-12`}>
+    <article className={`${fontClass} mx-auto min-h-[760px] w-full max-w-[820px] border p-8 text-zinc-900 shadow-sm md:p-12`} style={{ backgroundColor: template.pageColor }}>
       <header className="flex items-start justify-between gap-6 border-b pb-8">
         <div className="flex min-w-0 items-start gap-4">
           {template.logoDataUrl ? (

@@ -42,6 +42,8 @@ export async function createPayslipPdf({ payslip, entity, template }: { payslip:
   const baseFont = fontName(template.fontStyle)
   const entityName = entity?.companyName || payslip.entityName || "Issuing entity"
 
+  doc.setFillColor(...colour(template.pageColor))
+  doc.rect(0, 0, 210, 297, "F")
   doc.setFont(baseFont, "normal")
   doc.setTextColor(...ink)
   const logoShown = Boolean(template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin, 18))

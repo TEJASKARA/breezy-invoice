@@ -219,6 +219,7 @@ const defaultTemplateElements = (): Record<TemplateElementId, TemplateElementSet
 export type TemplateSettings = {
   preset: "classic" | "breeze" | "minimal"
   accentColor: string
+  pageColor: string
   logoDataUrl: string | null
   signatureDataUrl: string | null
   signatureMode: "uploaded" | "system" | "none"
@@ -316,6 +317,7 @@ const id = () => crypto.randomUUID()
 const defaultTemplate = (): TemplateSettings => ({
   preset: "breeze",
   accentColor: "#2563EB",
+  pageColor: "#FFFFFF",
   logoDataUrl: null,
   signatureDataUrl: null,
   signatureMode: "system",

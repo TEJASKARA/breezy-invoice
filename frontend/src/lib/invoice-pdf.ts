@@ -84,7 +84,12 @@ export async function createInvoicePdf({
     x: (element(id).offsetX / 100) * pageWidth,
     y: (element(id).offsetY / 100) * pageHeight,
   })
+  const paintPageBackground = () => {
+    doc.setFillColor(...colour(template.pageColor))
+    doc.rect(0, 0, pageWidth, pageHeight, "F")
+  }
 
+  paintPageBackground()
   doc.setFont(baseFont, "normal")
   doc.setTextColor(...ink)
 
@@ -239,6 +244,7 @@ export async function createInvoicePdf({
     const rowHeight = Math.max(template.compact ? 11 : 14, descriptionLines.length * 4 + 6)
     if (rowY + rowHeight > 222) {
       doc.addPage()
+      paintPageBackground()
       doc.setFont(baseFont, "bold")
       doc.setTextColor(...ink)
       doc.setFontSize(12)
@@ -264,6 +270,7 @@ export async function createInvoicePdf({
 
   if (rowY > 165) {
     doc.addPage()
+    paintPageBackground()
     doc.setFont(baseFont, "bold")
     doc.setTextColor(...ink)
     doc.setFontSize(12)
