@@ -191,3 +191,18 @@ def test_endpoint_checks_permission_and_document(
     document.assert_awaited_once_with(WORKSPACE, DOCUMENT, "invoice")
     assert send.await_args.kwargs["to_number"] == "919876543210"
     assert send.await_args.kwargs["sent_by_email"] == "owner@example.com"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "hint"),
+    [(404, "POST method"), (403, "X-ChanaX-Secret"), (500, "executions")],
+)
+async def test_webhook_error_names_the_cause(
+    monkeypatch: pytest.MonkeyPatch, status_code: int, hint: str
+) -> None:
+    _mock_webhook(monkeypatch, lambda request: httpx.Response(status_code))
+    settings = Settings(_env_file=None, n8n_whatsapp_webhook_url=WEBHOOK)
+    with pytest.raises(WhatsAppDeliveryError, match=hint) as exc_info:
+        await send_document_whatsapp(settings, **_send_kwargs())
+    assert f"n8n replied {status_code}" in str(exc_info.value)

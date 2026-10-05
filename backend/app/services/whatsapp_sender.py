@@ -74,6 +74,30 @@ def build_whatsapp_payload(
     }
 
 
+def _webhook_error_message(status_code: int) -> str:
+    """Says what n8n answered so a misconfigured workflow is quick to fix."""
+    if status_code == 404:
+        reason = (
+            "the n8n workflow is not active, or its Webhook node is not set "
+            "to the POST method"
+        )
+    elif status_code in (401, 403):
+        reason = (
+            "n8n rejected the secret - N8N_WHATSAPP_SECRET must match the "
+            "X-ChanaX-Secret header credential on the Webhook node"
+        )
+    elif status_code == 413:
+        reason = "the PDF is larger than n8n accepts"
+    elif status_code >= 500:
+        reason = "the n8n workflow failed while sending - check its executions"
+    else:
+        reason = "n8n refused the request"
+    return (
+        f"WhatsApp could not send this document: {reason} "
+        f"(n8n replied {status_code})."
+    )
+
+
 async def send_document_whatsapp(
     settings: Settings,
     *,
@@ -120,10 +144,12 @@ async def send_document_whatsapp(
             "The WhatsApp service could not be reached. Please try again."
         ) from exc
     if response.is_error:
-        logger.warning("WhatsApp webhook returned %s", response.status_code)
-        raise WhatsAppDeliveryError(
-            "WhatsApp could not send this document. Please try again."
+        logger.warning(
+            "WhatsApp webhook returned %s: %s",
+            response.status_code,
+            response.text[:300],
         )
+        raise WhatsAppDeliveryError(_webhook_error_message(response.status_code))
     # n8n may answer {"success": false, "error": "..."} with a 200.
     try:
         body = response.json()
