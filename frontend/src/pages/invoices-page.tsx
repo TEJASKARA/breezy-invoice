@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
-import { sendDocumentEmail } from "@/lib/document-email-api"
+import { sendDocumentEmail, sendDocumentWhatsApp } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
@@ -655,6 +655,26 @@ export function InvoicesPage() {
       documentNumber: invoiceNumber,
       subject: `Invoice ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
       message: `Hello,\n\nPlease find invoice ${invoiceNumber} attached.\n\nRegards,\n${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
+      filename: file.name,
+      pdf: file.data,
+    })
+    showNotice(message)
+  }
+
+  const sendInvoiceOnWhatsApp = async (invoice: Invoice, toNumber: string) => {
+    if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
+    const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+    const customer = customers.find((item) => item.id === invoice.customerId)
+      || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
+    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
+    const invoiceNumber = invoice.sourceNumber || invoice.number
+    const message = await sendDocumentWhatsApp({
+      workspaceId: workspace.id,
+      documentId: invoice.id,
+      toNumber,
+      documentType: "invoice",
+      documentNumber: invoiceNumber,
+      message: `Invoice ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
       filename: file.name,
       pdf: file.data,
     })
@@ -1534,6 +1554,11 @@ export function InvoicesPage() {
         onWhatsApp={async () => {
           if (!shareTarget) return
           await shareInvoiceOnWhatsApp(shareTarget)
+          setShareTarget(null)
+        }}
+        onWhatsAppSend={async (number) => {
+          if (!shareTarget) return
+          await sendInvoiceOnWhatsApp(shareTarget, number)
           setShareTarget(null)
         }}
       />

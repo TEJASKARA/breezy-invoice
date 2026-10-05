@@ -116,3 +116,40 @@ adjustment, so the allocation remains auditable in Supabase. Every allocation
 adds the same number of document and quotation top-up credits and records the
 authenticated platform administrator. The service-role key and administrator
 UUID list remain backend-only and must never be placed in Vercel variables.
+
+## WhatsApp document sending (n8n)
+
+"Share → WhatsApp → Send PDF" calls `POST /api/v1/documents/document-whatsapp`.
+The API checks the user's `invoices.read` permission and that the invoice or
+quotation belongs to the workspace, then POSTs this JSON to the n8n webhook:
+
+```json
+{
+  "event": "document.whatsapp",
+  "to": "919876543210",
+  "to_e164": "+919876543210",
+  "message": "Invoice INV-0001 from Acme for Sample Client.",
+  "document": { "type": "invoice", "number": "INV-0001", "id": "<uuid>" },
+  "file": {
+    "filename": "Sample-Client_2026-10-05.pdf",
+    "mime_type": "application/pdf",
+    "size_bytes": 48211,
+    "base64": "JVBERi0xLjQK..."
+  },
+  "workspace_id": "<uuid>",
+  "sent_by": { "user_id": "<uuid>", "email": "owner@example.com" },
+  "sent_at": "2026-10-05T06:30:00+00:00"
+}
+```
+
+- `to` is digits only with country code; `file.base64` is the raw PDF (no `data:` prefix, max 10 MB).
+- Header `X-ChanaX-Secret: <N8N_WHATSAPP_SECRET>` is sent when the secret is set.
+- n8n must answer with a 2xx. A 2xx body of `{"success": false, "error": "..."}` is
+  shown to the user as the failure reason; any other 2xx counts as sent.
+
+Set in `backend/.env` on the server, then restart the API:
+
+```
+N8N_WHATSAPP_WEBHOOK_URL=https://n8n.example.com/webhook/<id>
+N8N_WHATSAPP_SECRET=<optional shared secret>
+```

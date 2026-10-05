@@ -51,6 +51,7 @@ const FEATURE_LABELS: Record<string, string> = {
   complete_data_export: "Complete data export",
   zip_downloaded: "ZIP downloaded",
   whatsapp_share: "Shared on WhatsApp",
+  whatsapp_sent: "PDF sent on WhatsApp",
   email_sent: "Document emailed",
   gstin_verified: "GSTIN verified",
 }

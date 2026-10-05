@@ -83,3 +83,44 @@ export async function sendDocumentEmail(input: {
   trackAction("email_sent", { document: input.documentType })
   return payload.message || `The document was emailed to ${input.toEmail}.`
 }
+
+/** Sends the PDF to the recipient's WhatsApp through the ChanaX WhatsApp number (backend → n8n). */
+export async function sendDocumentWhatsApp(input: {
+  workspaceId: string
+  documentId: string
+  toNumber: string
+  documentType: "invoice" | "quotation"
+  documentNumber: string
+  message: string
+  filename: string
+  pdf: Uint8Array
+}) {
+  if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
+  if (!supabase) throw new Error("Supabase is not configured.")
+  const { data, error } = await supabase.auth.getSession()
+  if (error || !data.session?.access_token) throw new Error("Sign in again before sending this document.")
+  const response = await fetch(`${apiUrl}/api/v1/documents/document-whatsapp`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspace_id: input.workspaceId,
+      document_id: input.documentId,
+      to_number: input.toNumber,
+      document_type: input.documentType,
+      document_number: input.documentNumber,
+      message: input.message,
+      filename: input.filename,
+      pdf_base64: base64Bytes(input.pdf),
+    }),
+  })
+  let payload: { detail?: string | { msg?: string }[]; message?: string } = {}
+  try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
+  if (!response.ok) {
+    const detail = Array.isArray(payload.detail)
+      ? String(payload.detail[0]?.msg || "").replace(/^Value error,\s*/i, "")
+      : payload.detail
+    throw new Error(detail || "The document could not be sent on WhatsApp.")
+  }
+  trackAction("whatsapp_sent", { document: input.documentType })
+  return payload.message || `The document was sent on WhatsApp to ${input.toNumber}.`
+}

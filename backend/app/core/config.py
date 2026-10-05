@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     smtp_from_name: str = "ChanaX"
     smtp_use_tls: bool = True
 
+    # n8n workflow that sends document PDFs through the ChanaX WhatsApp number.
+    n8n_whatsapp_webhook_url: str = ""
+    n8n_whatsapp_secret: str = ""
+
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
@@ -64,6 +68,10 @@ class Settings(BaseSettings):
             and self.whitebooks_client_secret
             and self.whitebooks_email
         )
+
+    @property
+    def whatsapp_is_configured(self) -> bool:
+        return self.n8n_whatsapp_webhook_url.strip().startswith("https://")
 
     @property
     def smtp_is_configured(self) -> bool:

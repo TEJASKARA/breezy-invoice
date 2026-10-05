@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { LoaderCircle, Mail, MessageCircle, X } from "lucide-react"
+import { LoaderCircle, Mail, MessageCircle, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,21 +8,37 @@ import { Label } from "@/components/ui/label"
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/** Digits with country code (919876543210), or null when the number cannot be a WhatsApp number. */
+function normalizeWhatsAppNumber(value: string) {
+  let digits = value.trim().replace(/[\s\-().]/g, "")
+  if (digits.startsWith("+")) digits = digits.slice(1)
+  else if (digits.startsWith("00")) digits = digits.slice(2)
+  if (!/^\d+$/.test(digits)) return null
+  if (digits.length === 10 && /^[6-9]/.test(digits)) digits = `91${digits}`
+  else if (digits.length === 11 && /^0[6-9]/.test(digits)) digits = `91${digits.slice(1)}`
+  return digits.length >= 10 && digits.length <= 15 && !digits.startsWith("0") ? digits : null
+}
+
 export function DocumentShareDialog({
   title,
   open,
   onClose,
   onEmail,
   onWhatsApp,
+  onWhatsAppSend,
 }: {
   title: string
   open: boolean
   onClose: () => void
   onEmail: (email: string) => Promise<void>
+  /** Opens WhatsApp on this device with a prepared message (the user attaches/sends it themselves). */
   onWhatsApp: () => Promise<void>
+  /** Sends the PDF straight to the recipient's WhatsApp number. When omitted, only onWhatsApp is offered. */
+  onWhatsAppSend?: (number: string) => Promise<void>
 }) {
-  const [mode, setMode] = useState<"choose" | "email">("choose")
+  const [mode, setMode] = useState<"choose" | "email" | "whatsapp">("choose")
   const [email, setEmail] = useState("")
+  const [whatsAppNumber, setWhatsAppNumber] = useState("")
   const [pending, setPending] = useState<"email" | "whatsapp" | null>(null)
   const [error, setError] = useState("")
 
@@ -30,6 +46,7 @@ export function DocumentShareDialog({
     if (!open) return
     setMode("choose")
     setEmail("")
+    setWhatsAppNumber("")
     setPending(null)
     setError("")
   }, [open])
@@ -46,6 +63,21 @@ export function DocumentShareDialog({
     setError("")
     try { await onEmail(recipient) } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "The email could not be sent.")
+      setPending(null)
+    }
+  }
+
+  const sendWhatsApp = async () => {
+    if (!onWhatsAppSend) return
+    const recipient = normalizeWhatsAppNumber(whatsAppNumber)
+    if (!recipient) {
+      setError("Enter a valid WhatsApp number with its country code, for example +91 98765 43210.")
+      return
+    }
+    setPending("whatsapp")
+    setError("")
+    try { await onWhatsAppSend(recipient) } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "The document could not be sent on WhatsApp.")
       setPending(null)
     }
   }
@@ -69,7 +101,15 @@ export function DocumentShareDialog({
       <CardContent className="space-y-4">
         {mode === "choose" ? <div className="grid gap-3 sm:grid-cols-2">
           <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => setMode("email")}><Mail className="size-5" /><span className="text-left"><span className="block font-medium">Email</span><span className="block text-xs font-normal text-muted-foreground">Send the PDF attachment</span></span></Button>
-          <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => void shareWhatsApp()}>{pending === "whatsapp" ? <LoaderCircle className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}<span className="text-left"><span className="block font-medium">WhatsApp</span><span className="block text-xs font-normal text-muted-foreground">Open app or WhatsApp Web</span></span></Button>
+          <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => { if (onWhatsAppSend) { setMode("whatsapp"); setError("") } else void shareWhatsApp() }}>{pending === "whatsapp" ? <LoaderCircle className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}<span className="text-left"><span className="block font-medium">WhatsApp</span><span className="block text-xs font-normal text-muted-foreground">{onWhatsAppSend ? "Send the PDF to a number" : "Open app or WhatsApp Web"}</span></span></Button>
+        </div> : mode === "whatsapp" ? <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="document-share-whatsapp">Recipient WhatsApp number</Label>
+            <Input id="document-share-whatsapp" type="tel" inputMode="tel" autoComplete="off" autoFocus value={whatsAppNumber} onChange={(event) => { setWhatsAppNumber(event.target.value); setError("") }} placeholder="+91 98765 43210" onKeyDown={(event) => { if (event.key === "Enter") void sendWhatsApp() }} />
+            <p className="text-xs text-muted-foreground">Include the country code. A 10-digit Indian mobile number is sent to +91 automatically. The PDF is delivered from the ChanaX WhatsApp number.</p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={pending !== null} onClick={() => { setMode("choose"); setError("") }}>Back</Button><Button disabled={pending !== null} onClick={() => void sendWhatsApp()}>{pending === "whatsapp" ? <LoaderCircle className="animate-spin" /> : <Send />}{pending === "whatsapp" ? "Sending PDF" : "Send PDF"}</Button></div>
+          <button type="button" disabled={pending !== null} onClick={() => void shareWhatsApp()} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50">Send from my own WhatsApp instead</button>
         </div> : <div className="space-y-4">
           <div className="space-y-2"><Label htmlFor="document-share-email">Recipient email</Label><Input id="document-share-email" type="email" autoFocus value={email} onChange={(event) => { setEmail(event.target.value); setError("") }} placeholder="customer@company.com" onKeyDown={(event) => { if (event.key === "Enter") void emailDocument() }} /></div>
           <div className="flex justify-end gap-2"><Button variant="outline" disabled={pending !== null} onClick={() => setMode("choose")}>Back</Button><Button disabled={pending !== null} onClick={() => void emailDocument()}>{pending === "email" ? <LoaderCircle className="animate-spin" /> : <Mail />}{pending === "email" ? "Sending PDF" : "Send PDF"}</Button></div>
