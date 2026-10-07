@@ -28,12 +28,14 @@ type ImportCustomer = Omit<Customer, "id">
 type ManualCustomer = Omit<ImportCustomer, "entityId">
 type DraftLineItem = Omit<InvoiceLineItem, "taxableAmount" | "cgstAmount" | "sgstAmount" | "igstAmount"> & {
   taxableAmount: string
+  totalAmount: string
   cgstAmount: string
   sgstAmount: string
   igstAmount: string
   cgstRate: string
   sgstRate: string
   igstRate: string
+  amountBasis: "taxable" | "total"
 }
 type InvoiceDraft = {
   showForm: boolean
@@ -64,35 +66,78 @@ const correctionLabels: Record<InvoiceCorrectionMethod, string> = {
 }
 const roundMoney = (value: number) => Math.round(value * 100) / 100
 const rateFromAmount = (amount: number, taxableAmount: number) => taxableAmount > 0 ? roundMoney(amount * 100 / taxableAmount) : 0
+const gstRateOptions = [5, 12, 18, 28]
+const moneyInputValue = (value: number) => value > 0 ? String(roundMoney(value)) : ""
+const clampRate = (value: string) => Math.min(100, Math.max(0, Number(value) || 0))
+const draftRate = (value: string) => Math.min(100, Math.max(0, Number(value) || 0))
+const draftLineTaxTotal = (line: Pick<DraftLineItem, "cgstRate" | "sgstRate" | "igstRate">) => draftRate(line.igstRate) || draftRate(line.cgstRate) + draftRate(line.sgstRate)
+const taxAmountsForTaxable = (line: Pick<DraftLineItem, "cgstRate" | "sgstRate" | "igstRate">, taxableAmount: number) => ({
+  cgstAmount: roundMoney(taxableAmount * draftRate(line.cgstRate) / 100),
+  sgstAmount: roundMoney(taxableAmount * draftRate(line.sgstRate) / 100),
+  igstAmount: roundMoney(taxableAmount * draftRate(line.igstRate) / 100),
+})
+const recalculateDraftLineFromTaxable = (line: DraftLineItem): DraftLineItem => {
+  const taxableAmount = Math.max(0, Number(line.taxableAmount) || 0)
+  const tax = taxAmountsForTaxable(line, taxableAmount)
+  return {
+    ...line,
+    cgstAmount: moneyInputValue(tax.cgstAmount),
+    sgstAmount: moneyInputValue(tax.sgstAmount),
+    igstAmount: moneyInputValue(tax.igstAmount),
+    totalAmount: moneyInputValue(taxableAmount + tax.cgstAmount + tax.sgstAmount + tax.igstAmount),
+  }
+}
+const recalculateDraftLineFromTotal = (line: DraftLineItem): DraftLineItem => {
+  const totalAmount = Math.max(0, Number(line.totalAmount) || 0)
+  const taxRate = draftLineTaxTotal(line)
+  const taxableAmount = taxRate > 0 ? roundMoney(totalAmount / (1 + taxRate / 100)) : totalAmount
+  const tax = taxAmountsForTaxable(line, taxableAmount)
+  return {
+    ...line,
+    taxableAmount: moneyInputValue(taxableAmount),
+    cgstAmount: moneyInputValue(tax.cgstAmount),
+    sgstAmount: moneyInputValue(tax.sgstAmount),
+    igstAmount: moneyInputValue(tax.igstAmount),
+    totalAmount: moneyInputValue(totalAmount),
+  }
+}
+const recalculateDraftLine = (line: DraftLineItem) => line.amountBasis === "total" && line.totalAmount
+  ? recalculateDraftLineFromTotal(line)
+  : recalculateDraftLineFromTaxable(line)
 const newDraftLine = (hsnSac = ""): DraftLineItem => ({
   id: crypto.randomUUID(),
   description: "",
   hsnSac,
   taxableAmount: "",
+  totalAmount: "",
   cgstAmount: "",
   sgstAmount: "",
   igstAmount: "",
   cgstRate: "",
   sgstRate: "",
   igstRate: "",
+  amountBasis: "taxable",
 })
 const restoreDraftLine = (value: Partial<DraftLineItem>): DraftLineItem => {
   const taxableAmount = Math.max(0, Number(value.taxableAmount) || 0)
   const cgstAmount = Math.max(0, Number(value.cgstAmount) || 0)
   const sgstAmount = Math.max(0, Number(value.sgstAmount) || 0)
   const igstAmount = Math.max(0, Number(value.igstAmount) || 0)
+  const totalAmount = Math.max(0, Number(value.totalAmount) || taxableAmount + cgstAmount + sgstAmount + igstAmount)
   return {
     ...newDraftLine(String(value.hsnSac || "")),
     ...value,
     id: String(value.id || crypto.randomUUID()),
     description: String(value.description || ""),
     taxableAmount: taxableAmount ? String(taxableAmount) : "",
+    totalAmount: totalAmount ? String(roundMoney(totalAmount)) : "",
     cgstAmount: cgstAmount ? String(cgstAmount) : "",
     sgstAmount: sgstAmount ? String(sgstAmount) : "",
     igstAmount: igstAmount ? String(igstAmount) : "",
     cgstRate: String(value.cgstRate || rateFromAmount(cgstAmount, taxableAmount) || ""),
     sgstRate: String(value.sgstRate || rateFromAmount(sgstAmount, taxableAmount) || ""),
     igstRate: String(value.igstRate || rateFromAmount(igstAmount, taxableAmount) || ""),
+    amountBasis: value.amountBasis === "total" ? "total" : "taxable",
   }
 }
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
@@ -332,12 +377,14 @@ export function InvoicesPage() {
       ...item,
       id: crypto.randomUUID(),
       taxableAmount: String(item.taxableAmount || ""),
+      totalAmount: String(roundMoney((item.taxableAmount || 0) + (item.cgstAmount || 0) + (item.sgstAmount || 0) + (item.igstAmount || 0)) || ""),
       cgstAmount: String(item.cgstAmount || ""),
       sgstAmount: String(item.sgstAmount || ""),
       igstAmount: String(item.igstAmount || ""),
       cgstRate: String(rateFromAmount(item.cgstAmount, item.taxableAmount) || ""),
       sgstRate: String(rateFromAmount(item.sgstAmount, item.taxableAmount) || ""),
       igstRate: String(rateFromAmount(item.igstAmount, item.taxableAmount) || ""),
+      amountBasis: "taxable",
     })))
     setTdsAmount(record.tdsAmount ? String(record.tdsAmount) : "")
     setOtherDeduction(record.otherDeduction ? String(record.otherDeduction) : "")
@@ -366,12 +413,14 @@ export function InvoicesPage() {
       ...item,
       id: replacement ? crypto.randomUUID() : item.id,
       taxableAmount: String(item.taxableAmount || ""),
+      totalAmount: String(roundMoney((item.taxableAmount || 0) + (item.cgstAmount || 0) + (item.sgstAmount || 0) + (item.igstAmount || 0)) || ""),
       cgstAmount: String(item.cgstAmount || ""),
       sgstAmount: String(item.sgstAmount || ""),
       igstAmount: String(item.igstAmount || ""),
       cgstRate: String(rateFromAmount(item.cgstAmount, item.taxableAmount) || ""),
       sgstRate: String(rateFromAmount(item.sgstAmount, item.taxableAmount) || ""),
       igstRate: String(rateFromAmount(item.igstAmount, item.taxableAmount) || ""),
+      amountBasis: "taxable",
     })))
     setTdsAmount(invoice.tdsAmount ? String(invoice.tdsAmount) : "")
     setOtherDeduction(invoice.otherDeduction ? String(invoice.otherDeduction) : "")
@@ -565,17 +614,18 @@ export function InvoicesPage() {
     setDraftFormError("")
     setLineItems((items) => items.map((item) => {
       if (item.id !== itemId) return item
-      const updated = { ...item, [field]: value }
-      const taxableAmount = Math.max(0, Number(updated.taxableAmount) || 0)
+      let updated = { ...item, [field]: value } as DraftLineItem
       if (field === "taxableAmount") {
-        updated.cgstAmount = String(roundMoney(taxableAmount * (Number(updated.cgstRate) || 0) / 100) || "")
-        updated.sgstAmount = String(roundMoney(taxableAmount * (Number(updated.sgstRate) || 0) / 100) || "")
-        updated.igstAmount = String(roundMoney(taxableAmount * (Number(updated.igstRate) || 0) / 100) || "")
+        updated.amountBasis = "taxable"
+        return recalculateDraftLineFromTaxable(updated)
+      }
+      if (field === "totalAmount") {
+        updated.amountBasis = "total"
+        return recalculateDraftLineFromTotal(updated)
       }
       if (field === "igstRate") {
-        const rate = Math.min(100, Math.max(0, Number(value) || 0))
+        const rate = clampRate(value)
         updated.igstRate = value === "" ? "" : String(rate)
-        updated.igstAmount = String(roundMoney(taxableAmount * rate / 100) || "")
       }
       if (field === "igstRate" && Number(value) > 0) {
         updated.cgstRate = ""
@@ -584,15 +634,26 @@ export function InvoicesPage() {
         updated.sgstAmount = ""
       }
       if (field === "cgstRate" || field === "sgstRate") {
-        const rate = Math.min(100, Math.max(0, Number(value) || 0))
+        const rate = clampRate(value)
         updated[field] = value === "" ? "" : String(rate)
-        updated[field === "cgstRate" ? "cgstAmount" : "sgstAmount"] = String(roundMoney(taxableAmount * rate / 100) || "")
       }
       if ((field === "cgstRate" || field === "sgstRate") && Number(value) > 0) {
         updated.igstRate = ""
         updated.igstAmount = ""
       }
-      return updated
+      return recalculateDraftLine(updated)
+    }))
+  }
+
+  const applyGstRateOption = (itemId: string, rate: number) => {
+    setDraftFormError("")
+    setLineItems((items) => items.map((item) => {
+      if (item.id !== itemId) return item
+      const useIgst = draftRate(item.igstRate) > 0
+      const updated: DraftLineItem = useIgst
+        ? { ...item, igstRate: String(rate), cgstRate: "", sgstRate: "", cgstAmount: "", sgstAmount: "" }
+        : { ...item, cgstRate: String(roundMoney(rate / 2)), sgstRate: String(roundMoney(rate / 2)), igstRate: "", igstAmount: "" }
+      return recalculateDraftLine(updated)
     }))
   }
 
@@ -1119,24 +1180,30 @@ export function InvoicesPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-medium">Invoice descriptions</h3>
-                  <p className="text-xs text-muted-foreground">{isGstInvoice ? "Enter GST percentages. Tax amounts and the invoice total are calculated automatically. Use CGST + SGST for intra-state invoices or IGST for inter-state invoices." : "Add the description and amount. HSN/SAC is optional for this non-GST invoice."}</p>
+                  <p className="text-xs text-muted-foreground">{isGstInvoice ? "Choose 5%, 12%, 18% or 28%, or enter your own GST percentage. Enter either taxable amount or total amount; the other value is calculated automatically." : "Add the description and amount. HSN/SAC is optional for this non-GST invoice."}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => setLineItems((items) => [...items, newDraftLine(selectedEntityHsnCodes[0] || "")])}><Plus />Add description</Button>
               </div>
               <div className="overflow-x-auto rounded-lg border">
-                <div className={isGstInvoice ? "min-w-[980px]" : "min-w-[620px]"}>
-                  <div className={`grid gap-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(4,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
-                    <span>Description</span><span>HSN/SAC</span><span>{isGstInvoice ? "Taxable amount" : "Amount"}</span>{isGstInvoice ? <><span>CGST %</span><span>SGST %</span><span>IGST %</span></> : null}<span />
+                <div className={isGstInvoice ? "min-w-[1120px]" : "min-w-[620px]"}>
+                  <div className={`grid gap-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(5,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
+                    <span>Description</span><span>HSN/SAC</span><span>{isGstInvoice ? "Taxable amount" : "Amount"}</span>{isGstInvoice ? <><span>CGST %</span><span>SGST %</span><span>IGST %</span><span>Total amount</span></> : null}<span />
                   </div>
                   {lineItems.map((item, index) => (
-                    <div key={item.id} className={`grid gap-2 border-t p-3 ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(4,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
+                    <div key={item.id} className={`grid gap-2 border-t p-3 ${isGstInvoice ? "grid-cols-[2fr_110px_repeat(5,130px)_44px]" : "grid-cols-[2fr_140px_160px_44px]"}`}>
                       <Input aria-label={`Description ${index + 1}`} value={item.description} onChange={(event) => updateLineItem(item.id, "description", event.target.value)} placeholder="Service or item description" />
                       {selectedEntityHsnCodes.length ? <select aria-label={`HSN/SAC ${index + 1}`} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value)}><option value="">Select code</option>{selectedEntityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN/SAC ${index + 1}`} inputMode="numeric" maxLength={8} value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value.replace(/\D/g, ""))} placeholder="998222" />}
                       <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" value={item.taxableAmount} onChange={(event) => updateLineItem(item.id, "taxableAmount", event.target.value)} placeholder="0.00" />
                       {isGstInvoice ? <><div><Input aria-label={`CGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.cgstRate} onChange={(event) => updateLineItem(item.id, "cgstRate", event.target.value)} placeholder="CGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.cgstAmount) || 0).toLocaleString("en-IN")}</p></div>
                       <div><Input aria-label={`SGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.sgstRate} onChange={(event) => updateLineItem(item.id, "sgstRate", event.target.value)} placeholder="SGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.sgstAmount) || 0).toLocaleString("en-IN")}</p></div>
-                      <div><Input aria-label={`IGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.igstRate} onChange={(event) => updateLineItem(item.id, "igstRate", event.target.value)} placeholder="IGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.igstAmount) || 0).toLocaleString("en-IN")}</p></div></> : null}
+                      <div><Input aria-label={`IGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.igstRate} onChange={(event) => updateLineItem(item.id, "igstRate", event.target.value)} placeholder="IGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.igstAmount) || 0).toLocaleString("en-IN")}</p></div>
+                      <Input aria-label={`Total amount ${index + 1}`} type="number" min="0" step="0.01" value={item.totalAmount} onChange={(event) => updateLineItem(item.id, "totalAmount", event.target.value)} placeholder="0.00" /></> : null}
                       <Button type="button" size="icon" variant="ghost" disabled={lineItems.length === 1} aria-label={`Remove description ${index + 1}`} onClick={() => setLineItems((items) => items.filter((line) => line.id !== item.id))}><Trash2 /></Button>
+                      {isGstInvoice ? <div className="col-span-full flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>Default GST:</span>
+                        {gstRateOptions.map((rate) => <Button key={rate} type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => applyGstRateOption(item.id, rate)}>{rate}%</Button>)}
+                        <span>{draftRate(item.igstRate) > 0 ? "Applies as IGST." : "Splits equally as CGST + SGST."}</span>
+                      </div> : null}
                     </div>
                   ))}
                 </div>
