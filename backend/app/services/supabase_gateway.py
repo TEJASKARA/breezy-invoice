@@ -9,6 +9,9 @@ class SupabaseGatewayError(RuntimeError):
     pass
 
 
+GSTIN_ALREADY_REGISTERED_MESSAGE = "This GST number is already registered in ChanaX."
+
+
 class SupabaseGateway:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -163,6 +166,20 @@ class SupabaseGateway:
             raise SupabaseGatewayError(
                 "You do not have permission to perform this action."
             )
+
+    async def assert_gstin_available(
+        self, access_token: str, workspace_id: str, gstin: str
+    ) -> None:
+        result = await self.user_rpc(
+            access_token,
+            "breezy_is_gstin_available",
+            {
+                "target_workspace_id": workspace_id,
+                "target_gstin": gstin.strip().upper(),
+            },
+        )
+        if result is not True:
+            raise SupabaseGatewayError(GSTIN_ALREADY_REGISTERED_MESSAGE)
 
     async def create_payment_order(
         self,

@@ -139,6 +139,9 @@ async def verify_gstin(
         await gateway.assert_workspace_permission(
             access_token, workspace_id, "entities.manage"
         )
+        await gateway.assert_gstin_available(
+            access_token, workspace_id, normalized_gstin
+        )
         data = await gateway.cached_gstin(normalized_gstin)
         cached = data is not None
         if data is not None:
