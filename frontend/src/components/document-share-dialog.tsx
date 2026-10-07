@@ -30,7 +30,7 @@ export function DocumentShareDialog({
   title: string
   open: boolean
   onClose: () => void
-  onEmail: (email: string) => Promise<void>
+  onEmail?: (email: string) => Promise<void>
   /** Opens WhatsApp on this device with a prepared message (the user attaches/sends it themselves). */
   onWhatsApp: () => Promise<void>
   /** Sends the PDF straight to the recipient's WhatsApp number. When omitted, only onWhatsApp is offered. */
@@ -54,6 +54,7 @@ export function DocumentShareDialog({
   if (!open) return null
 
   const emailDocument = async () => {
+    if (!onEmail) return
     const recipient = email.trim().toLowerCase()
     if (!emailPattern.test(recipient)) {
       setError("Enter a valid recipient email address.")
@@ -99,8 +100,8 @@ export function DocumentShareDialog({
         <Button className="absolute right-4 top-4" size="icon" variant="ghost" aria-label="Close share options" onClick={onClose}><X /></Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {mode === "choose" ? <div className="grid gap-3 sm:grid-cols-2">
-          <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => setMode("email")}><Mail className="size-5" /><span className="text-left"><span className="block font-medium">Email</span><span className="block text-xs font-normal text-muted-foreground">Send the PDF attachment</span></span></Button>
+        {mode === "choose" ? <div className={`grid gap-3 ${onEmail ? "sm:grid-cols-2" : ""}`}>
+          {onEmail ? <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => setMode("email")}><Mail className="size-5" /><span className="text-left"><span className="block font-medium">Email</span><span className="block text-xs font-normal text-muted-foreground">Send the PDF attachment</span></span></Button> : null}
           <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => { if (onWhatsAppSend) { setMode("whatsapp"); setError("") } else void shareWhatsApp() }}>{pending === "whatsapp" ? <LoaderCircle className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}<span className="text-left"><span className="block font-medium">WhatsApp</span><span className="block text-xs font-normal text-muted-foreground">{onWhatsAppSend ? "Send the PDF to a number" : "Open app or WhatsApp Web"}</span></span></Button>
         </div> : mode === "whatsapp" ? <div className="space-y-4">
           <div className="space-y-2">

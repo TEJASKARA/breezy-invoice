@@ -193,6 +193,36 @@ def test_endpoint_checks_permission_and_document(
     assert send.await_args.kwargs["sent_by_email"] == "owner@example.com"
 
 
+def test_endpoint_uses_payslip_permission_for_payslips(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(_env_file=None, n8n_whatsapp_webhook_url=WEBHOOK)
+    app.dependency_overrides[get_settings] = lambda: settings
+    permission = AsyncMock()
+    document = AsyncMock()
+    send = AsyncMock()
+    monkeypatch.setattr(
+        SupabaseGateway,
+        "authenticated_user",
+        AsyncMock(return_value={"id": "user-1", "email": "owner@example.com"}),
+    )
+    monkeypatch.setattr(SupabaseGateway, "assert_workspace_permission", permission)
+    monkeypatch.setattr(SupabaseGateway, "assert_workspace_document", document)
+    monkeypatch.setattr("app.api.routes.documents.send_document_whatsapp", send)
+    try:
+        response = TestClient(app).post(
+            "/api/v1/documents/document-whatsapp",
+            json=_request(document_type="payslip"),
+            headers={"Authorization": "Bearer token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == status.HTTP_200_OK
+    permission.assert_awaited_once_with("token", WORKSPACE, "payslips.read")
+    document.assert_awaited_once_with(WORKSPACE, DOCUMENT, "payslip")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "hint"),

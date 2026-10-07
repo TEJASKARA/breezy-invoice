@@ -89,7 +89,7 @@ export async function sendDocumentWhatsApp(input: {
   workspaceId: string
   documentId: string
   toNumber: string
-  documentType: "invoice" | "quotation"
+  documentType: "invoice" | "quotation" | "payslip" | "employee_letter"
   documentNumber: string
   message: string
   filename: string

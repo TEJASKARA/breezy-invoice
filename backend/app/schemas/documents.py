@@ -55,7 +55,7 @@ class DocumentWhatsAppRequest(BaseModel):
     workspace_id: str = Field(min_length=36, max_length=36)
     document_id: str = Field(min_length=36, max_length=36)
     to_number: str = Field(min_length=8, max_length=24)
-    document_type: Literal["invoice", "quotation"]
+    document_type: Literal["invoice", "quotation", "payslip", "employee_letter"]
     document_number: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1, max_length=1000)
     filename: str = Field(min_length=1, max_length=240)

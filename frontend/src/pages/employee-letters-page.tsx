@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Download, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
 
+import { DocumentShareDialog } from "@/components/document-share-dialog"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { createEmployeeLetterPdf, employeeLetterFileName } from "@/lib/employee-letter-pdf"
-import { sendEmployeeLetterEmail } from "@/lib/document-email-api"
+import { sendDocumentWhatsApp, sendEmployeeLetterEmail } from "@/lib/document-email-api"
 import { useMvpStore, type EmployeeLetter } from "@/lib/mvp-store"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -47,6 +48,7 @@ export function EmployeeLettersPage() {
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [emailingLetterId, setEmailingLetterId] = useState<string | null>(null)
+  const [shareLetterTarget, setShareLetterTarget] = useState<EmployeeLetter | null>(null)
 
   useEffect(() => {
     if (employeeId || !employees.length) return
@@ -76,6 +78,29 @@ export function EmployeeLettersPage() {
   }
   async function download(letter: EmployeeLetter) { const { doc, employee: target } = await documentFor(letter); doc.save(employeeLetterFileName(letter, target)); trackAction("employee_letter_pdf_downloaded", { letter_type: letter.letterType }) }
   async function share(letter: EmployeeLetter) { const target = employees.find((item) => item.id === letter.employeeId); if (!target) return; await sharePdfViaWhatsApp({ title: letter.title, message: `${letter.title} for ${target.employeeName}.`, createFile: async () => { const { doc } = await documentFor(letter); return { name: employeeLetterFileName(letter, target), data: new Uint8Array(doc.output("arraybuffer")) } } }) }
+  async function sendOnWhatsApp(letter: EmployeeLetter, toNumber: string) {
+    setError(""); setNotice("")
+    if (!workspace?.id) throw new Error("Your workspace is still loading. Please try again.")
+    const targetEntity = companies.find((item) => item.id === letter.entityId)
+    try {
+      const { doc, employee: target } = await documentFor(letter)
+      const result = await sendDocumentWhatsApp({
+        workspaceId: workspace.id,
+        documentId: letter.id,
+        toNumber,
+        documentType: "employee_letter",
+        documentNumber: `${letter.title}-${letter.issueDate}`,
+        message: `${letter.title} for ${target.employeeName} from ${targetEntity?.companyName || "ChanaX"}.`,
+        filename: employeeLetterFileName(letter, target),
+        pdf: new Uint8Array(doc.output("arraybuffer")),
+      })
+      setNotice(result)
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "The employee letter could not be sent on WhatsApp."
+      setError(message)
+      throw new Error(message)
+    }
+  }
   async function email(letter: EmployeeLetter) {
     setError(""); setNotice("")
     const target = employees.find((item) => item.id === letter.employeeId)
@@ -114,6 +139,21 @@ export function EmployeeLettersPage() {
       <div className="space-y-2"><Label htmlFor="letter-signatory">Signatory name (optional)</Label><Input id="letter-signatory" value={signatureName} onChange={(event) => setSignatureName(event.target.value)} placeholder={`For ${entity?.companyName || "company"}`} /></div>
       <div className="flex justify-end"><Button disabled={!canManage || !employee} onClick={() => void save()}><Plus />Save issued letter</Button></div>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>Employee letter history</CardTitle><CardDescription>All saved letters remain visible here and can be downloaded, shared or emailed again.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Letter</TableHead><TableHead>Employee</TableHead><TableHead>Issue date</TableHead><TableHead>Effective date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{employeeLetters.length ? employeeLetters.map((letter) => { const target = employees.find((item) => item.id === letter.employeeId); return <TableRow key={letter.id}><TableCell><p className="font-medium">{letter.title}</p><p className="text-xs text-muted-foreground">{letter.subject}</p></TableCell><TableCell>{target?.employeeName || "Employee unavailable"}</TableCell><TableCell>{letter.issueDate}</TableCell><TableCell>{letter.effectiveDate}</TableCell><TableCell><Badge variant="outline">{letter.status}</Badge></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download PDF" aria-label="Download employee letter" onClick={() => void download(letter)}><Download /></Button><Button size="icon" variant="ghost" title="Share via WhatsApp" aria-label="Share employee letter via WhatsApp" onClick={() => void share(letter)}><MessageCircle /></Button><Button size="icon" variant="ghost" title="Email PDF" aria-label="Email employee letter PDF" disabled={emailingLetterId !== null} onClick={() => void email(letter)}><Mail />{emailingLetterId === letter.id ? <span className="sr-only">Sending</span> : null}</Button><Button size="icon" variant="ghost" title="Delete letter" aria-label="Delete employee letter" disabled={!canManage} onClick={() => void deleteEmployeeLetter(letter.id)}><Trash2 /></Button></div></TableCell></TableRow> }) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No employee letters have been saved yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    <Card><CardHeader><CardTitle>Employee letter history</CardTitle><CardDescription>All saved letters remain visible here and can be downloaded, shared or emailed again.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Letter</TableHead><TableHead>Employee</TableHead><TableHead>Issue date</TableHead><TableHead>Effective date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{employeeLetters.length ? employeeLetters.map((letter) => { const target = employees.find((item) => item.id === letter.employeeId); return <TableRow key={letter.id}><TableCell><p className="font-medium">{letter.title}</p><p className="text-xs text-muted-foreground">{letter.subject}</p></TableCell><TableCell>{target?.employeeName || "Employee unavailable"}</TableCell><TableCell>{letter.issueDate}</TableCell><TableCell>{letter.effectiveDate}</TableCell><TableCell><Badge variant="outline">{letter.status}</Badge></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" title="Download PDF" aria-label="Download employee letter" onClick={() => void download(letter)}><Download /></Button><Button size="icon" variant="ghost" title="Share via WhatsApp" aria-label="Share employee letter via WhatsApp" onClick={() => setShareLetterTarget(letter)}><MessageCircle /></Button><Button size="icon" variant="ghost" title="Email PDF" aria-label="Email employee letter PDF" disabled={emailingLetterId !== null} onClick={() => void email(letter)}><Mail />{emailingLetterId === letter.id ? <span className="sr-only">Sending</span> : null}</Button><Button size="icon" variant="ghost" title="Delete letter" aria-label="Delete employee letter" disabled={!canManage} onClick={() => void deleteEmployeeLetter(letter.id)}><Trash2 /></Button></div></TableCell></TableRow> }) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No employee letters have been saved yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    <DocumentShareDialog
+      open={Boolean(shareLetterTarget)}
+      title={shareLetterTarget ? shareLetterTarget.title.toLowerCase() : "employee letter"}
+      onClose={() => setShareLetterTarget(null)}
+      onWhatsApp={async () => {
+        if (!shareLetterTarget) return
+        await share(shareLetterTarget)
+        setShareLetterTarget(null)
+      }}
+      onWhatsAppSend={async (number) => {
+        if (!shareLetterTarget) return
+        await sendOnWhatsApp(shareLetterTarget, number)
+        setShareLetterTarget(null)
+      }}
+    />
   </div>
 }

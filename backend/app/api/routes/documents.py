@@ -69,14 +69,24 @@ async def whatsapp_document(
 ) -> DocumentWhatsAppResponse:
     gateway = SupabaseGateway(settings)
     access_token = _bearer_token(authorization)
+    permission = (
+        "payslips.read"
+        if request.document_type in {"payslip", "employee_letter"}
+        else "invoices.read"
+    )
     try:
         user = await gateway.authenticated_user(access_token)
         await gateway.assert_workspace_permission(
-            access_token, request.workspace_id, "invoices.read"
+            access_token, request.workspace_id, permission
         )
-        await gateway.assert_workspace_document(
-            request.workspace_id, request.document_id, request.document_type
-        )
+        if request.document_type == "employee_letter":
+            await gateway.assert_workspace_employee_letter_exists(
+                request.workspace_id, request.document_id
+            )
+        else:
+            await gateway.assert_workspace_document(
+                request.workspace_id, request.document_id, request.document_type
+            )
         await send_document_whatsapp(
             settings,
             to_number=request.to_number,
