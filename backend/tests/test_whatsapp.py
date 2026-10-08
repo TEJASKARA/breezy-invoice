@@ -286,7 +286,9 @@ async def test_n8n_success_message_is_returned(monkeypatch: pytest.MonkeyPatch) 
     assert result == message
 
 
-def test_endpoint_returns_send_failure_to_customer(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_endpoint_returns_send_failure_to_customer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = Settings(_env_file=None, n8n_whatsapp_webhook_url=WEBHOOK)
     app.dependency_overrides[get_settings] = lambda: settings
     monkeypatch.setattr(
