@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { trackAction } from "@/lib/usage-tracking"
+import { normalizeWhatsAppNumber } from "@/lib/whatsapp-number"
 
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
 
@@ -99,6 +100,8 @@ export async function sendDocumentWhatsApp(input: {
 }) {
   if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
   if (!supabase) throw new Error("Supabase is not configured.")
+  const recipient = normalizeWhatsAppNumber(input.toNumber)
+  if (!recipient) throw new Error("Enter a valid WhatsApp number with its country code.")
   const { data, error } = await supabase.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again before sending this document.")
   let response: Response
@@ -109,7 +112,7 @@ export async function sendDocumentWhatsApp(input: {
       body: JSON.stringify({
         workspace_id: input.workspaceId,
         document_id: input.documentId,
-        to_number: input.toNumber,
+        to_number: recipient,
         document_type: input.documentType,
         document_number: input.documentNumber,
         message: input.message,
@@ -120,16 +123,17 @@ export async function sendDocumentWhatsApp(input: {
       }),
     })
   } catch {
-    throw new Error("WhatsApp sending could not reach the ChanaX backend. Check that the backend is deployed, HTTPS is working, and FRONTEND_ORIGINS includes this website domain.")
+    throw new Error("We couldn't confirm the WhatsApp send because the connection was interrupted. Check whether it arrived before trying again.")
   }
-  let payload: { detail?: string | { msg?: string }[]; message?: string } = {}
+  let payload: { success?: boolean; detail?: string | { msg?: string }[]; error?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
-  if (!response.ok) {
+  if (!response.ok || payload.success === false) {
     const detail = Array.isArray(payload.detail)
       ? String(payload.detail[0]?.msg || "").replace(/^Value error,\s*/i, "")
       : payload.detail
-    throw new Error(detail || "The document could not be sent on WhatsApp.")
+    throw new Error(detail || payload.error || (payload.success === false ? payload.message : undefined) || "The document could not be sent on WhatsApp. Please try again.")
   }
+  if (!payload.message) throw new Error("We couldn't confirm whether WhatsApp accepted this message. Check whether it arrived before trying again.")
   trackAction("whatsapp_sent", { document: input.documentType })
-  return payload.message || `The document was sent on WhatsApp to ${input.toNumber}.`
+  return payload.message
 }

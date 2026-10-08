@@ -127,7 +127,6 @@ quotation belongs to the workspace, then POSTs this JSON to the n8n webhook:
 {
   "event": "document.whatsapp",
   "to": "919876543210",
-  "to_e164": "+919876543210",
   "message": "Invoice INV-0001 from Acme for Sample Client.",
   "document": { "type": "invoice", "number": "INV-0001", "id": "<uuid>" },
   "file": {
@@ -144,8 +143,16 @@ quotation belongs to the workspace, then POSTs this JSON to the n8n webhook:
 
 - `to` is digits only with country code; `file.base64` is the raw PDF (no `data:` prefix, max 10 MB).
 - Header `X-ChanaX-Secret: <N8N_WHATSAPP_SECRET>` is sent when the secret is set.
-- n8n must answer with a 2xx. A 2xx body of `{"success": false, "error": "..."}` is
-  shown to the user as the failure reason; any other 2xx counts as sent.
+- Set the Webhook to respond using a Respond to Webhook node, after Meta's send
+  request completes. Return a 2xx JSON response with `{"success": true, "message":
+  "WhatsApp accepted the message for delivery."}` for success. An empty response
+  or a "workflow started" response does not count as a confirmed send.
+- Return `{"success": false, "error": "..."}` for failures; `message` is also
+  supported as the failure text. These errors are shown for both 2xx and non-2xx
+  responses. Connect upload and send error outputs to the failure response.
+- Accepted means queued by WhatsApp, not confirmed delivered. Later delivery
+  failures require Meta status callbacks; this endpoint confirms the immediate
+  sending result only.
 
 Set in `backend/.env` on the server, then restart the API:
 

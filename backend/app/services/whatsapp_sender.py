@@ -57,7 +57,6 @@ def build_whatsapp_payload(
     return {
         "event": "document.whatsapp",
         "to": to_number,
-        "to_e164": f"+{to_number}",
         "message": message,
         "document": {
             "type": document_type,
@@ -121,7 +120,7 @@ async def send_document_whatsapp(
     sent_by_email: str,
     sender_company_name: str = "",
     recipient_company_name: str = "",
-) -> None:
+) -> str:
     if not settings.whatsapp_is_configured:
         raise WhatsAppConfigurationError(
             "WhatsApp sending has not been configured for ChanaX yet."
@@ -155,6 +154,22 @@ async def send_document_whatsapp(
         raise WhatsAppDeliveryError(
             "The WhatsApp service could not be reached. Please try again."
         ) from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    # Accept either error key used by the n8n failure response, including when
+    # the workflow returns a non-2xx HTTP code.
+    if isinstance(body, dict) and (body.get("success") is False or response.is_error):
+        detail = body.get("error") or body.get("message")
+        if isinstance(detail, dict):
+            detail = detail.get("message")
+        if isinstance(detail, str) and detail.strip():
+            raise WhatsAppDeliveryError(detail.strip()[:500])
+        if body.get("success") is False:
+            raise WhatsAppDeliveryError(
+                "WhatsApp couldn't send this message. Please try again later."
+            )
     if response.is_error:
         logger.warning(
             "WhatsApp webhook returned %s: %s",
@@ -162,13 +177,15 @@ async def send_document_whatsapp(
             response.text[:300],
         )
         raise WhatsAppDeliveryError(_webhook_error_message(response.status_code))
-    # n8n may answer {"success": false, "error": "..."} with a 200.
-    try:
-        body = response.json()
-    except ValueError:
-        return
-    if isinstance(body, dict) and body.get("success") is False:
-        detail = str(body.get("error") or "").strip()[:200]
+    # An immediate 'workflow started' response is not proof of a successful send.
+    if not isinstance(body, dict) or body.get("success") is not True:
         raise WhatsAppDeliveryError(
-            detail or "WhatsApp could not send this document. Please try again."
+            "We couldn't confirm whether WhatsApp accepted this message. "
+            "Check whether it arrived before trying again."
         )
+    message = body.get("message")
+    return (
+        message.strip()[:500]
+        if isinstance(message, str) and message.strip()
+        else "Message sent successfully. WhatsApp accepted the document for delivery."
+    )

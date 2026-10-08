@@ -87,7 +87,7 @@ async def whatsapp_document(
             await gateway.assert_workspace_document(
                 request.workspace_id, request.document_id, request.document_type
             )
-        await send_document_whatsapp(
+        send_message = await send_document_whatsapp(
             settings,
             to_number=request.to_number,
             message=request.message.strip(),
@@ -115,10 +115,7 @@ async def whatsapp_document(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     return DocumentWhatsAppResponse(
-        message=(
-            f"The {request.document_type} was sent on WhatsApp "
-            f"to +{request.to_number}."
-        )
+        message=send_message,
     )
 
 

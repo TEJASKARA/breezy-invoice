@@ -122,7 +122,7 @@ async def test_webhook_receives_base64_pdf_and_secret(
     body = seen["body"]
     assert body["event"] == "document.whatsapp"
     assert body["to"] == "919876543210"
-    assert body["to_e164"] == "+919876543210"
+    assert "to_e164" not in body
     assert body["file"] == {
         "filename": "invoice.pdf",
         "mime_type": "application/pdf",
@@ -159,6 +159,11 @@ async def test_non_pdf_attachment_is_rejected() -> None:
     [
         httpx.Response(500, text="boom"),
         httpx.Response(200, json={"success": False, "error": "Number not on WhatsApp"}),
+        httpx.Response(200, json={"success": False, "message": "Template unavailable"}),
+        httpx.Response(502, json={"success": False, "error": "Media upload failed"}),
+        httpx.Response(200, text="Workflow started"),
+        httpx.Response(200, json={"message": "Workflow started"}),
+        httpx.Response(200, json={"success": "true"}),
     ],
 )
 async def test_webhook_failures_raise(
@@ -177,7 +182,7 @@ def test_endpoint_checks_permission_and_document(
     app.dependency_overrides[get_settings] = lambda: settings
     permission = AsyncMock()
     document = AsyncMock()
-    send = AsyncMock()
+    send = AsyncMock(return_value="WhatsApp accepted the document for delivery.")
     monkeypatch.setattr(
         SupabaseGateway,
         "authenticated_user",
@@ -196,7 +201,7 @@ def test_endpoint_checks_permission_and_document(
         app.dependency_overrides.clear()
 
     assert response.status_code == status.HTTP_200_OK
-    assert "+919876543210" in response.json()["message"]
+    assert response.json()["message"] == "WhatsApp accepted the document for delivery."
     permission.assert_awaited_once_with("token", WORKSPACE, "invoices.read")
     document.assert_awaited_once_with(WORKSPACE, DOCUMENT, "invoice")
     assert send.await_args.kwargs["to_number"] == "919876543210"
@@ -210,7 +215,7 @@ def test_endpoint_uses_payslip_permission_for_payslips(
     app.dependency_overrides[get_settings] = lambda: settings
     permission = AsyncMock()
     document = AsyncMock()
-    send = AsyncMock()
+    send = AsyncMock(return_value="WhatsApp accepted the document for delivery.")
     monkeypatch.setattr(
         SupabaseGateway,
         "authenticated_user",
@@ -246,3 +251,60 @@ async def test_webhook_error_names_the_cause(
     with pytest.raises(WhatsAppDeliveryError, match=hint) as exc_info:
         await send_document_whatsapp(settings, **_send_kwargs())
     assert f"n8n replied {status_code}" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["error", "message"])
+@pytest.mark.parametrize("status_code", [200, 502])
+async def test_n8n_failure_reason_is_preserved(
+    monkeypatch: pytest.MonkeyPatch, key: str, status_code: int
+) -> None:
+    reason = "Message couldn't be delivered."
+    _mock_webhook(
+        monkeypatch,
+        lambda request: httpx.Response(
+            status_code, json={"success": False, key: reason}
+        ),
+    )
+    with pytest.raises(WhatsAppDeliveryError) as error:
+        await send_document_whatsapp(
+            Settings(_env_file=None, n8n_whatsapp_webhook_url=WEBHOOK), **_send_kwargs()
+        )
+    assert str(error.value) == reason
+
+
+@pytest.mark.asyncio
+async def test_n8n_success_message_is_returned(monkeypatch: pytest.MonkeyPatch) -> None:
+    message = "Message sent successfully. WhatsApp accepted it for delivery."
+    _mock_webhook(
+        monkeypatch,
+        lambda request: httpx.Response(200, json={"success": True, "message": message}),
+    )
+    result = await send_document_whatsapp(
+        Settings(_env_file=None, n8n_whatsapp_webhook_url=WEBHOOK), **_send_kwargs()
+    )
+    assert result == message
+
+
+def test_endpoint_returns_send_failure_to_customer(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(_env_file=None, n8n_whatsapp_webhook_url=WEBHOOK)
+    app.dependency_overrides[get_settings] = lambda: settings
+    monkeypatch.setattr(
+        SupabaseGateway, "authenticated_user",
+        AsyncMock(return_value={"id": "user-1", "email": "owner@example.com"}),
+    )
+    monkeypatch.setattr(SupabaseGateway, "assert_workspace_permission", AsyncMock())
+    monkeypatch.setattr(SupabaseGateway, "assert_workspace_document", AsyncMock())
+    monkeypatch.setattr(
+        "app.api.routes.documents.send_document_whatsapp",
+        AsyncMock(side_effect=WhatsAppDeliveryError("Message couldn't be delivered.")),
+    )
+    try:
+        response = TestClient(app).post(
+            "/api/v1/documents/document-whatsapp", json=_request(),
+            headers={"Authorization": "Bearer token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.json()["detail"] == "Message couldn't be delivered."

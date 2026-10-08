@@ -72,7 +72,7 @@ class DocumentWhatsAppRequest(BaseModel):
             cleaned = cleaned[1:]
         elif cleaned.startswith("00"):
             cleaned = cleaned[2:]
-        if not cleaned.isdigit():
+        if not re.fullmatch(r"[0-9]+", cleaned):
             raise ValueError("Enter a valid WhatsApp number using digits only.")
         # A bare 10-digit Indian mobile number: add the country code.
         if len(cleaned) == 10 and cleaned[0] in "6789":

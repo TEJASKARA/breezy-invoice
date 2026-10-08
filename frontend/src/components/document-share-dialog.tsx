@@ -5,19 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { normalizeWhatsAppNumber } from "@/lib/whatsapp-number"
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-/** Digits with country code (919876543210), or null when the number cannot be a WhatsApp number. */
-function normalizeWhatsAppNumber(value: string) {
-  let digits = value.trim().replace(/[\s\-().]/g, "")
-  if (digits.startsWith("+")) digits = digits.slice(1)
-  else if (digits.startsWith("00")) digits = digits.slice(2)
-  if (!/^\d+$/.test(digits)) return null
-  if (digits.length === 10 && /^[6-9]/.test(digits)) digits = `91${digits}`
-  else if (digits.length === 11 && /^0[6-9]/.test(digits)) digits = `91${digits.slice(1)}`
-  return digits.length >= 10 && digits.length <= 15 && !digits.startsWith("0") ? digits : null
-}
 
 export function DocumentShareDialog({
   title,
