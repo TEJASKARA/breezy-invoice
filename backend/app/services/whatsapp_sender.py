@@ -50,6 +50,8 @@ def build_whatsapp_payload(
     workspace_id: str,
     sent_by_user_id: str,
     sent_by_email: str,
+    sender_company_name: str = "",
+    recipient_company_name: str = "",
 ) -> dict[str, Any]:
     """The JSON body n8n receives. Keep in sync with deploy/README.md."""
     return {
@@ -62,6 +64,12 @@ def build_whatsapp_payload(
             "number": document_number,
             "id": document_id,
         },
+        "companies": {
+            "sender": sender_company_name,
+            "recipient": recipient_company_name,
+        },
+        "sender_company_name": sender_company_name,
+        "recipient_company_name": recipient_company_name,
         "file": {
             "filename": filename,
             "mime_type": "application/pdf",
@@ -111,6 +119,8 @@ async def send_document_whatsapp(
     workspace_id: str,
     sent_by_user_id: str,
     sent_by_email: str,
+    sender_company_name: str = "",
+    recipient_company_name: str = "",
 ) -> None:
     if not settings.whatsapp_is_configured:
         raise WhatsAppConfigurationError(
@@ -126,6 +136,8 @@ async def send_document_whatsapp(
         document_type=document_type,
         document_number=document_number,
         document_id=document_id,
+        sender_company_name=sender_company_name,
+        recipient_company_name=recipient_company_name,
         workspace_id=workspace_id,
         sent_by_user_id=sent_by_user_id,
         sent_by_email=sent_by_email,

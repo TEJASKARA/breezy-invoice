@@ -58,6 +58,8 @@ class DocumentWhatsAppRequest(BaseModel):
     document_type: Literal["invoice", "quotation", "payslip", "employee_letter"]
     document_number: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1, max_length=1000)
+    sender_company_name: str = Field(default="", max_length=200)
+    recipient_company_name: str = Field(default="", max_length=200)
     filename: str = Field(min_length=1, max_length=240)
     pdf_base64: str = Field(min_length=4, max_length=20_000_000)
 

@@ -92,6 +92,8 @@ export async function sendDocumentWhatsApp(input: {
   documentType: "invoice" | "quotation" | "payslip" | "employee_letter"
   documentNumber: string
   message: string
+  senderCompanyName?: string
+  recipientCompanyName?: string
   filename: string
   pdf: Uint8Array
 }) {
@@ -109,6 +111,8 @@ export async function sendDocumentWhatsApp(input: {
       document_type: input.documentType,
       document_number: input.documentNumber,
       message: input.message,
+      sender_company_name: input.senderCompanyName || "",
+      recipient_company_name: input.recipientCompanyName || "",
       filename: input.filename,
       pdf_base64: base64Bytes(input.pdf),
     }),

@@ -736,6 +736,8 @@ export function InvoicesPage() {
       documentType: "invoice",
       documentNumber: invoiceNumber,
       message: `Invoice ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
+      senderCompanyName: invoiceEntity?.companyName || invoice.entityName || "",
+      recipientCompanyName: customer?.companyName || invoice.companyName,
       filename: file.name,
       pdf: file.data,
     })

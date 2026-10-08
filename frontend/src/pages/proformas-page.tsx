@@ -191,6 +191,8 @@ export function ProformasPage() {
       documentType: "quotation",
       documentNumber: record.number,
       message: `Quotation ${record.number} from ${recordEntity?.companyName || record.entityName || "our company"} for ${record.companyName}.`,
+      senderCompanyName: recordEntity?.companyName || record.entityName || "",
+      recipientCompanyName: record.companyName,
       filename: `${cleanInvoiceFileName(record.companyName)}_${record.date}_proforma.pdf`,
       pdf: new Uint8Array(doc.output("arraybuffer")),
     })

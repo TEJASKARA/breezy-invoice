@@ -96,6 +96,8 @@ async def whatsapp_document(
             document_type=request.document_type,
             document_number=request.document_number.strip(),
             document_id=request.document_id,
+            sender_company_name=request.sender_company_name.strip(),
+            recipient_company_name=request.recipient_company_name.strip(),
             workspace_id=request.workspace_id,
             sent_by_user_id=str(user.get("id") or ""),
             sent_by_email=str(user.get("email") or ""),

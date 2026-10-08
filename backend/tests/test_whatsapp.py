@@ -32,6 +32,8 @@ def _request(**overrides: str) -> dict[str, str]:
         "document_type": "invoice",
         "document_number": "INV-0001",
         "message": "Invoice INV-0001 from Acme.",
+        "sender_company_name": "Acme Private Limited",
+        "recipient_company_name": "Client Private Limited",
         "filename": "Acme_2026-10-05.pdf",
         "pdf_base64": PDF,
     }
@@ -80,6 +82,8 @@ def _send_kwargs() -> dict[str, str]:
         "workspace_id": WORKSPACE,
         "sent_by_user_id": "user-1",
         "sent_by_email": "owner@example.com",
+        "sender_company_name": "Acme Private Limited",
+        "recipient_company_name": "Client Private Limited",
     }
 
 
@@ -126,6 +130,12 @@ async def test_webhook_receives_base64_pdf_and_secret(
         "base64": PDF,
     }
     assert body["document"] == {"type": "invoice", "number": "INV-0001", "id": DOCUMENT}
+    assert body["companies"] == {
+        "sender": "Acme Private Limited",
+        "recipient": "Client Private Limited",
+    }
+    assert body["sender_company_name"] == "Acme Private Limited"
+    assert body["recipient_company_name"] == "Client Private Limited"
     assert body["sent_by"]["email"] == "owner@example.com"
 
 
