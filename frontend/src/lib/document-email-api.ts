@@ -101,22 +101,27 @@ export async function sendDocumentWhatsApp(input: {
   if (!supabase) throw new Error("Supabase is not configured.")
   const { data, error } = await supabase.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again before sending this document.")
-  const response = await fetch(`${apiUrl}/api/v1/documents/document-whatsapp`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      workspace_id: input.workspaceId,
-      document_id: input.documentId,
-      to_number: input.toNumber,
-      document_type: input.documentType,
-      document_number: input.documentNumber,
-      message: input.message,
-      sender_company_name: input.senderCompanyName || "",
-      recipient_company_name: input.recipientCompanyName || "",
-      filename: input.filename,
-      pdf_base64: base64Bytes(input.pdf),
-    }),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${apiUrl}/api/v1/documents/document-whatsapp`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspace_id: input.workspaceId,
+        document_id: input.documentId,
+        to_number: input.toNumber,
+        document_type: input.documentType,
+        document_number: input.documentNumber,
+        message: input.message,
+        sender_company_name: input.senderCompanyName || "",
+        recipient_company_name: input.recipientCompanyName || "",
+        filename: input.filename,
+        pdf_base64: base64Bytes(input.pdf),
+      }),
+    })
+  } catch {
+    throw new Error("WhatsApp sending could not reach the ChanaX backend. Check that the backend is deployed, HTTPS is working, and FRONTEND_ORIGINS includes this website domain.")
+  }
   let payload: { detail?: string | { msg?: string }[]; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
   if (!response.ok) {
