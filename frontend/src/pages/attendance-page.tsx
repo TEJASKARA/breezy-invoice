@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useMemo, useState } from "react"
 import { CalendarCheck2, Download, FileSpreadsheet, Settings2, Users } from "lucide-react"
 import { Link } from "react-router-dom"
@@ -182,7 +183,7 @@ export function AttendancePage() {
       })
       setNotice(`Daily attendance for ${formatSalaryMonth(month)} was saved to your workspace.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Daily attendance could not be saved.")
+      setError(customerErrorMessage(caught, "Daily attendance could not be saved."))
     } finally {
       setSavingAttendance(false)
     }
@@ -228,7 +229,7 @@ export function AttendancePage() {
       else await downloadAttendancePdf(exportInput)
       setNotice(`${format === "excel" ? "Excel" : "PDF"} attendance copy downloaded for ${formatSalaryMonth(month)}.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `The attendance ${format.toUpperCase()} could not be created.`)
+      setError(customerErrorMessage(caught, `The attendance ${format.toUpperCase()} could not be created.`))
     } finally {
       setExportingAttendance(null)
     }
@@ -310,7 +311,7 @@ export function AttendancePage() {
       setSaved(true)
       setNotice(`${preview.length} payslip${preview.length === 1 ? " was" : "s were"} generated and saved from this attendance register.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The payslips could not be saved.")
+      setError(customerErrorMessage(caught, "The payslips could not be saved."))
     } finally {
       setSaving(false)
     }
@@ -326,7 +327,7 @@ export function AttendancePage() {
       downloadZip(files, `Payslips_${cleanPayslipFileName(selectedEntity.companyName)}_${cleanPayslipFileName(month)}.zip`)
       setNotice(`${files.length} payslip PDFs downloaded in one ZIP folder.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The payslip ZIP could not be created.")
+      setError(customerErrorMessage(caught, "The payslip ZIP could not be created."))
     } finally {
       setDownloading(false)
     }

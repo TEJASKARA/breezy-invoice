@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -17,7 +18,7 @@ const warning = "Subscriptions, credit balances and team access do not move. Imp
 async function transferRpc(name: string, args: Record<string, unknown>) {
   if (!supabase) throw new Error("Your account connection is unavailable.")
   const { data, error } = await supabase.rpc(name, args)
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
   return data
 }
 
@@ -38,7 +39,7 @@ export function EntityTransferRequests() {
       const result = await supabase.from("breezy_entity_transfers").select("*")
         .or(`source_workspace_id.eq.${workspaceId},target_workspace_id.eq.${workspaceId}`)
         .in("status", ["pending", "accepted"]).order("created_at", { ascending: false }).limit(50)
-      if (result.error) throw new Error(["PGRST205", "42P01"].includes(result.error.code) ? "Company transfers are unavailable. Apply the company-transfer database migration first." : result.error.message)
+      if (result.error) throw new Error(customerErrorMessage(result.error, "Company transfers are temporarily unavailable. Please try again later or contact ChanaX support."))
       return result.data as Transfer[]
     },
   })
@@ -55,13 +56,13 @@ export function EntityTransferRequests() {
       }
       setConfirm(null)
       await cache.invalidateQueries({ queryKey: ["entity-transfers", workspaceId] })
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "The transfer could not be completed.") }
+    } catch (caught) { setError(customerErrorMessage(caught, "The transfer could not be completed.")) }
     finally { setBusy(false) }
   }
   return <Card className="mb-6">
     <CardHeader><CardTitle>Company transfer requests</CardTitle><CardDescription>Only the receiving account owner can approve a move. Complete company setup after accepting.</CardDescription><Button variant="outline" size="sm" disabled={busy} onClick={() => void refetch()}>Refresh requests</Button></CardHeader>
     <CardContent className="space-y-4">
-      {error || loadError ? <p role="alert" className="text-sm text-destructive">{error || loadError?.message}</p> : null}
+      {error || loadError ? <p role="alert" className="text-sm text-destructive">{error || customerErrorMessage(loadError, "We couldn’t load company transfer requests. Please try again.")}</p> : null}
       {requests.map((request) => {
         const incoming = request.target_workspace_id === workspaceId
         const completed = request.status === "accepted"
@@ -103,7 +104,7 @@ export function EntityTransferForm({ company, onClose }: { company: Company; onC
       })
       await cache.invalidateQueries({ queryKey: ["entity-transfers", workspace.id] })
       onClose()
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "The transfer request could not be sent.") }
+    } catch (caught) { setError(customerErrorMessage(caught, "The transfer request could not be sent.")) }
     finally { setBusy(false) }
   }
   return <Card>

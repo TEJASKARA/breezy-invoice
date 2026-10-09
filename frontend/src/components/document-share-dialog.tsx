@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
 import { LoaderCircle, Mail, MessageCircle, Send, X } from "lucide-react"
 
@@ -53,7 +54,7 @@ export function DocumentShareDialog({
     setPending("email")
     setError("")
     try { await onEmail(recipient) } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "The email could not be sent.")
+      setError(customerErrorMessage(sendError, "The email could not be sent."))
       setPending(null)
     }
   }
@@ -68,7 +69,7 @@ export function DocumentShareDialog({
     setPending("whatsapp")
     setError("")
     try { await onWhatsAppSend(recipient) } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "The document could not be sent on WhatsApp.")
+      setError(customerErrorMessage(sendError, "The document could not be sent on WhatsApp."))
       setPending(null)
     }
   }
@@ -77,7 +78,7 @@ export function DocumentShareDialog({
     setPending("whatsapp")
     setError("")
     try { await onWhatsApp() } catch (shareError) {
-      setError(shareError instanceof Error ? shareError.message : "WhatsApp could not be opened.")
+      setError(customerErrorMessage(shareError, "WhatsApp could not be opened."))
       setPending(null)
     }
   }

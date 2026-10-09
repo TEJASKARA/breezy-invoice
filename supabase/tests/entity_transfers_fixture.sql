@@ -72,6 +72,7 @@ end $$;
 \ir ../migrations/202609070006_proforma_invoice_conversion.sql
 \ir ../migrations/202610090001_entity_account_transfers.sql
 \ir ../migrations/202610090002_entity_deletion.sql
+\ir ../migrations/202610090003_invoice_tax_mode.sql
 create trigger test_invoice_credit before insert on breezy_invoices for each row execute function breezy_consume_document_credit();
 create trigger test_proforma_credit before insert on breezy_proformas for each row execute function breezy_consume_document_credit();
 create trigger test_payslip_credit before insert on breezy_payslips for each row execute function breezy_consume_document_credit();

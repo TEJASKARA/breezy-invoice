@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { Bug, CheckCircle2, Lightbulb, MessageSquareText, Star, X } from "lucide-react"
 import { useState } from "react"
@@ -51,7 +52,7 @@ export function ProductFeedbackDialog({ open, onOpenChange, workspaceId, workspa
       setRating(null)
       setFeedbackType("general")
     } catch (value) {
-      setError(value instanceof Error ? value.message : "Your feedback could not be sent. Please try again.")
+      setError(customerErrorMessage(value, "Your feedback could not be sent. Please try again."))
     } finally {
       setSaving(false)
     }

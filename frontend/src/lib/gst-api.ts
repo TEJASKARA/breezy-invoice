@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { supabase } from "@/lib/supabase"
 import { trackAction } from "@/lib/usage-tracking"
 
@@ -18,8 +19,8 @@ export type GstVerification = {
 }
 
 export async function verifyGstin(gstin: string, workspaceId: string): Promise<GstVerification> {
-  if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data, error } = await supabase.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again to verify this GSTIN.")
   const query = new URLSearchParams({ gstin: gstin.trim().toUpperCase(), workspace_id: workspaceId })
@@ -36,7 +37,7 @@ export async function verifyGstin(gstin: string, workspaceId: string): Promise<G
     const detail = payload && typeof payload === "object" && "detail" in payload
       ? String((payload as { detail?: unknown }).detail || "")
       : ""
-    throw new Error(detail || "GSTIN verification could not be completed.")
+    throw new Error(customerErrorMessage(detail, "GSTIN verification could not be completed."))
   }
   trackAction("gstin_verified")
   return payload as GstVerification

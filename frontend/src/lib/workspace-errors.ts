@@ -1,10 +1,5 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
+
 export function friendlyWorkspaceError(error: { code?: string; message: string }) {
-  const missingWorkspaceFunction = error.code === "PGRST202" || error.message.includes("breezy_ensure_my_workspace")
-  const missingInvitationDependency = error.message.includes("breezy_accept_pending_invitations")
-
-  if (missingWorkspaceFunction || missingInvitationDependency) {
-    return "Your workspace needs a small database update. Please ask the ChanaX administrator to run the latest workspace recovery migration."
-  }
-
-  return error.message
+  return customerErrorMessage(error, "We couldn't open your workspace. Please try again. If the problem continues, contact ChanaX support.")
 }

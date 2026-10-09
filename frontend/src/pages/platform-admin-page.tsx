@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
 import { BarChart3, Coins, Mail, Search, ShieldCheck } from "lucide-react"
@@ -52,7 +53,7 @@ export function PlatformAdminPage() {
       if (results.length === 1) setWorkspace(results[0])
       if (results.length === 0) setError("No workspace matches that email address or subscription code.")
     } catch (lookupError) {
-      setError(lookupError instanceof Error ? lookupError.message : "The workspace could not be found.")
+      setError(customerErrorMessage(lookupError, "The workspace could not be found."))
     } finally {
       setSearching(false)
     }
@@ -74,7 +75,7 @@ export function PlatformAdminPage() {
       setReason("")
       setConfirmed(false)
     } catch (grantError) {
-      setError(grantError instanceof Error ? grantError.message : "The credits could not be granted.")
+      setError(customerErrorMessage(grantError, "The credits could not be granted."))
     } finally {
       setSaving(false)
     }

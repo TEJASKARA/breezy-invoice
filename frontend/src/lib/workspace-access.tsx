@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { User } from "@supabase/supabase-js"
 
@@ -69,14 +70,14 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       if (next.workspace?.id) window.localStorage.setItem(storageKey, next.workspace.id)
       setError(null)
     } catch (accessError) {
-      setError(accessError instanceof Error ? accessError.message : "Workspace access could not be loaded.")
+      setError(customerErrorMessage(accessError, "Workspace access could not be loaded."))
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    if (!supabase) { setLoading(false); setError("Supabase is not configured."); return }
+    if (!supabase) { setLoading(false); setError("Your account connection is temporarily unavailable. Please try again later."); return }
     void supabase.auth.getUser().then(({ data }) => hydrate(data.user))
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       queueMicrotask(() => void hydrate(session?.user ?? null))

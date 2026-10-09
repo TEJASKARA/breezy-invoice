@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
@@ -33,7 +34,7 @@ export function LoginPage() {
   }, [])
 
   async function submit(event: React.FormEvent) {
-    event.preventDefault(); if (!supabase) { setMessageIsError(true); setMessage("Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to frontend/.env first."); return }
+    event.preventDefault(); if (!supabase) { setMessageIsError(true); setMessage("Sign-in is temporarily unavailable. Please try again later."); return }
     if (isPasswordRecovery) {
       if (password.length < 6) { setMessageIsError(true); setMessage("Your new password must contain at least 6 characters."); return }
       if (password !== confirmPassword) { setMessageIsError(true); setMessage("The passwords do not match."); return }
@@ -41,7 +42,7 @@ export function LoginPage() {
       const { error } = await supabase.auth.updateUser({ password })
       setBusy(false)
       setMessageIsError(Boolean(error))
-      if (error) setMessage(error.message)
+      if (error) setMessage(customerErrorMessage(error))
       else { setMessage("Password updated. You can now use your new password."); setIsPasswordRecovery(false); setConfirmPassword("") }
       return
     }
@@ -49,20 +50,20 @@ export function LoginPage() {
     const result = isSignUp ? await supabase.auth.signUp({ email, password }) : await supabase.auth.signInWithPassword({ email, password })
     setBusy(false)
     setMessageIsError(Boolean(result.error))
-    if (result.error) setMessage(result.error.message)
+    if (result.error) setMessage(customerErrorMessage(result.error))
     else if (isSignUp && !result.data.session) setMessage("Check your email to confirm your account, then sign in.")
     else navigate("/")
   }
   async function resetPassword() {
-    if (!supabase) { setMessageIsError(true); setMessage("Supabase is not configured."); return }
+    if (!supabase) { setMessageIsError(true); setMessage("Your account connection is temporarily unavailable. Please try again later."); return }
     if (!email.trim()) { setMessageIsError(true); setMessage("Enter your email address first."); return }
     setBusy(true); setMessage("")
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/login` })
     setBusy(false)
     setMessageIsError(Boolean(error))
-    setMessage(error ? error.message : "Password reset instructions were sent to your email.")
+    setMessage(error ? customerErrorMessage(error) : "Password reset instructions were sent to your email.")
   }
-  async function google() { if (!supabase) { setMessageIsError(true); setMessage("Add Supabase keys to frontend/.env first."); return }; const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/` } }); if (error) { setMessageIsError(true); setMessage(error.message) } }
+  async function google() { if (!supabase) { setMessageIsError(true); setMessage("Sign-in is temporarily unavailable. Please try again later."); return }; const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/` } }); if (error) { setMessageIsError(true); setMessage(customerErrorMessage(error)) } }
   return (
     <main className="public-light grid min-h-svh bg-white text-[#171717] lg:grid-cols-2">
       <section className="relative hidden overflow-hidden bg-[#111111] p-12 text-white lg:flex lg:flex-col">

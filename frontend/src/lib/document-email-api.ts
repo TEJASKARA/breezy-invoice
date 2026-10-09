@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { supabase } from "@/lib/supabase"
 import { trackAction } from "@/lib/usage-tracking"
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp-number"
@@ -23,8 +24,8 @@ export async function sendEmployeeLetterEmail(input: {
   filename: string
   pdf: Uint8Array
 }) {
-  if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data, error } = await supabase.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again before emailing an employee letter.")
   const response = await fetch(`${apiUrl}/api/v1/documents/employee-letter-email`, {
@@ -43,7 +44,7 @@ export async function sendEmployeeLetterEmail(input: {
   })
   let payload: { detail?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
-  if (!response.ok) throw new Error(payload.detail || "The employee letter email could not be sent.")
+  if (!response.ok) throw new Error(customerErrorMessage(payload.detail, "The employee letter email could not be sent."))
   trackAction("email_sent", { document: "employee_letter" })
   return payload.message || `The letter was emailed to ${input.toEmail}.`
 }
@@ -59,8 +60,8 @@ export async function sendDocumentEmail(input: {
   filename: string
   pdf: Uint8Array
 }) {
-  if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data, error } = await supabase.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again before emailing this document.")
   const response = await fetch(`${apiUrl}/api/v1/documents/document-email`, {
@@ -80,7 +81,7 @@ export async function sendDocumentEmail(input: {
   })
   let payload: { detail?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
-  if (!response.ok) throw new Error(payload.detail || "The document email could not be sent.")
+  if (!response.ok) throw new Error(customerErrorMessage(payload.detail, "The document email could not be sent."))
   trackAction("email_sent", { document: input.documentType })
   return payload.message || `The document was emailed to ${input.toEmail}.`
 }
@@ -98,8 +99,8 @@ export async function sendDocumentWhatsApp(input: {
   filename: string
   pdf: Uint8Array
 }) {
-  if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const recipient = normalizeWhatsAppNumber(input.toNumber)
   if (!recipient) throw new Error("Enter a valid WhatsApp number with its country code.")
   const { data, error } = await supabase.auth.getSession()
@@ -131,7 +132,7 @@ export async function sendDocumentWhatsApp(input: {
     const detail = Array.isArray(payload.detail)
       ? String(payload.detail[0]?.msg || "").replace(/^Value error,\s*/i, "")
       : payload.detail
-    throw new Error(detail || payload.error || (payload.success === false ? payload.message : undefined) || "The document could not be sent on WhatsApp. Please try again.")
+    throw new Error(customerErrorMessage(detail || payload.error || (payload.success === false ? payload.message : undefined), "The document could not be sent on WhatsApp. Please try again."))
   }
   if (!payload.message) throw new Error("We couldn't confirm whether WhatsApp accepted this message. Check whether it arrived before trying again.")
   trackAction("whatsapp_sent", { document: input.documentType })

@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
 import { Calculator, Check, Coins, CreditCard, Download, Users } from "lucide-react"
 
@@ -84,7 +85,7 @@ export function PricingPage() {
   useEffect(() => { void refreshBillingHistory() }, [refreshBillingHistory])
 
   function showSuccess(message: string) { setNotice(message); setError("") }
-  function showError(value: unknown) { setError(value instanceof Error ? value.message : "The payment could not be completed."); setNotice("") }
+  function showError(value: unknown) { setError(customerErrorMessage(value, "The payment could not be completed.")); setNotice("") }
 
   async function purchasePlan(planKey: BillingPlanKey, usage?: CustomPlanUsage) {
     if (!workspace || !isOwner) return

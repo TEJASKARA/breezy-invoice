@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:errors": "node --test tests/customer-errors.test.mjs",
+    "test:gst": "node --test tests/invoice-gst.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useRef, useState } from "react"
 import { Building2, Pencil, Plus, Trash2, X } from "lucide-react"
 
@@ -142,7 +143,7 @@ export function EntitiesPage() {
       setNotice(`GST details verified with WhiteBooks${details.cached ? " using saved data" : ""}.`)
     } catch (error) {
       setNoticeIsError(true)
-      setNotice(error instanceof Error ? error.message : "GSTIN verification failed.")
+      setNotice(customerErrorMessage(error, "GSTIN verification failed."))
     } finally {
       setVerifyingGstin(false)
     }
@@ -198,7 +199,7 @@ export function EntitiesPage() {
       setNotice(`Entity saved with ${hsnCodes.length} HSN/SAC code${hsnCodes.length === 1 ? "" : "s"}.`)
     } catch (error) {
       setNoticeIsError(true)
-      setNotice(error instanceof Error ? error.message : "The entity could not be saved. Please try again.")
+      setNotice(customerErrorMessage(error, "The entity could not be saved. Please try again."))
     } finally {
       setSaving(false)
     }
@@ -238,7 +239,7 @@ export function EntitiesPage() {
       setNotice(`HSN/SAC list updated with ${hsnEditCodes.length} code${hsnEditCodes.length === 1 ? "" : "s"}.`)
     } catch (error) {
       setNoticeIsError(true)
-      setNotice(error instanceof Error ? error.message : "The HSN/SAC list could not be saved.")
+      setNotice(customerErrorMessage(error, "The HSN/SAC list could not be saved."))
     } finally {
       setSaving(false)
     }
@@ -360,7 +361,7 @@ export function EntitiesPage() {
                 setPendingDelete(null); setDeleteConfirmation(""); setHsnEditingCompanyId(null)
                 setNoticeIsError(false); setNotice("The entity and its linked records were permanently deleted. Unshared expense files are scheduled for background cleanup.")
               } catch (error) {
-                setNoticeIsError(true); setNotice(error instanceof Error ? error.message : "The entity could not be deleted.")
+                setNoticeIsError(true); setNotice(customerErrorMessage(error, "The entity could not be deleted."))
               } finally { setDeleting(false) }
             }}>{deleting ? "Deleting…" : "Yes, permanently delete entity and data"}</Button>
           </div>

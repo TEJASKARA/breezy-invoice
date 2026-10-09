@@ -1,5 +1,7 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { supabase } from "@/lib/supabase"
 import { friendlyWorkspaceError } from "@/lib/workspace-errors"
+import { invoiceTaxError } from "@/lib/invoice-gst"
 import type { Company, Customer, Employee, EmployeeLetter, Expense, Invoice, MvpState, Payslip, Proforma, Setup, TemplateSettings } from "@/lib/mvp-store"
 
 type PayloadRow = { id: string; payload: Record<string, unknown> }
@@ -9,7 +11,7 @@ type ProformaPayloadRow = RelatedPayloadRow & { customer_id: string | null }
 type LetterPayloadRow = RelatedPayloadRow & { employee_id: string; letter_type: EmployeeLetter["letterType"] }
 
 function client() {
-  if (!supabase) throw new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   return supabase
 }
 
@@ -18,7 +20,7 @@ function withoutKeys<T extends Record<string, unknown>>(value: T, keys: string[]
 }
 
 function throwIfError(error: { message: string } | null) {
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 function isMissingExpensesTable(error: { code?: string; message: string } | null) {
@@ -154,6 +156,10 @@ export async function deleteCustomerRow(workspaceId: string, customerId: string)
 
 export async function upsertInvoices(userId: string, workspaceId: string, invoices: Invoice[]) {
   if (!invoices.length) return
+  for (const invoice of invoices) {
+    const taxError = invoiceTaxError(invoice)
+    if (taxError) throw new Error(taxError)
+  }
   const { error } = await client().from("breezy_invoices").upsert(invoices.map((invoice) => ({
     id: invoice.id,
     user_id: userId,

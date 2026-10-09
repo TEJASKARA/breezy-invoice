@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { Banknote, Download, FileText, IndianRupee, Paperclip, Plus, ReceiptText, Trash2, Upload, Users } from "lucide-react"
 import { lazy, Suspense, type FormEvent, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
@@ -151,7 +152,7 @@ export function ExpensesPage() {
           // Keep the original save error visible; abandoned files can be cleaned up separately.
         }
       }
-      setError(caught instanceof Error ? caught.message : "The expense could not be saved.")
+      setError(customerErrorMessage(caught, "The expense could not be saved."))
     } finally {
       setSaving(false)
     }
@@ -163,7 +164,7 @@ export function ExpensesPage() {
     try {
       await downloadExpenseBill(path, name)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The bill could not be downloaded.")
+      setError(customerErrorMessage(caught, "The bill could not be downloaded."))
     } finally {
       setBillBusyId(null)
     }
@@ -178,7 +179,7 @@ export function ExpensesPage() {
       setPendingDeleteId(null)
       setNotice("Expense deleted.")
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The expense could not be deleted.")
+      setError(customerErrorMessage(caught, "The expense could not be deleted."))
     }
   }
 

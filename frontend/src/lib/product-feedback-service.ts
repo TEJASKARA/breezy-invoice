@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { supabase } from "@/lib/supabase"
 
 export type ProductFeedbackType = "general" | "bug" | "feature"
@@ -11,7 +12,7 @@ type ProductFeedbackInput = {
 }
 
 export async function submitProductFeedback(input: ProductFeedbackInput) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data: userData, error: userError } = await supabase.auth.getUser()
   if (userError || !userData.user) throw new Error("Sign in again before sending feedback.")
 
@@ -26,5 +27,5 @@ export async function submitProductFeedback(input: ProductFeedbackInput) {
     page_path: window.location.pathname,
     browser_details: window.navigator.userAgent.slice(0, 500),
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }

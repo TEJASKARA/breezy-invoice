@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Download, Eye, FilePlus2, ReceiptText, Share2, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
@@ -142,7 +143,7 @@ export function ProformasPage() {
       if (draftStorageKey) localStorage.removeItem(draftStorageKey)
       setItems([line(entityHsnCodes[0])])
       setNotice("Quotation generated. One quotation credit was used; your invoice and payslip credits were not affected.")
-    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The proforma could not be generated.") }
+    } catch (saveError) { setError(customerErrorMessage(saveError, "The proforma could not be generated.")) }
   }
 
   async function pdf(record: Proforma) {

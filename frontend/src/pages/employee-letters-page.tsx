@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useMemo, useState } from "react"
 import { Download, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
 
@@ -69,7 +70,7 @@ export function EmployeeLettersPage() {
     try {
       await addEmployeeLetter({ entityId: entity.id, employeeId: employee.id, letterType, title: letterDetails[letterType].title, issueDate, effectiveDate, subject: subject.trim(), body: body.trim(), status: "Issued", signatureName: signatureName.trim(), issuedAt: new Date().toISOString() })
       setNotice(`${letterDetails[letterType].label} letter saved under ${employee.employeeName}.`)
-    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The letter could not be saved.") }
+    } catch (saveError) { setError(customerErrorMessage(saveError, "The letter could not be saved.")) }
   }
 
   async function documentFor(letter: EmployeeLetter) {
@@ -97,7 +98,7 @@ export function EmployeeLettersPage() {
       })
       setNotice(result)
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "The employee letter could not be sent on WhatsApp."
+      const message = customerErrorMessage(caught, "The employee letter could not be sent on WhatsApp.")
       setError(message)
       throw new Error(message)
     }
@@ -125,7 +126,7 @@ export function EmployeeLettersPage() {
       setNotice(result)
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return
-      setError(caught instanceof Error ? caught.message : "The employee letter email could not be prepared.")
+      setError(customerErrorMessage(caught, "The employee letter email could not be prepared."))
     } finally { setEmailingLetterId(null) }
   }
 

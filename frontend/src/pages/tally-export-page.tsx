@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Archive, Download, FileCode2, Loader2, Save, Search, Upload } from "lucide-react"
 
@@ -106,7 +107,7 @@ export function TallyExportPage() {
       await updateCompany(entity.id, { tallySettings: settings })
       setNotice(`Tally settings saved for ${entity.companyName}.`)
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "The Tally settings could not be saved.")
+      setError(customerErrorMessage(saveError, "The Tally settings could not be saved."))
     }
   }
 
@@ -163,7 +164,7 @@ export function TallyExportPage() {
       if (updated) setNotice(`${updated} customer ledger mapping${updated === 1 ? "" : "s"} saved from ${file.name}.`)
       else setError("No valid customer ledger mappings were found in this workbook.")
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : "The customer ledger workbook could not be read.")
+      setError(customerErrorMessage(importError, "The customer ledger workbook could not be read."))
     }
   }
 
@@ -187,7 +188,7 @@ export function TallyExportPage() {
       if (updated) setNotice(`${updated} employee ledger mapping${updated === 1 ? "" : "s"} saved from ${file.name}.`)
       else setError("No valid employee ledger mappings were found in this workbook.")
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : "The employee ledger workbook could not be read.")
+      setError(customerErrorMessage(importError, "The employee ledger workbook could not be read."))
     }
   }
 
@@ -233,7 +234,7 @@ export function TallyExportPage() {
       })
       setNotice(`Complete export prepared with ${fileCount} file${fileCount === 1 ? "" : "s"}.`)
     } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "The complete export could not be prepared.")
+      setError(customerErrorMessage(archiveError, "The complete export could not be prepared."))
     } finally {
       setExportingArchive(false)
     }
@@ -304,7 +305,7 @@ export function TallyExportPage() {
       inputRef={customerMappingInput}
       importMapping={importCustomerMapping}
     >
-      <Table><TableHeader><TableRow><TableHead>Customer company</TableHead><TableHead>GSTIN</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleCustomers.length ? visibleCustomers.map((customer) => <TableRow key={customer.id}><TableCell className="font-medium">{customer.companyName}</TableCell><TableCell>{customer.gstin || "—"}</TableCell><TableCell><LedgerNameInput disabled={!canManage} initialValue={customer.tallyLedgerName || customer.companyName} onSave={async (value) => { if (!canManage) return; try { await updateCustomer(customer.id, { tallyLedgerName: value }); setNotice(`Ledger mapping saved for ${customer.companyName}.`) } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The ledger mapping could not be saved.") } }} ariaLabel={`Tally ledger for ${customer.companyName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No customers match this search.</TableCell></TableRow>}</TableBody></Table>
+      <Table><TableHeader><TableRow><TableHead>Customer company</TableHead><TableHead>GSTIN</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleCustomers.length ? visibleCustomers.map((customer) => <TableRow key={customer.id}><TableCell className="font-medium">{customer.companyName}</TableCell><TableCell>{customer.gstin || "—"}</TableCell><TableCell><LedgerNameInput disabled={!canManage} initialValue={customer.tallyLedgerName || customer.companyName} onSave={async (value) => { if (!canManage) return; try { await updateCustomer(customer.id, { tallyLedgerName: value }); setNotice(`Ledger mapping saved for ${customer.companyName}.`) } catch (saveError) { setError(customerErrorMessage(saveError, "The ledger mapping could not be saved.")) } }} ariaLabel={`Tally ledger for ${customer.companyName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No customers match this search.</TableCell></TableRow>}</TableBody></Table>
     </LedgerMappingCard>
 
     <LedgerMappingCard
@@ -318,7 +319,7 @@ export function TallyExportPage() {
       inputRef={employeeMappingInput}
       importMapping={importEmployeeMapping}
     >
-      <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Code</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => <TableRow key={employee.id}><TableCell className="font-medium">{employee.employeeName}</TableCell><TableCell>{employee.employeeCode}</TableCell><TableCell><LedgerNameInput disabled={!canManage} initialValue={employee.tallyLedgerName || employee.employeeName} onSave={async (value) => { if (!canManage) return; try { await updateEmployee(employee.id, { tallyLedgerName: value }); setNotice(`Ledger mapping saved for ${employee.employeeName}.`) } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "The ledger mapping could not be saved.") } }} ariaLabel={`Tally ledger for ${employee.employeeName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No employees match this search.</TableCell></TableRow>}</TableBody></Table>
+      <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Code</TableHead><TableHead>Tally ledger name</TableHead></TableRow></TableHeader><TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => <TableRow key={employee.id}><TableCell className="font-medium">{employee.employeeName}</TableCell><TableCell>{employee.employeeCode}</TableCell><TableCell><LedgerNameInput disabled={!canManage} initialValue={employee.tallyLedgerName || employee.employeeName} onSave={async (value) => { if (!canManage) return; try { await updateEmployee(employee.id, { tallyLedgerName: value }); setNotice(`Ledger mapping saved for ${employee.employeeName}.`) } catch (saveError) { setError(customerErrorMessage(saveError, "The ledger mapping could not be saved.")) } }} ariaLabel={`Tally ledger for ${employee.employeeName}`} /></TableCell></TableRow>) : <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">No employees match this search.</TableCell></TableRow>}</TableBody></Table>
     </LedgerMappingCard>
 
     <div className="grid gap-5 lg:grid-cols-2">

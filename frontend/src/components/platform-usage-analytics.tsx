@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
 import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, RefreshCw, Search, Users, X } from "lucide-react"
 
@@ -153,7 +154,7 @@ export function PlatformUsageAnalytics() {
     try {
       setReport(await loadUsageReport(periodDays, identifier))
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "The usage report could not be loaded.")
+      setError(customerErrorMessage(loadError, "The usage report could not be loaded."))
     } finally {
       setLoading(false)
     }

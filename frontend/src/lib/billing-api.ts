@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { supabase } from "@/lib/supabase"
 
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
@@ -74,8 +75,8 @@ declare global {
 }
 
 async function sessionToken() {
-  if (!apiUrl) throw new Error("The ChanaX backend URL has not been configured.")
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data, error } = await supabase.auth.getSession()
   if (error || !data.session?.access_token) throw new Error("Sign in again to manage billing.")
   return data.session.access_token
@@ -97,7 +98,7 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
     const detail = payload && typeof payload === "object" && "detail" in payload
       ? String((payload as { detail?: unknown }).detail || "")
       : ""
-    throw new Error(detail || "The billing request could not be completed.")
+    throw new Error(customerErrorMessage(detail, "The billing request could not be completed."))
   }
   return payload as T
 }

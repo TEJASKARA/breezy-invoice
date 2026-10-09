@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
 import { Building2, CalendarDays, CheckCircle2, Hash } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
@@ -75,7 +76,7 @@ export function OnboardingPage() {
         await refreshWorkspaceAccess()
         navigate("/workspace")
       } catch (error) {
-        setSaveError(error instanceof Error ? error.message : "Your account type could not be saved.")
+        setSaveError(customerErrorMessage(error, "Your account type could not be saved."))
       } finally {
         setSaving(false)
       }
@@ -92,7 +93,7 @@ export function OnboardingPage() {
       await refreshWorkspaceAccess()
       navigate("/ca", { replace: true })
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Your CA portal could not be created.")
+      setSaveError(customerErrorMessage(error, "Your CA portal could not be created."))
     } finally {
       setSaving(false)
     }
@@ -157,7 +158,7 @@ export function OnboardingPage() {
       setGstDetailsConfirmed(false)
       return details
     } catch (error) {
-      const message = error instanceof Error ? error.message : "GSTIN verification failed."
+      const message = customerErrorMessage(error, "GSTIN verification failed.")
       setSaveError(message)
       throw error
     } finally {
@@ -241,7 +242,7 @@ export function OnboardingPage() {
       }
       navigate("/entities")
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "We could not save your setup. Please try again.")
+      setSaveError(customerErrorMessage(error, "We could not save your setup. Please try again."))
     } finally {
       setSaving(false)
     }

@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import type { User } from "@supabase/supabase-js"
 
 import { supabase } from "@/lib/supabase"
@@ -98,13 +99,13 @@ export function allowsWorkspacePermission(membership: WorkspaceMembership | null
 }
 
 export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: string | null) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const profileResult = await supabase
     .from("profiles")
     .select("id, email, full_name, account_type, ca_firm_name")
     .eq("id", user.id)
     .maybeSingle()
-  if (profileResult.error) throw new Error(profileResult.error.message)
+  if (profileResult.error) throw new Error(customerErrorMessage(profileResult.error))
   const userProfile = (profileResult.data || {
     id: user.id,
     email: user.email || null,
@@ -118,7 +119,7 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     .eq("user_id", user.id)
     .eq("status", "active")
     .order("created_at", { ascending: true })
-  if (membershipsResult.error) throw new Error(membershipsResult.error.message)
+  if (membershipsResult.error) throw new Error(customerErrorMessage(membershipsResult.error))
   if (!membershipsResult.data?.length && userProfile.account_type !== "ca") {
     const ensured = await supabase.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
@@ -130,7 +131,7 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
       .eq("user_id", user.id)
       .eq("status", "active")
       .order("created_at", { ascending: true })
-    if (membershipsResult.error) throw new Error(membershipsResult.error.message)
+    if (membershipsResult.error) throw new Error(customerErrorMessage(membershipsResult.error))
   }
   const memberships = (membershipsResult.data || []) as WorkspaceMembership[]
   if (!memberships.length) return { membership: null, workspace: null, subscription: null, creditAccount: null, workspaceOptions: [], userProfile }
@@ -140,7 +141,7 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     .from("breezy_workspaces")
     .select("id, owner_user_id, name, subscription_code, status, created_at")
     .in("id", memberships.map((item) => item.workspace_id))
-  if (workspacesResult.error) throw new Error(workspacesResult.error.message)
+  if (workspacesResult.error) throw new Error(customerErrorMessage(workspacesResult.error))
   const workspaceById = new Map((workspacesResult.data || []).map((item) => [item.id, item as Workspace]))
   const workspace = workspaceById.get(membership.workspace_id) || null
   if (!workspace) throw new Error("The selected workspace could not be loaded.")
@@ -159,9 +160,9 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     // rolled out. The UI derives matching legacy balances until it is present.
     creditResult = await supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at").eq("workspace_id", membership.workspace_id).maybeSingle() as typeof initialCreditResult
   }
-  if (subscriptionResult.error) throw new Error(subscriptionResult.error.message)
+  if (subscriptionResult.error) throw new Error(customerErrorMessage(subscriptionResult.error))
   const creditTableMissing = creditResult.error?.code === "42P01" || creditResult.error?.message?.includes("breezy_credit_accounts")
-  if (creditResult.error && !creditTableMissing) throw new Error(creditResult.error.message)
+  if (creditResult.error && !creditTableMissing) throw new Error(customerErrorMessage(creditResult.error))
   return {
     membership,
     workspace,
@@ -198,16 +199,16 @@ export type WorkspaceAuditEntry = {
 }
 
 export async function setMyAccountType(accountType: "ca" | "founder" | "employee", caFirmName?: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_set_account_type", {
     target_account_type: accountType,
     target_ca_firm_name: caFirmName || null,
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 export async function createMyFirmWorkspace(name: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data, error } = await supabase.rpc("breezy_create_my_firm_workspace", {
     target_name: name,
   })
@@ -222,48 +223,48 @@ export async function createMyFirmWorkspace(name: string) {
 }
 
 export async function requestCaClientAccess(companyReference: string, message: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_request_ca_access", {
     target_company_reference: companyReference,
     request_message: message || null,
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 export async function cancelCaClientAccessRequest(requestId: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_cancel_ca_access_request", { target_request_id: requestId })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 export async function loadMyCaAccessRequests() {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { data, error } = await supabase
     .from("breezy_ca_access_requests")
     .select("id, workspace_id, requester_user_id, requester_email, requester_name, ca_firm_name, message, requested_permissions, status, created_at, workspace:breezy_workspaces(name)")
     .order("created_at", { ascending: false })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
   return (data || []) as unknown as CaAccessRequest[]
 }
 
 export async function decideCaAccessRequest(requestId: string, approved: boolean, permissions: WorkspacePermission[]) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_decide_ca_access_request", {
     target_request_id: requestId,
     approve_request: approved,
     target_permissions: permissions,
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 export async function loadWorkspaceCaAdministration(workspaceId: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const [requestsResult, auditResult] = await Promise.all([
     supabase.from("breezy_ca_access_requests").select("id, workspace_id, requester_user_id, requester_email, requester_name, ca_firm_name, message, requested_permissions, status, created_at").eq("workspace_id", workspaceId).eq("status", "pending").order("created_at"),
     supabase.from("breezy_workspace_audit_log").select("id, actor_email, actor_account_type, action, resource_type, resource_id, details, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(50),
   ])
-  if (requestsResult.error) throw new Error(requestsResult.error.message)
-  if (auditResult.error) throw new Error(auditResult.error.message)
+  if (requestsResult.error) throw new Error(customerErrorMessage(requestsResult.error))
+  if (auditResult.error) throw new Error(customerErrorMessage(auditResult.error))
   return {
     requests: (requestsResult.data || []) as CaAccessRequest[],
     auditEntries: (auditResult.data || []) as WorkspaceAuditEntry[],
@@ -295,37 +296,37 @@ export function permissionsForRole(role: Exclude<WorkspaceRole, "owner">): Works
 }
 
 export async function loadWorkspacePeople(workspaceId: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const [membersResult, invitationsResult] = await Promise.all([
     supabase.from("breezy_workspace_members").select("id, workspace_id, user_id, role, permissions, status, joined_at").eq("workspace_id", workspaceId).order("created_at"),
     supabase.from("breezy_workspace_invitations").select("id, email, role, permissions, status, expires_at, created_at").eq("workspace_id", workspaceId).eq("status", "pending").order("created_at", { ascending: false }),
   ])
-  if (membersResult.error) throw new Error(membersResult.error.message)
-  if (invitationsResult.error) throw new Error(invitationsResult.error.message)
+  if (membersResult.error) throw new Error(customerErrorMessage(membersResult.error))
+  if (invitationsResult.error) throw new Error(customerErrorMessage(invitationsResult.error))
   const userIds = (membersResult.data || []).map((member) => member.user_id)
   const profilesResult = userIds.length
     ? await supabase.from("profiles").select("id, full_name, email, avatar_path").in("id", userIds)
     : { data: [], error: null }
-  if (profilesResult.error) throw new Error(profilesResult.error.message)
+  if (profilesResult.error) throw new Error(customerErrorMessage(profilesResult.error))
   const profiles = new Map((profilesResult.data || []).map((profile) => [profile.id, profile]))
   const members = (membersResult.data || []).map((member) => ({ ...member, profile: profiles.get(member.user_id) || null }) as WorkspaceMember)
   return { members, invitations: (invitationsResult.data || []) as WorkspaceInvitation[] }
 }
 
 export async function updateWorkspaceMember(workspaceId: string, userId: string, role: Exclude<WorkspaceRole, "owner">, permissions: WorkspacePermission[], status: "active" | "disabled") {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_update_workspace_member", { target_workspace_id: workspaceId, target_user_id: userId, target_role: role, target_permissions: permissions, target_status: status })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 export async function removeWorkspaceMember(workspaceId: string, userId: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_remove_workspace_member", { target_workspace_id: workspaceId, target_user_id: userId })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }
 
 export async function revokeWorkspaceInvitation(workspaceId: string, invitationId: string) {
-  if (!supabase) throw new Error("Supabase is not configured.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
   const { error } = await supabase.rpc("breezy_revoke_workspace_invitation", { target_workspace_id: workspaceId, target_invitation_id: invitationId })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(customerErrorMessage(error))
 }

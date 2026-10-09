@@ -1,3 +1,5 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
+import { assertInvoiceTaxMode, type GstTaxMode } from "@/lib/invoice-gst"
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import {
@@ -59,6 +61,7 @@ export type InvoiceCorrection = {
   replacementInvoiceNumber?: string
 }
 export type Invoice = {
+  gstTaxMode?: GstTaxMode
   id: string
   entityId?: string
   number: string
@@ -596,7 +599,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       .then(() => setSyncStatus("synced"))
       .catch((error: unknown) => {
         setSyncStatus("error")
-        setSyncError(error instanceof Error ? error.message : "Supabase could not save this change.")
+        setSyncError(customerErrorMessage(error, "We couldn’t save this change. Please try again."))
       })
   }
 
@@ -616,7 +619,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       await task
       setSyncStatus("synced")
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Supabase could not save this change."
+      const message = customerErrorMessage(error, "We couldn’t save this change. Please try again.")
       setSyncStatus("error")
       setSyncError(message)
       throw new Error(message)
@@ -627,7 +630,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     if (!supabase) {
       setLoading(false)
       setSyncStatus("local")
-      setSyncError("Supabase is not configured. Changes are only cached in this browser.")
+      setSyncError("Your changes have not been saved online. Please try again when your account connection is available.")
       return
     }
     const hydrate = async (userId: string | null) => {
@@ -674,7 +677,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         if (sequence !== loadSequence.current) return
         commit(cachedState)
         setSyncStatus("error")
-        setSyncError(error instanceof Error ? error.message : "Supabase workspace data could not be loaded.")
+        setSyncError(customerErrorMessage(error, "We couldn’t load your workspace. Please try again."))
       } finally {
         if (sequence === loadSequence.current) {
           setLoading(false)
@@ -770,6 +773,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       commit({ ...stateRef.current, customers: stateRef.current.customers.filter((customer) => customer.id !== customerId) })
     },
     addInvoice: async (invoice) => {
+      assertInvoiceTaxMode(invoice)
       const current = stateRef.current
       const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
       if (company?.transferredAt) throw new Error("This company has moved. Create its new invoices in the receiving account.")
@@ -792,6 +796,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       return added
     },
     addInvoices: async (invoices) => {
+      invoices.forEach(assertInvoiceTaxMode)
       const current = stateRef.current
       const counters = new Map<string, number>()
       const added = invoices.map((invoice, index) => {
@@ -826,6 +831,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       trackAction("invoice_updated", { invoice_id: invoiceId })
     },
     replaceInvoice: async (invoiceId, replacement, correction) => {
+      assertInvoiceTaxMode(replacement)
       const current = stateRef.current
       const original = current.invoices.find((invoice) => invoice.id === invoiceId)
       if (!original) throw new Error("The original invoice could not be found.")

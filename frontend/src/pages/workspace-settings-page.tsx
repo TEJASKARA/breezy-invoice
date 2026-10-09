@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
 import { AlertTriangle, CalendarDays, Check, Clipboard, Crown, KeyRound, MailPlus, Save, ShieldCheck, Trash2, UserCog, Users } from "lucide-react"
 
@@ -125,7 +126,7 @@ export function WorkspaceSettingsPage() {
       setInvitations(people.invitations)
       setError("")
     } catch (peopleError) {
-      setError(peopleError instanceof Error ? peopleError.message : "Team access could not be loaded.")
+      setError(customerErrorMessage(peopleError, "Team access could not be loaded."))
     }
   }, [workspace, canManageTeam])
 
@@ -136,7 +137,7 @@ export function WorkspaceSettingsPage() {
       setCaAccessRequests(result.requests)
       setAuditEntries(result.auditEntries)
     } catch (adminError) {
-      setError(adminError instanceof Error ? adminError.message : "CA access activity could not be loaded.")
+      setError(customerErrorMessage(adminError, "CA access activity could not be loaded."))
     }
   }, [workspace, canManageTeam])
 
@@ -149,7 +150,7 @@ export function WorkspaceSettingsPage() {
   }, [workspace, isOwner])
 
   function showSuccess(message: string) { setNotice(message); setError("") }
-  function showError(value: unknown) { setError(value instanceof Error ? value.message : "The change could not be saved."); setNotice("") }
+  function showError(value: unknown) { setError(customerErrorMessage(value, "The change could not be saved.")); setNotice("") }
 
   async function saveWorkspaceDetails(event: React.FormEvent) {
     event.preventDefault()
@@ -163,7 +164,7 @@ export function WorkspaceSettingsPage() {
     try {
       if (isOwner && workspace.name !== firmName.trim()) {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
-        if (updateError) throw new Error(updateError.message)
+        if (updateError) throw new Error(customerErrorMessage(updateError))
       }
       await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
       await refresh()
@@ -266,7 +267,7 @@ export function WorkspaceSettingsPage() {
     setSaving(true)
     try {
       const { data, error: requestError } = await supabase!.rpc("breezy_request_account_deletion", { target_workspace_id: workspace.id })
-      if (requestError) throw new Error(requestError.message)
+      if (requestError) throw new Error(customerErrorMessage(requestError))
       setDeletionRequest(data as { status: string; purge_after: string })
       setDeletionStage(0)
       setDeletionConfirmation("")
@@ -280,7 +281,7 @@ export function WorkspaceSettingsPage() {
     setSaving(true)
     try {
       const { error: cancelError } = await supabase!.rpc("breezy_cancel_account_deletion", { target_workspace_id: workspace.id })
-      if (cancelError) throw new Error(cancelError.message)
+      if (cancelError) throw new Error(customerErrorMessage(cancelError))
       setDeletionRequest(null)
       await refresh()
       showSuccess("Account deletion cancelled. Workspace and team access have been restored.")

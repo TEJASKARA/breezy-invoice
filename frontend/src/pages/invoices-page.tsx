@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Download, Eye, FilePenLine, LoaderCircle, Plus, Search, Share2, Star, Trash2, TriangleAlert, Upload, X } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
+import { applyInvoiceTaxMode, inferInvoiceTaxMode, invoiceTaxError, recalculateDraftLineFromTaxable, recalculateDraftLineFromTotal, recalculateGstDraftLine, type GstTaxMode } from "@/lib/invoice-gst"
 import { sendDocumentEmail, sendDocumentWhatsApp } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
@@ -44,6 +46,7 @@ type InvoiceDraft = {
   date: string
   status: "Draft" | "Generated"
   lineItems: DraftLineItem[]
+  taxMode: GstTaxMode
   tdsAmount: string
   otherDeduction: string
   sourceProforma: { id: string; number: string } | null
@@ -67,43 +70,8 @@ const correctionLabels: Record<InvoiceCorrectionMethod, string> = {
 const roundMoney = (value: number) => Math.round(value * 100) / 100
 const rateFromAmount = (amount: number, taxableAmount: number) => taxableAmount > 0 ? roundMoney(amount * 100 / taxableAmount) : 0
 const gstRateOptions = [5, 12, 18, 28]
-const moneyInputValue = (value: number) => value > 0 ? String(roundMoney(value)) : ""
 const clampRate = (value: string) => Math.min(100, Math.max(0, Number(value) || 0))
-const draftRate = (value: string) => Math.min(100, Math.max(0, Number(value) || 0))
-const draftLineTaxTotal = (line: Pick<DraftLineItem, "cgstRate" | "sgstRate" | "igstRate">) => draftRate(line.igstRate) || draftRate(line.cgstRate) + draftRate(line.sgstRate)
-const taxAmountsForTaxable = (line: Pick<DraftLineItem, "cgstRate" | "sgstRate" | "igstRate">, taxableAmount: number) => ({
-  cgstAmount: roundMoney(taxableAmount * draftRate(line.cgstRate) / 100),
-  sgstAmount: roundMoney(taxableAmount * draftRate(line.sgstRate) / 100),
-  igstAmount: roundMoney(taxableAmount * draftRate(line.igstRate) / 100),
-})
-const recalculateDraftLineFromTaxable = (line: DraftLineItem): DraftLineItem => {
-  const taxableAmount = Math.max(0, Number(line.taxableAmount) || 0)
-  const tax = taxAmountsForTaxable(line, taxableAmount)
-  return {
-    ...line,
-    cgstAmount: moneyInputValue(tax.cgstAmount),
-    sgstAmount: moneyInputValue(tax.sgstAmount),
-    igstAmount: moneyInputValue(tax.igstAmount),
-    totalAmount: moneyInputValue(taxableAmount + tax.cgstAmount + tax.sgstAmount + tax.igstAmount),
-  }
-}
-const recalculateDraftLineFromTotal = (line: DraftLineItem): DraftLineItem => {
-  const totalAmount = Math.max(0, Number(line.totalAmount) || 0)
-  const taxRate = draftLineTaxTotal(line)
-  const taxableAmount = taxRate > 0 ? roundMoney(totalAmount / (1 + taxRate / 100)) : totalAmount
-  const tax = taxAmountsForTaxable(line, taxableAmount)
-  return {
-    ...line,
-    taxableAmount: moneyInputValue(taxableAmount),
-    cgstAmount: moneyInputValue(tax.cgstAmount),
-    sgstAmount: moneyInputValue(tax.sgstAmount),
-    igstAmount: moneyInputValue(tax.igstAmount),
-    totalAmount: moneyInputValue(totalAmount),
-  }
-}
-const recalculateDraftLine = (line: DraftLineItem) => line.amountBasis === "total" && line.totalAmount
-  ? recalculateDraftLineFromTotal(line)
-  : recalculateDraftLineFromTaxable(line)
+const recalculateDraftLine = recalculateGstDraftLine
 const newDraftLine = (hsnSac = ""): DraftLineItem => ({
   id: crypto.randomUUID(),
   description: "",
@@ -175,6 +143,7 @@ export function InvoicesPage() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [status, setStatus] = useState<"Draft" | "Generated">("Draft")
   const [lineItems, setLineItems] = useState<DraftLineItem[]>([newDraftLine()])
+  const [taxMode, setTaxMode] = useState<GstTaxMode>("split")
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
   const [sourceProforma, setSourceProforma] = useState<{ id: string; number: string } | null>(null)
@@ -267,7 +236,7 @@ export function InvoicesPage() {
         premisesAddress: result.premises_address || result.billing_address || customer.premisesAddress,
       }))
     } catch (error) {
-      setManualCustomerError(error instanceof Error ? error.message : "GSTIN verification failed.")
+      setManualCustomerError(customerErrorMessage(error, "GSTIN verification failed."))
     } finally {
       setManualCustomerVerifying(false)
     }
@@ -306,7 +275,10 @@ export function InvoicesPage() {
       setCompanyName(String(draft.companyName || ""))
       if (draft.date) setDate(draft.date)
       if (draft.status === "Draft" || draft.status === "Generated") setStatus(draft.status)
-      if (Array.isArray(draft.lineItems) && draft.lineItems.length) setLineItems(draft.lineItems.map(restoreDraftLine))
+      if (Array.isArray(draft.lineItems) && draft.lineItems.length) {
+        setLineItems(draft.lineItems.map(restoreDraftLine))
+        setTaxMode(draft.taxMode === "igst" || draft.taxMode === "split" ? draft.taxMode : inferInvoiceTaxMode(draft.lineItems))
+      }
       setTdsAmount(String(draft.tdsAmount || ""))
       setOtherDeduction(String(draft.otherDeduction || ""))
       setSourceProforma(draft.sourceProforma || null)
@@ -327,13 +299,14 @@ export function InvoicesPage() {
       date,
       status,
       lineItems,
+      taxMode,
       tdsAmount,
       otherDeduction,
       sourceProforma,
       editingInvoiceId,
       correctionSource,
     } satisfies InvoiceDraft))
-  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, lineItems, otherDeduction, showForm, sourceProforma, status, tdsAmount])
+  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, lineItems, taxMode, otherDeduction, showForm, sourceProforma, status, tdsAmount])
 
   useEffect(() => {
     if (!preview.length || bulkImportPending || bulkImportHasError) return
@@ -373,6 +346,7 @@ export function InvoicesPage() {
     setCompanyName(recordCustomer.companyName)
     setDate(new Date().toISOString().slice(0, 10))
     setStatus("Generated")
+    setTaxMode(inferInvoiceTaxMode(sourceItems))
     setLineItems(sourceItems.map((item) => ({
       ...item,
       id: crypto.randomUUID(),
@@ -409,6 +383,7 @@ export function InvoicesPage() {
     setCompanyName(invoice.companyName)
     setDate(replacement ? new Date().toISOString().slice(0, 10) : invoice.date)
     setStatus(replacement ? "Generated" : invoice.status === "Generated" ? "Generated" : "Draft")
+    setTaxMode(inferInvoiceTaxMode(sourceItems))
     setLineItems(sourceItems.map((item) => ({
       ...item,
       id: replacement ? crypto.randomUUID() : item.id,
@@ -490,7 +465,7 @@ export function InvoicesPage() {
       setCorrectionTarget(null)
       showNotice(`${correctedNumber} was marked as amended and its correction reference was recorded.`)
     } catch (error) {
-      setCorrectionError(error instanceof Error ? error.message : "The correction could not be recorded.")
+      setCorrectionError(customerErrorMessage(error, "The correction could not be recorded."))
     } finally {
       setCorrectionSaving(false)
     }
@@ -501,7 +476,8 @@ export function InvoicesPage() {
     if (!date) return "Select the invoice date."
     if (parsedLineItems.some((item) => !item.description || item.taxableAmount <= 0)) return "Every line item needs a description and taxable amount greater than zero."
     if (parsedLineItems.some((item) => item.hsnSac && !hsnSacPattern.test(item.hsnSac))) return "HSN/SAC must contain 4, 6, or 8 digits."
-    if (parsedLineItems.some((item) => item.igstAmount > 0 && (item.cgstAmount > 0 || item.sgstAmount > 0))) return "Use either IGST or CGST + SGST on each line item, not both."
+    const taxError = invoiceTaxError({ gstTaxMode: taxMode, lineItems: parsedLineItems })
+    if (taxError) return taxError
     return ""
   }
 
@@ -523,6 +499,7 @@ export function InvoicesPage() {
     otherDeduction: Number(otherDeduction) || 0,
     netReceivable: draftTotals.amount - (Number(tdsAmount) || 0) - (Number(otherDeduction) || 0),
     lineItems: parsedLineItems,
+    gstTaxMode: taxMode,
     sourceProformaId: sourceProforma?.id,
     sourceProformaNumber: sourceProforma?.number,
     status,
@@ -533,6 +510,7 @@ export function InvoicesPage() {
     setEntityName("")
     setCompanyName("")
     setLineItems([newDraftLine()])
+    setTaxMode("split")
     setTdsAmount("")
     setOtherDeduction("")
     setSourceProforma(null)
@@ -595,7 +573,7 @@ export function InvoicesPage() {
         showNotice(sourceProforma && savedInvoice ? `${sourceProforma.number} was converted into invoice ${savedInvoice.number}.` : "Invoice saved to your workspace.")
       }
     } catch (saveError) {
-      setDraftFormError(saveError instanceof Error ? saveError.message : "The invoice could not be saved. Please try again.")
+      setDraftFormError(customerErrorMessage(saveError, "The invoice could not be saved. Please try again."))
     } finally {
       setInvoiceSaving(false)
     }
@@ -623,6 +601,7 @@ export function InvoicesPage() {
         updated.amountBasis = "total"
         return recalculateDraftLineFromTotal(updated)
       }
+      if (field === "igstRate" && taxMode !== "igst" || (field === "cgstRate" || field === "sgstRate") && taxMode !== "split") return item
       if (field === "igstRate") {
         const rate = clampRate(value)
         updated.igstRate = value === "" ? "" : String(rate)
@@ -634,8 +613,9 @@ export function InvoicesPage() {
         updated.sgstAmount = ""
       }
       if (field === "cgstRate" || field === "sgstRate") {
-        const rate = clampRate(value)
-        updated[field] = value === "" ? "" : String(rate)
+        const rate = Math.min(50, clampRate(value))
+        updated.cgstRate = value === "" ? "" : String(rate)
+        updated.sgstRate = updated.cgstRate
       }
       if ((field === "cgstRate" || field === "sgstRate") && Number(value) > 0) {
         updated.igstRate = ""
@@ -647,14 +627,13 @@ export function InvoicesPage() {
 
   const applyGstRateOption = (itemId: string, rate: number) => {
     setDraftFormError("")
-    setLineItems((items) => items.map((item) => {
-      if (item.id !== itemId) return item
-      const useIgst = draftRate(item.igstRate) > 0
-      const updated: DraftLineItem = useIgst
-        ? { ...item, igstRate: String(rate), cgstRate: "", sgstRate: "", cgstAmount: "", sgstAmount: "" }
-        : { ...item, cgstRate: String(roundMoney(rate / 2)), sgstRate: String(roundMoney(rate / 2)), igstRate: "", igstAmount: "" }
-      return recalculateDraftLine(updated)
-    }))
+    setLineItems((items) => items.map((item) => item.id === itemId ? applyInvoiceTaxMode(item, taxMode, rate) : item))
+  }
+
+  const changeInvoiceTaxMode = (mode: GstTaxMode) => {
+    setTaxMode(mode)
+    setDraftFormError("")
+    setLineItems((items) => items.map((item) => applyInvoiceTaxMode(item, mode)))
   }
 
   const moveToNextInvoiceField = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -684,7 +663,7 @@ export function InvoicesPage() {
       })
       showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the ${invoiceTemplate.preset} template${invoiceEntity ? ` for ${invoiceEntity.companyName}` : ""}.`)
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "The invoice PDF could not be created.", true)
+      showNotice(customerErrorMessage(error, "The invoice PDF could not be created."), true)
     }
   }
 
@@ -764,7 +743,7 @@ export function InvoicesPage() {
       downloadZip(files, `Invoices_${cleanInvoiceFileName(selectedBulkEntity.companyName)}_${downloadedOn}.zip`)
       showNotice(`${files.length} invoice PDFs downloaded in one ZIP folder.`)
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "The invoice ZIP could not be created.", true)
+      showNotice(customerErrorMessage(error, "The invoice ZIP could not be created."), true)
     } finally {
       setBulkDownloadPending(false)
     }
@@ -897,6 +876,8 @@ export function InvoicesPage() {
         })
       })
       const imported = [...groupedInvoices.values()]
+      const invalidTaxInvoice = imported.find((invoice) => invoiceTaxError(invoice))
+      if (invalidTaxInvoice) throw new Error(`Invoice ${invalidTaxInvoice.sourceNumber || ""}: ${invoiceTaxError(invalidTaxInvoice)}`)
       if (!imported.length) {
         setBulkImportHasError(true)
         setBulkImportMessage(`No valid invoices were found in ${file.name}. All ${rows.length} rows were rejected. Verify customer details, PAN/GSTIN matching, 4/6/8-digit HSN/SAC, invoice number, date, and taxable amount.`)
@@ -910,7 +891,7 @@ export function InvoicesPage() {
       showNotice("")
     } catch (error) {
       setBulkImportHasError(true)
-      setBulkImportMessage(error instanceof Error ? `The workbook could not be read: ${error.message}` : "The workbook could not be read. Please upload an .xlsx, .xls, or .csv file.")
+      setBulkImportMessage(customerErrorMessage(error, "The workbook could not be read. Please upload an .xlsx, .xls, or .csv file."))
     } finally {
       setBulkImportPending(false)
     }
@@ -1045,7 +1026,7 @@ export function InvoicesPage() {
       setCustomerPreview(imported)
       showNotice("")
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "The customer spreadsheet could not be read.", true)
+      showNotice(customerErrorMessage(error, "The customer spreadsheet could not be read."), true)
     }
   }
 
@@ -1103,7 +1084,7 @@ export function InvoicesPage() {
       setShowManualCustomer(false)
       showNotice(`${customer.companyName} was added to the selected entity's customer list.`)
     } catch (error) {
-      setManualCustomerError(error instanceof Error ? error.message : "The customer could not be saved.")
+      setManualCustomerError(customerErrorMessage(error, "The customer could not be saved."))
     }
   }
 
@@ -1178,6 +1159,15 @@ export function InvoicesPage() {
               <div className="space-y-2"><Label htmlFor="invoice-date">Invoice date</Label><Input id="invoice-date" type="date" value={date} onChange={(event) => { setDate(event.target.value); setDraftFormError("") }} /></div>
             </div>
 
+            {isGstInvoice ? <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+              <Label htmlFor="invoice-tax-mode">Tax type for the entire invoice</Label>
+              <select id="invoice-tax-mode" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm md:max-w-sm" value={taxMode} onChange={(event) => changeInvoiceTaxMode(event.target.value as GstTaxMode)}>
+                <option value="split">CGST + SGST</option><option value="igst">IGST</option>
+              </select>
+              <p className="text-xs text-muted-foreground">All lines use this tax type. Each line can have its own GST percentage. Switching recalculates all lines and keeps the taxable amount or inclusive total you entered.</p>
+              {invoiceTaxError({ gstTaxMode: taxMode, lineItems: parsedLineItems }) ? <div className="space-y-2"><p role="alert" className="text-sm text-destructive">This draft contains a different or mixed tax type. Review your choice and apply it to every line.</p><Button type="button" variant="outline" size="sm" onClick={() => changeInvoiceTaxMode(taxMode)}>Apply selected tax type to all lines</Button></div> : null}
+            </div> : null}
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -1196,15 +1186,15 @@ export function InvoicesPage() {
                       <Input aria-label={`Description ${index + 1}`} value={item.description} onChange={(event) => updateLineItem(item.id, "description", event.target.value)} placeholder="Service or item description" />
                       {selectedEntityHsnCodes.length ? <select aria-label={`HSN/SAC ${index + 1}`} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value)}><option value="">Select code</option>{selectedEntityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN/SAC ${index + 1}`} inputMode="numeric" maxLength={8} value={item.hsnSac} onChange={(event) => updateLineItem(item.id, "hsnSac", event.target.value.replace(/\D/g, ""))} placeholder="998222" />}
                       <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" value={item.taxableAmount} onChange={(event) => updateLineItem(item.id, "taxableAmount", event.target.value)} placeholder="0.00" />
-                      {isGstInvoice ? <><div><Input aria-label={`CGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.cgstRate} onChange={(event) => updateLineItem(item.id, "cgstRate", event.target.value)} placeholder="CGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.cgstAmount) || 0).toLocaleString("en-IN")}</p></div>
-                      <div><Input aria-label={`SGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.sgstRate} onChange={(event) => updateLineItem(item.id, "sgstRate", event.target.value)} placeholder="SGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.sgstAmount) || 0).toLocaleString("en-IN")}</p></div>
-                      <div><Input aria-label={`IGST percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" value={item.igstRate} onChange={(event) => updateLineItem(item.id, "igstRate", event.target.value)} placeholder="IGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.igstAmount) || 0).toLocaleString("en-IN")}</p></div>
+                      {isGstInvoice ? <><div><Input aria-label={`CGST percentage ${index + 1}`} disabled={taxMode !== "split"} type="number" min="0" max="50" step="0.01" value={item.cgstRate} onChange={(event) => updateLineItem(item.id, "cgstRate", event.target.value)} placeholder="CGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.cgstAmount) || 0).toLocaleString("en-IN")}</p></div>
+                      <div><Input aria-label={`SGST percentage ${index + 1}`} disabled={taxMode !== "split"} type="number" min="0" max="50" step="0.01" value={item.sgstRate} onChange={(event) => updateLineItem(item.id, "sgstRate", event.target.value)} placeholder="SGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.sgstAmount) || 0).toLocaleString("en-IN")}</p></div>
+                      <div><Input aria-label={`IGST percentage ${index + 1}`} disabled={taxMode !== "igst"} type="number" min="0" max="100" step="0.01" value={item.igstRate} onChange={(event) => updateLineItem(item.id, "igstRate", event.target.value)} placeholder="IGST %" /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(Number(item.igstAmount) || 0).toLocaleString("en-IN")}</p></div>
                       <Input aria-label={`Total amount ${index + 1}`} type="number" min="0" step="0.01" value={item.totalAmount} onChange={(event) => updateLineItem(item.id, "totalAmount", event.target.value)} placeholder="0.00" /></> : null}
                       <Button type="button" size="icon" variant="ghost" disabled={lineItems.length === 1} aria-label={`Remove description ${index + 1}`} onClick={() => setLineItems((items) => items.filter((line) => line.id !== item.id))}><Trash2 /></Button>
                       {isGstInvoice ? <div className="col-span-full flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span>Default GST:</span>
                         {gstRateOptions.map((rate) => <Button key={rate} type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => applyGstRateOption(item.id, rate)}>{rate}%</Button>)}
-                        <span>{draftRate(item.igstRate) > 0 ? "Applies as IGST." : "Splits equally as CGST + SGST."}</span>
+                        <span>{taxMode === "igst" ? "Applies as IGST on this invoice." : "Splits equally as CGST + SGST."}</span>
                       </div> : null}
                     </div>
                   ))}
@@ -1255,7 +1245,7 @@ export function InvoicesPage() {
                   setCustomerPreview([])
                   showNotice(`${count} invoice customers imported successfully.`)
                 } catch (error) {
-                  showNotice(error instanceof Error ? error.message : "The invoice customers could not be imported.", true)
+                  showNotice(customerErrorMessage(error, "The invoice customers could not be imported."), true)
                 }
               }}>Import {customerPreview.length} customers</Button>
             </div>
@@ -1364,10 +1354,10 @@ export function InvoicesPage() {
                   <TableCell className="hidden max-w-72 truncate lg:table-cell">{customer.billingAddress || "—"}</TableCell>
                   <TableCell className="text-right">
                     {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingCustomerDelete === customer.id ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteCustomer(customer.id); setPendingCustomerDelete(null); showNotice(`${customer.companyName} was removed from the invoice customer list.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The customer could not be deleted.", true) } }}>Confirm delete</Button></div>
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingCustomerDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteCustomer(customer.id); setPendingCustomerDelete(null); showNotice(`${customer.companyName} was removed from the invoice customer list.`) } catch (error) { showNotice(customerErrorMessage(error, "The customer could not be deleted."), true) } }}>Confirm delete</Button></div>
                     ) : (
                       <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" aria-label={`${customer.favorite ? "Remove" : "Add"} ${customer.companyName} ${customer.favorite ? "from" : "to"} favourites`} title={customer.favorite ? "Remove from favourites" : "Add to favourites"} onClick={async () => { try { await updateCustomer(customer.id, { favorite: !customer.favorite }); showNotice(`${customer.companyName} ${customer.favorite ? "removed from" : "added to"} favourites.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The favourite could not be updated.", true) } }}><Star className={customer.favorite ? "fill-current text-amber-500" : ""} /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`${customer.favorite ? "Remove" : "Add"} ${customer.companyName} ${customer.favorite ? "from" : "to"} favourites`} title={customer.favorite ? "Remove from favourites" : "Add to favourites"} onClick={async () => { try { await updateCustomer(customer.id, { favorite: !customer.favorite }); showNotice(`${customer.companyName} ${customer.favorite ? "removed from" : "added to"} favourites.`) } catch (error) { showNotice(customerErrorMessage(error, "The favourite could not be updated."), true) } }}><Star className={customer.favorite ? "fill-current text-amber-500" : ""} /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Delete invoice customer ${customer.companyName}`} onClick={() => setPendingCustomerDelete(customer.id)}><Trash2 /></Button>
                       </div>
                     )}
@@ -1472,7 +1462,7 @@ export function InvoicesPage() {
                     setBulkInvoicesSaved(true)
                     showNotice(`${count} invoices generated successfully${customerCount ? ` and ${customerCount} new customers were saved` : ""}. You can now download the complete batch as a ZIP.`)
                   } catch (error) {
-                    showNotice(error instanceof Error ? error.message : "The invoice batch could not be saved.", true)
+                    showNotice(customerErrorMessage(error, "The invoice batch could not be saved."), true)
                   }
                 }}>
                   {bulkInvoicesSaved ? "Invoices generated" : `Generate ${preview.length} invoices`}
@@ -1547,7 +1537,7 @@ export function InvoicesPage() {
                   <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}{invoice.correctsInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaces {invoice.correctsInvoiceNumber}</p> : null}{invoice.correction?.replacementInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaced by {invoice.correction.replacementInvoiceNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant={invoice.status === "Cancelled" ? "destructive" : invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge>{invoice.correction ? <p className="max-w-40 text-xs text-muted-foreground" title={invoice.correction.reason}>{correctionLabels[invoice.correction.method]}{invoice.correction.referenceNumber ? ` · ${invoice.correction.referenceNumber}` : ""}</p> : null}</div></TableCell>
                   <TableCell className="text-right">
                     {pendingDelete === invoice.id && canManage ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(error instanceof Error ? error.message : "The invoice could not be deleted.", true) } }}>Confirm delete</Button></div>
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(customerErrorMessage(error, "The invoice could not be deleted."), true) } }}>Confirm delete</Button></div>
                     ) : (
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>

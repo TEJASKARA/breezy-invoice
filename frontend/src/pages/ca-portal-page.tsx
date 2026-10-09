@@ -1,3 +1,4 @@
+import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
 import { Building2, CheckCircle2, Clock3, LogOut, Plus, Send, XCircle } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
@@ -35,7 +36,7 @@ export function CaPortalPage() {
 
   const loadRequests = useCallback(async () => {
     try { setRequests(await loadMyCaAccessRequests()) }
-    catch (value) { setError(value instanceof Error ? value.message : "Access requests could not be loaded.") }
+    catch (value) { setError(customerErrorMessage(value, "Access requests could not be loaded.")) }
   }, [])
 
   useEffect(() => { if (userProfile?.account_type === "ca") void loadRequests() }, [userProfile, loadRequests])
@@ -57,7 +58,7 @@ export function CaPortalPage() {
       await loadRequests()
       setNotice("Access request sent. The company owner must approve it before the workspace appears here.")
     } catch (value) {
-      setError(value instanceof Error ? value.message : "The access request could not be sent.")
+      setError(customerErrorMessage(value, "The access request could not be sent."))
     } finally { setSaving(false) }
   }
 
@@ -68,7 +69,7 @@ export function CaPortalPage() {
       await loadRequests()
       setNotice("Access request cancelled.")
     } catch (value) {
-      setError(value instanceof Error ? value.message : "The request could not be cancelled.")
+      setError(customerErrorMessage(value, "The request could not be cancelled."))
     } finally { setSaving(false) }
   }
 
@@ -86,7 +87,7 @@ export function CaPortalPage() {
       await switchWorkspace(result.workspaceId)
       window.location.assign(result.created ? "/setup" : "/workspace")
     } catch (value) {
-      setError(value instanceof Error ? value.message : "Your firm workspace could not be created.")
+      setError(customerErrorMessage(value, "Your firm workspace could not be created."))
     } finally { setSaving(false) }
   }
 
