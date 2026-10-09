@@ -1164,7 +1164,7 @@ export function InvoicesPage() {
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
                 <select id="invoice-entity" value={entityName} onChange={(event) => selectInvoiceEntity(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">Select entity</option>
-                  {companies.map((company) => <option key={company.id}>{company.companyName}</option>)}
+                  {companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id}>{company.companyName}</option>)}
                 </select>
               </div>
               <div className="space-y-2">
@@ -1285,7 +1285,7 @@ export function InvoicesPage() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">Select entity</option>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}
+                {companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}
               </select>
             </div>
             {canManage ? <Button
@@ -1403,7 +1403,7 @@ export function InvoicesPage() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">Select entity</option>
-                {companies.map((company) => <option key={company.id}>{company.companyName}</option>)}
+                {companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id}>{company.companyName}</option>)}
               </select>
             </div>
             <div className="flex flex-wrap items-end gap-2">

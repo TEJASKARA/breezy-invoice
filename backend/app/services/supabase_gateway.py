@@ -557,23 +557,95 @@ class SupabaseGateway:
             },
         )
 
+    async def cleanup_deleted_entity_files(self) -> int:
+        """Retry exact-path cleanup, preserving bills used by surviving records."""
+        pending = await self._get(
+            "breezy_entity_file_cleanup",
+            {"select": "id,bill_path", "order": "created_at,id", "limit": "100"},
+        )
+        cleaned = 0
+        for item in pending:
+            path = str(item["bill_path"])
+            references = await self._get(
+                "breezy_expenses",
+                {"select": "id", "payload->>billPath": f"eq.{path}", "limit": "1"},
+            )
+            if not references:
+                await self._delete_storage_objects("expense-bills", [path])
+                cleaned += 1
+            # Shared files stay; deleting their final expense queues them again.
+            # Storage failures leave the entry queued for the next cron run.
+            await self._request(
+                "DELETE", "breezy_entity_file_cleanup",
+                params={"id": f"eq.{item['id']}"},
+            )
+        return cleaned
+
     async def permanently_delete_workspace(
         self, workspace_id: str, owner_user_id: str
     ) -> None:
         headers = self._service_headers()
-        expense_rows = await self._get(
-            "breezy_expenses",
-            {"select": "payload", "workspace_id": f"eq.{workspace_id}"},
-        )
+        expense_rows: list[dict[str, Any]] = []
+        source_after: str | None = None
+        while True:
+            source_params = {
+                "select": "id,payload",
+                "workspace_id": f"eq.{workspace_id}",
+                "order": "id",
+                "limit": "1000",
+            }
+            if source_after:
+                source_params["id"] = f"gt.{source_after}"
+            page = await self._get(
+                "breezy_expenses",
+                source_params,
+            )
+            expense_rows.extend(page)
+            if len(page) < 1000:
+                break
+            source_after = str(page[-1]["id"])
         expense_bill_paths = [
             str(payload.get("billPath"))
             for row in expense_rows
             if isinstance((payload := row.get("payload")), dict)
             and payload.get("billPath")
         ]
-        await self._delete_storage_objects("expense-bills", expense_bill_paths)
+        # Uploaded paths retain their original owner prefix after an approved move.
+        # Never purge files still referenced by another workspace.
+        other_expenses: list[dict[str, Any]] = []
+        protected_after: str | None = None
+        while True:
+            protected_params = {
+                "select": "id,payload",
+                "workspace_id": f"neq.{workspace_id}",
+                "payload->>billPath": "not.is.null",
+                "order": "id",
+                "limit": "1000",
+            }
+            if protected_after:
+                protected_params["id"] = f"gt.{protected_after}"
+            page = await self._get(
+                "breezy_expenses",
+                protected_params,
+            )
+            other_expenses.extend(page)
+            if len(page) < 1000:
+                break
+            protected_after = str(page[-1]["id"])
+        protected_paths = {
+            str(payload["billPath"])
+            for row in other_expenses
+            if isinstance((payload := row.get("payload")), dict)
+            and payload.get("billPath")
+        }
+        await self._delete_storage_objects(
+            "expense-bills",
+            [path for path in expense_bill_paths if path not in protected_paths],
+        )
         # Also clean older uploads created before expenses were workspace-scoped.
-        await self._delete_storage_prefix("expense-bills", owner_user_id)
+        await self._delete_storage_prefix(
+            "expense-bills", owner_user_id, protected_paths=protected_paths
+        )
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.delete(
                 f"{self.settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{owner_user_id}",
@@ -596,7 +668,9 @@ class SupabaseGateway:
                 f"({response.status_code})."
             )
 
-    async def _delete_storage_prefix(self, bucket: str, root_prefix: str) -> None:
+    async def _delete_storage_prefix(
+        self, bucket: str, root_prefix: str, *, protected_paths: set[str] | None = None
+    ) -> None:
         files: list[str] = []
         headers = self._service_headers()
 
@@ -634,7 +708,9 @@ class SupabaseGateway:
                 offset += len(rows)
 
         await collect(root_prefix)
-        await self._delete_storage_objects(bucket, files)
+        await self._delete_storage_objects(
+            bucket, [path for path in files if path not in (protected_paths or set())]
+        )
 
     async def _delete_storage_objects(self, bucket: str, files: list[str]) -> None:
         if not files:

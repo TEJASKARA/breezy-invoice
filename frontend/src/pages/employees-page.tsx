@@ -106,6 +106,7 @@ export function EmployeesPage() {
   const {
     setup,
     companies,
+    activeCompanies,
     employees,
     payslips,
     invoices,
@@ -120,13 +121,13 @@ export function EmployeesPage() {
     deletePayslip,
   } = useMvpStore()
   const { can, workspace, subscription, creditAccount, refresh } = useWorkspaceAccess()
-  const canManage = can("payslips.manage")
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const downloadPayslipPdf = (input: Parameters<typeof downloadPayslipPdfFile>[0]) => downloadPayslipPdfFile({ ...input, canRemoveBranding: brandingCanBeRemoved })
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
-  const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
+  const [selectedEntityId, setSelectedEntityId] = useState(activeCompanies[0]?.id || "")
+  const canManage = can("payslips.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
-  const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(companies[0]?.id || ""))
+  const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(activeCompanies[0]?.id || ""))
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
   const [showPayslipForm, setShowPayslipForm] = useState(false)
   const [editingPayslipId, setEditingPayslipId] = useState<string | null>(null)

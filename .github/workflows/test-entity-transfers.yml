@@ -1,0 +1,36 @@
+name: Test company account transfers
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/**", ".github/workflows/test-entity-transfers.yml"]
+  pull_request:
+    paths: ["supabase/**", ".github/workflows/test-entity-transfers.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transfer-safety:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: chanax_transfer_tests
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise company transfers in a disposable database
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: test-only
+          PGDATABASE: chanax_transfer_tests
+        run: >-
+          psql -v ON_ERROR_STOP=1
+          -f supabase/tests/entity_transfers_fixture.sql
+          -f supabase/tests/entity_transfers.sql
+          -f supabase/tests/entity_transfer_failures.sql
+          -f supabase/tests/entity_deletion.sql

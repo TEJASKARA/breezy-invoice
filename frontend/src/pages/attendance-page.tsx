@@ -52,13 +52,13 @@ function applyAttendance<T extends { month: string; earnings: PayrollComponent[]
 export function AttendancePage() {
   const { setup, companies, employees, invoices, payslips, templateFor, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
-  const canManage = can("payslips.manage")
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
-  const initialEntityId = companies[0]?.id || ""
+  const initialEntityId = companies.find((company) => !company.transferredAt)?.id || ""
   const initialMonth = currentMonth()
   const initialDraft = setup?.attendanceDrafts?.[`${initialEntityId}:${initialMonth}`]
   const [selectedEntityId, setSelectedEntityId] = useState(initialEntityId)
+  const canManage = can("payslips.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const [month, setMonth] = useState(initialMonth)
   const [attendanceMode, setAttendanceMode] = useState<AttendanceMode>("daily")
   const [attendanceDate, setAttendanceDate] = useState(() => firstDateForMonth(currentMonth()))

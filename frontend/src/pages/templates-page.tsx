@@ -96,10 +96,11 @@ export function TemplatesPage() {
     clearEntityTemplate,
   } = useMvpStore()
   const { can, subscription } = useWorkspaceAccess()
-  const canManage = can("templates.manage")
+
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const [scopeId, setScopeId] = useState<string>(DEFAULT_SCOPE)
   const scopeEntity = scopeId === DEFAULT_SCOPE ? undefined : companies.find((company) => company.id === scopeId)
+  const canManage = can("templates.manage") && !scopeEntity?.transferredAt
   const activeScopeId = scopeEntity ? scopeEntity.id : DEFAULT_SCOPE
   const scopeHasCustomTemplate = Boolean(scopeEntity && hasEntityTemplate(scopeEntity.id))
   const savedTemplate: TemplateSettings = scopeEntity ? templateFor(scopeEntity.id) : workspaceTemplate

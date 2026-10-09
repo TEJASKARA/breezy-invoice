@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Building2, Pencil, Plus, Trash2, X } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
+import { EntityTransferForm, EntityTransferRequests } from "@/components/entity-transfers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -51,7 +52,8 @@ export function EntitiesPage() {
   blankFormRef.current = blankForm
   const continuesSignupSequence = companies.length === 0 && setup?.invoiceNumbering?.mode === "continue"
   const { user } = useAuthUser()
-  const { can, workspace } = useWorkspaceAccess()
+  const { can, workspace, membership } = useWorkspaceAccess()
+  const [transferCompany, setTransferCompany] = useState<Company | null>(null)
   const canManage = can("entities.manage")
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(blankForm)
@@ -61,6 +63,9 @@ export function EntitiesPage() {
   const [notice, setNotice] = useState("")
   const [noticeIsError, setNoticeIsError] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState("")
+  const [deleting, setDeleting] = useState(false)
+  const deletingCompany = companies.find((company) => company.id === pendingDelete)
   const [hsnEditingCompanyId, setHsnEditingCompanyId] = useState<string | null>(null)
   const [hsnEditCodes, setHsnEditCodes] = useState<string[]>([])
   const [hsnEditInput, setHsnEditInput] = useState("")
@@ -250,6 +255,9 @@ export function EntitiesPage() {
         }
       />
 
+      <EntityTransferRequests />
+      {transferCompany ? <EntityTransferForm company={transferCompany} onClose={() => setTransferCompany(null)} /> : null}
+
       {notice && (
         <p
           role={noticeIsError ? "alert" : "status"}
@@ -333,6 +341,32 @@ export function EntitiesPage() {
         </CardContent>
       </Card> : null}
 
+      {deletingCompany ? <Card className="border-destructive" role="region" aria-labelledby="delete-entity-heading">
+        <CardHeader>
+          <CardTitle id="delete-entity-heading">Permanently delete {deletingCompany.companyName}?</CardTitle>
+          <CardDescription>This cannot be undone. If you want to keep the company’s records in a separate account, use Move to separate account instead.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm">This deletes this entity and all its linked invoices, quotations/proformas, customers, employees, payslips, employee letters, attendance, expenses and entity-specific template settings. Unshared expense attachments will also be removed by background cleanup.</p>
+          <p className="text-sm text-muted-foreground">Your workspace, subscription, other entities and data already transferred to another account are not deleted. Used credits are not refunded. Payment records, credit usage and a minimal deletion audit remain. Copies already downloaded or sent cannot be recalled; backups expire under the normal retention policy.</p>
+          {setup?.gstin && setup.gstin === deletingCompany.gstin ? <p className="text-sm text-destructive">This GST number is also registered in your account setup. Deleting the entity does not release that account registration.</p> : null}
+          <div className="space-y-2"><Label htmlFor="delete-entity-confirmation">Type {deletingCompany.companyName} to confirm you want to delete all of this entity’s data</Label><Input id="delete-entity-confirmation" autoComplete="off" value={deleteConfirmation} disabled={deleting} onChange={(event) => setDeleteConfirmation(event.target.value)} /></div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" disabled={deleting} onClick={() => { setPendingDelete(null); setDeleteConfirmation("") }}>Keep entity</Button>
+            <Button variant="destructive" disabled={deleting || deleteConfirmation !== deletingCompany.companyName} onClick={async () => {
+              setDeleting(true)
+              try {
+                await deleteCompany(deletingCompany.id, deleteConfirmation)
+                setPendingDelete(null); setDeleteConfirmation(""); setHsnEditingCompanyId(null)
+                setNoticeIsError(false); setNotice("The entity and its linked records were permanently deleted. Unshared expense files are scheduled for background cleanup.")
+              } catch (error) {
+                setNoticeIsError(true); setNotice(error instanceof Error ? error.message : "The entity could not be deleted.")
+              } finally { setDeleting(false) }
+            }}>{deleting ? "Deleting…" : "Yes, permanently delete entity and data"}</Button>
+          </div>
+        </CardContent>
+      </Card> : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Entities</CardTitle>
@@ -355,15 +389,10 @@ export function EntitiesPage() {
                   <TableCell className="font-mono text-xs">{company.gstin}</TableCell>
                   <TableCell className="hidden font-mono text-xs md:table-cell">{company.pan}</TableCell>
                   <TableCell className="hidden lg:table-cell"><div className="flex max-w-64 flex-wrap gap-1">{entityHsnCodes(company).length ? entityHsnCodes(company).map((code, index) => <Badge key={code} variant={index === 0 ? "secondary" : "outline"}>{code}</Badge>) : "—"}</div></TableCell>
-                  <TableCell><Badge variant="outline">Active</Badge></TableCell>
+                  <TableCell><Badge variant="outline">{company.transferredAt ? "Moved · Read-only" : "Active"}</Badge></TableCell>
                   <TableCell className="text-right">
-                    {!canManage ? <span className="text-xs text-muted-foreground">View only</span> : pendingDelete === company.id ? (
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button>
-                        <Button size="sm" variant="destructive" onClick={async () => { try { await deleteCompany(company.id); setPendingDelete(null); setNoticeIsError(false); setNotice(`${company.companyName} was deleted. Existing invoices were left unchanged.`) } catch (error) { setNoticeIsError(true); setNotice(error instanceof Error ? error.message : "The entity could not be deleted.") } }}>Confirm delete</Button>
-                      </div>
-                    ) : (
-                      <span className="inline-flex"><Button size="icon" variant="ghost" aria-label={`Manage HSN/SAC codes for ${company.companyName}`} onClick={() => openHsnManager(company)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${company.companyName}`} onClick={() => setPendingDelete(company.id)}><Trash2 /></Button></span>
+                    {!canManage || company.transferredAt ? <span className="text-xs text-muted-foreground">View only</span> : (
+                      <span className="inline-flex flex-wrap justify-end gap-1">{membership?.role === "owner" ? <Button size="sm" variant="outline" onClick={() => setTransferCompany(company)}>Move to separate account</Button> : null}<Button size="icon" variant="ghost" aria-label={`Manage HSN/SAC codes for ${company.companyName}`} onClick={() => openHsnManager(company)}><Pencil /></Button>{membership?.role === "owner" ? <Button size="icon" variant="ghost" disabled={deleting} aria-label={`Delete ${company.companyName} and its data`} onClick={() => { setPendingDelete(company.id); setDeleteConfirmation(""); window.setTimeout(() => document.getElementById("delete-entity-heading")?.scrollIntoView({ block: "center", behavior: "smooth" }), 0) }}><Trash2 /></Button> : null}</span>
                     )}
                   </TableCell>
                 </TableRow>

@@ -3,6 +3,7 @@ import { Building2, CalendarDays, CheckCircle2, Hash } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { EntityTransferRequests } from "@/components/entity-transfers"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -103,6 +104,7 @@ export function OnboardingPage() {
         <Card className="w-full max-w-3xl">
           <CardHeader><BrandMark className="mb-6" /><CardTitle className="text-2xl">How will you use ChanaX?</CardTitle><CardDescription>This creates the right workspace experience for your role.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
+            <EntityTransferRequests />
             {saveError ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{saveError}</p> : null}
             <div className="grid gap-3 sm:grid-cols-3">
               {([
@@ -258,6 +260,7 @@ export function OnboardingPage() {
           </div>
         </div>
 
+        <EntityTransferRequests />
         <Card>
           <CardHeader><CardTitle>Your business details</CardTitle><CardDescription>Verify your GSTIN to securely fill the registered business details. Non-GST businesses can continue without it.</CardDescription></CardHeader>
           <CardContent>

@@ -55,7 +55,7 @@ export function ExpensesPage() {
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [draft, setDraft] = useState({
-    entityId: companies[0]?.id || "",
+    entityId: companies.find((company) => !company.transferredAt)?.id || "",
     name: "",
     category: "",
     customCategory: "",
@@ -100,7 +100,7 @@ export function ExpensesPage() {
   ]
 
   function openExpenseForm() {
-    setDraft((current) => ({ ...current, entityId: current.entityId || companies[0]?.id || "" }))
+    setDraft((current) => ({ ...current, entityId: current.entityId || companies.find((company) => !company.transferredAt)?.id || "" }))
     setError("")
     setNotice("")
     setShowForm(true)
@@ -203,7 +203,7 @@ export function ExpensesPage() {
           <CardHeader><CardTitle>Add another expense</CardTitle><CardDescription>Create your own category and optionally attach the supporting bill.</CardDescription></CardHeader>
           <CardContent>
             <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" onSubmit={saveExpense}>
-              <div className="space-y-2"><Label htmlFor="custom-expense-entity">Company / entity *</Label><select id="custom-expense-entity" className={selectClass} required value={draft.entityId} onChange={(event) => setDraft((current) => ({ ...current, entityId: event.target.value }))}><option value="">Select an entity</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
+              <div className="space-y-2"><Label htmlFor="custom-expense-entity">Company / entity *</Label><select id="custom-expense-entity" className={selectClass} required value={draft.entityId} onChange={(event) => setDraft((current) => ({ ...current, entityId: event.target.value }))}><option value="">Select an entity</option>{companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
               <div className="space-y-2"><Label htmlFor="custom-expense-name">Expense name *</Label><Input id="custom-expense-name" required placeholder="Example: Office internet" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
               <div className="space-y-2"><Label htmlFor="custom-expense-category">Category *</Label><select id="custom-expense-category" className={selectClass} required value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value, customCategory: event.target.value === "__custom__" ? current.customCategory : "" }))}><option value="">Select a category</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}<option value="__custom__">Custom</option></select></div>
               {draft.category === "__custom__" ? <div className="space-y-2"><Label htmlFor="custom-expense-category-name">Custom category name *</Label><Input id="custom-expense-category-name" required autoFocus placeholder="Example: Client entertainment" value={draft.customCategory} onChange={(event) => setDraft((current) => ({ ...current, customCategory: event.target.value }))} /></div> : null}

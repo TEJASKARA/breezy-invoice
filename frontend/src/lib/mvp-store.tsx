@@ -37,7 +37,7 @@ export type TallySettings = {
   tdsPayableLedger: string
   otherDeductionLedger: string
 }
-export type Company = { id: string; companyName: string; billingAddress: string; hasGstin?: boolean; gstin: string; pan: string; premisesAddress: string; hsnSac: string; hsnSacCodes?: string[]; invoiceNumbering?: InvoiceNumbering; tallySettings?: TallySettings }
+export type Company = { id: string; companyName: string; billingAddress: string; hasGstin?: boolean; gstin: string; pan: string; premisesAddress: string; hsnSac: string; hsnSacCodes?: string[]; invoiceNumbering?: InvoiceNumbering; tallySettings?: TallySettings; transferredAt?: string }
 export type Customer = Company & { entityId: string; tallyLedgerName?: string; favorite?: boolean }
 export type InvoiceLineItem = {
   id: string
@@ -60,6 +60,7 @@ export type InvoiceCorrection = {
 }
 export type Invoice = {
   id: string
+  entityId?: string
   number: string
   entityName?: string
   customerId?: string
@@ -276,6 +277,7 @@ export type Setup = {
 }
 export type MvpState = { setup: Setup | null; companies: Company[]; customers: Customer[]; invoices: Invoice[]; proformas: Proforma[]; employees: Employee[]; employeeLetters: EmployeeLetter[]; payslips: Payslip[]; expenses: Expense[]; template: TemplateSettings }
 type MvpStore = MvpState & {
+  activeCompanies: Company[]
   loading: boolean
   syncStatus: "local" | "loading" | "saving" | "synced" | "error"
   syncError: string | null
@@ -283,7 +285,7 @@ type MvpStore = MvpState & {
   saveAttendanceDraft: (draft: AttendanceDraft) => Promise<void>
   addCompanies: (companies: Omit<Company, "id">[]) => Promise<void>
   updateCompany: (companyId: string, changes: Partial<Omit<Company, "id">>) => Promise<void>
-  deleteCompany: (companyId: string) => Promise<void>
+  deleteCompany: (companyId: string, confirmedCompanyName: string) => Promise<void>
   addCustomers: (customers: Omit<Customer, "id">[]) => Promise<void>
   updateCustomer: (customerId: string, changes: Partial<Omit<Customer, "id">>) => Promise<void>
   deleteCustomer: (customerId: string) => Promise<void>
@@ -577,7 +579,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     setState(next)
   }
 
-  const persist = (operation: (userId: string, workspaceId: string) => Promise<void>) => {
+  const persist = (operation: (userId: string, workspaceId: string) => Promise<unknown>) => {
     const userId = userIdRef.current
     const workspaceId = workspaceIdRef.current
     if (!userId || !workspaceId || !supabase) {
@@ -588,7 +590,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     setSyncError(null)
     const task = persistenceQueue.current
       .catch(() => undefined)
-      .then(() => operation(userId, workspaceId))
+      .then(async () => { await operation(userId, workspaceId) })
     persistenceQueue.current = task
     void task
       .then(() => setSyncStatus("synced"))
@@ -598,7 +600,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       })
   }
 
-  const persistAndWait = async (operation: (userId: string, workspaceId: string) => Promise<void>) => {
+  const persistAndWait = async (operation: (userId: string, workspaceId: string) => Promise<unknown>) => {
     const userId = userIdRef.current
     const workspaceId = workspaceIdRef.current
     if (!userId || !workspaceId || !supabase) {
@@ -608,7 +610,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     setSyncError(null)
     const task = persistenceQueue.current
       .catch(() => undefined)
-      .then(() => operation(userId, workspaceId))
+      .then(async () => { await operation(userId, workspaceId) })
     persistenceQueue.current = task
     try {
       await task
@@ -688,16 +690,19 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (storageKey && !loading) localStorage.setItem(storageKey, JSON.stringify(state)) }, [state, storageKey, loading])
   const value = useMemo<MvpStore>(() => ({
     ...state,
+    activeCompanies: state.companies.filter((company) => !company.transferredAt),
     loading,
     syncStatus,
     syncError,
     completeSetup: async (setup) => {
       const next = { ...stateRef.current, setup }
-      await persistAndWait((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, setup, next.template))
-      commit(next)
+      let savedSetup: Setup | null = setup
+      await persistAndWait(async (userId, workspaceId) => { savedSetup = await saveWorkspaceSettings(userId, workspaceId, setup, next.template) })
+      commit({ ...next, setup: savedSetup })
     },
     saveAttendanceDraft: async (draft) => {
       const current = stateRef.current
+      if (current.companies.find((company) => company.id === draft.entityId)?.transferredAt) throw new Error("Attendance for this moved company is read-only.")
       if (!current.setup) throw new Error("Complete your firm setup before saving attendance.")
       const key = `${draft.entityId}:${draft.month}`
       const nextSetup = { ...current.setup, attendanceDrafts: { ...(current.setup.attendanceDrafts || {}), [key]: draft } }
@@ -721,21 +726,25 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       await persistAndWait((userId, workspaceId) => upsertCompanies(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, companies: stateRef.current.companies.map((company) => company.id === companyId ? updated : company) })
     },
-    deleteCompany: async (companyId) => {
-      await persistAndWait((_userId, workspaceId) => deleteCompanyRow(workspaceId, companyId))
+    deleteCompany: async (companyId, confirmedCompanyName) => {
+      let deleted: { invoice_ids: string[]; quotation_ids: string[] } = { invoice_ids: [], quotation_ids: [] }
+      await persistAndWait(async (_userId, workspaceId) => { deleted = await deleteCompanyRow(workspaceId, companyId, confirmedCompanyName) })
       const current = stateRef.current
       let nextTemplate = current.template
       if (current.template.entityTemplates?.[companyId]) {
         const { [companyId]: _removed, ...remaining } = current.template.entityTemplates
         nextTemplate = { ...current.template, entityTemplates: remaining }
-        persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, current.setup, nextTemplate))
       }
       commit({
         ...current,
         template: nextTemplate,
+        setup: current.setup ? { ...current.setup, attendanceDrafts: Object.fromEntries(Object.entries(current.setup.attendanceDrafts || {}).filter(([key, draft]) => draft.entityId !== companyId && key.split(":")[0] !== companyId)) } : null,
         companies: current.companies.filter((company) => company.id !== companyId),
+        invoices: current.invoices.filter((invoice) => !deleted.invoice_ids.includes(invoice.id)),
+        proformas: current.proformas.filter((quotation) => !deleted.quotation_ids.includes(quotation.id)),
         customers: current.customers.filter((customer) => customer.entityId !== companyId),
         employees: current.employees.filter((employee) => employee.entityId !== companyId),
+        employeeLetters: current.employeeLetters.filter((letter) => letter.entityId !== companyId),
         payslips: current.payslips.filter((payslip) => payslip.entityId !== companyId),
         expenses: current.expenses.filter((expense) => expense.entityId !== companyId),
       })
@@ -763,8 +772,9 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     addInvoice: async (invoice) => {
       const current = stateRef.current
       const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
+      if (company?.transferredAt) throw new Error("This company has moved. Create its new invoices in the receiving account.")
       const issuedNumber = numberFromCompany(company, current.setup, current.invoices)
-      const added = { ...invoice, id: id(), number: issuedNumber }
+      const added = { ...invoice, entityId: company?.id, id: id(), number: issuedNumber }
       const updatedCompany = company ? advanceCompanyNumbering(company, [issuedNumber]) : undefined
       const nextCompanies = updatedCompany
         ? current.companies.map((candidate) => candidate.id === updatedCompany.id ? updatedCompany : candidate)
@@ -786,12 +796,13 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const counters = new Map<string, number>()
       const added = invoices.map((invoice, index) => {
         const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
+        if (company?.transferredAt) throw new Error("This company has moved. Create its new invoices in the receiving account.")
         if (!company) return { ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }
         const numbering = normalizedCompanyNumbering(company)
         if (!numbering) return { ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }
         const offset = counters.get(company.id) || 0
         counters.set(company.id, offset + 1)
-        return { ...invoice, id: id(), number: formatInvoiceNumber(numbering, numbering.nextNumber + offset, numbering.financialYear) }
+        return { ...invoice, entityId: company.id, id: id(), number: formatInvoiceNumber(numbering, numbering.nextNumber + offset, numbering.financialYear) }
       })
       const nextCompanies = current.companies.map((company) => {
         const related = added.filter((invoice) => invoice.entityName === company.companyName)

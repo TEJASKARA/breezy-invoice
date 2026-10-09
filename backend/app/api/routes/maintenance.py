@@ -23,6 +23,11 @@ async def purge_due_account_deletions(
 
     purged: list[str] = []
     failures: list[dict[str, str]] = []
+    entity_files_cleaned = 0
+    try:
+        entity_files_cleaned = await gateway.cleanup_deleted_entity_files()
+    except SupabaseGatewayError:
+        failures.append({"scope": "entity_files", "error": "File cleanup will retry."})
     try:
         due = await gateway.due_account_deletions()
     except SupabaseGatewayError as error:
@@ -41,4 +46,7 @@ async def purge_due_account_deletions(
         except SupabaseGatewayError as error:
             failures.append({"workspace_id": workspace_id, "error": str(error)})
 
-    return {"purged": len(purged), "workspace_ids": purged, "failures": failures}
+    return {
+        "purged": len(purged), "workspace_ids": purged, "failures": failures,
+        "entity_files_cleaned": entity_files_cleaned,
+    }

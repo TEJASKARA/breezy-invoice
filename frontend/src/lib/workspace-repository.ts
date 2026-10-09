@@ -54,9 +54,9 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
   if (!workspaceId) return null
   const [settingsResult, entitiesResult, customersResult, invoicesResult, proformasResult, employeesResult, payslipsResult, expensesResult, lettersResult] = await Promise.all([
     db.from("breezy_workspace_settings").select("setup, template").eq("workspace_id", workspaceId).maybeSingle(),
-    db.from("breezy_entities").select("id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_entities").select("id, payload, transferred_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_customers").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_invoices").select("id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_invoices").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_proformas").select("id, entity_id, customer_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_employees").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_payslips").select("id, entity_id, employee_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
@@ -81,9 +81,9 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
     hasData,
     setup: (settingsResult.data?.setup as Setup | null | undefined) ?? null,
     template: (settingsResult.data?.template as TemplateSettings | undefined),
-    companies: ((entitiesResult.data || []) as PayloadRow[]).map((row) => ({ ...row.payload, id: row.id }) as Company),
+    companies: ((entitiesResult.data || []) as (PayloadRow & { transferred_at: string | null })[]).map((row) => ({ ...row.payload, id: row.id, transferredAt: row.transferred_at || undefined }) as Company),
     customers: ((customersResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Customer),
-    invoices: ((invoicesResult.data || []) as PayloadRow[]).map((row) => ({ ...row.payload, id: row.id }) as Invoice),
+    invoices: ((invoicesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id || undefined }) as Invoice),
     proformas: ((proformasResult.error ? [] : proformasResult.data || []) as ProformaPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id, customerId: row.customer_id || undefined }) as Proforma),
     employees: ((employeesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Employee),
     payslips: ((payslipsResult.data || []) as PayslipPayloadRow[]).map((row) => ({
@@ -103,28 +103,36 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
 
 export async function saveWorkspaceSettings(userId: string, workspaceId: string, setup: Setup | null, template: TemplateSettings) {
   const db = client()
-  const updated = await db.from("breezy_workspace_settings").update({ setup, template }).eq("workspace_id", workspaceId).select("workspace_id")
+  const updated = await db.from("breezy_workspace_settings").update({ setup, template }).eq("workspace_id", workspaceId).select("workspace_id, setup")
   throwIfError(updated.error)
   if (!updated.data?.length) {
-    const { error } = await db.from("breezy_workspace_settings").insert({ user_id: userId, workspace_id: workspaceId, setup, template })
+    const { data, error } = await db.from("breezy_workspace_settings").insert({ user_id: userId, workspace_id: workspaceId, setup, template }).select("setup").single()
     throwIfError(error)
+    return data?.setup as Setup | null
   }
+  return updated.data[0].setup as Setup | null
 }
 
 export async function upsertCompanies(userId: string, workspaceId: string, companies: Company[]) {
+  if (companies.some((company) => company.transferredAt)) throw new Error("Moved companies are read-only in this account.")
   if (!companies.length) return
   const { error } = await client().from("breezy_entities").upsert(companies.map((company) => ({
     id: company.id,
     user_id: userId,
     workspace_id: workspaceId,
-    payload: withoutKeys(company as unknown as Record<string, unknown>, ["id"]),
+    payload: withoutKeys(company as unknown as Record<string, unknown>, ["id", "transferredAt"]),
   })))
   throwIfError(error)
 }
 
-export async function deleteCompanyRow(workspaceId: string, companyId: string) {
-  const { error } = await client().from("breezy_entities").delete().eq("workspace_id", workspaceId).eq("id", companyId)
+export async function deleteCompanyRow(workspaceId: string, companyId: string, confirmedCompanyName: string) {
+  const { data, error } = await client().rpc("breezy_delete_entity", {
+    target_workspace_id: workspaceId,
+    target_entity_id: companyId,
+    confirmed_company_name: confirmedCompanyName,
+  })
   throwIfError(error)
+  return data as { invoice_ids: string[]; quotation_ids: string[] }
 }
 
 export async function upsertCustomers(userId: string, workspaceId: string, customers: Customer[]) {
@@ -151,7 +159,8 @@ export async function upsertInvoices(userId: string, workspaceId: string, invoic
     user_id: userId,
     workspace_id: workspaceId,
     customer_id: invoice.customerId || null,
-    payload: withoutKeys(invoice as unknown as Record<string, unknown>, ["id"]),
+    ...(invoice.entityId ? { entity_id: invoice.entityId } : {}),
+    payload: withoutKeys(invoice as unknown as Record<string, unknown>, ["id", "entityId"]),
   })))
   throwIfError(error)
 }
@@ -244,6 +253,18 @@ export async function deleteExpenseRow(workspaceId: string, expenseId: string) {
 }
 
 export async function saveFullWorkspace(userId: string, workspaceId: string, state: MvpState) {
+  const archived = new Set(state.companies.filter((company) => company.transferredAt).map((company) => company.id))
+  const archivedNames = new Set(state.companies.filter((company) => company.transferredAt).map((company) => company.companyName))
+  state = { ...state,
+    companies: state.companies.filter((company) => !company.transferredAt),
+    customers: state.customers.filter((row) => !archived.has(row.entityId)),
+    invoices: state.invoices.filter((row) => row.entityId ? !archived.has(row.entityId) : !archivedNames.has(row.entityName || "")),
+    proformas: state.proformas.filter((row) => !archived.has(row.entityId)),
+    employees: state.employees.filter((row) => !archived.has(row.entityId)),
+    payslips: state.payslips.filter((row) => !archived.has(row.entityId)),
+    employeeLetters: state.employeeLetters.filter((row) => !archived.has(row.entityId)),
+    expenses: state.expenses.filter((row) => !archived.has(row.entityId)),
+  }
   await saveWorkspaceSettings(userId, workspaceId, state.setup, state.template)
   await upsertCompanies(userId, workspaceId, state.companies)
   await Promise.all([
