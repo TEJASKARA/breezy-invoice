@@ -1,8 +1,16 @@
 const defaultMessage = "We couldn't complete this action. Please try again. If it keeps happening, contact ChanaX support."
 const technicalDetails = /supabase|schema|\bsql(?:state)?\b|pgrst\d*|breezy_\w+|\bpostgres(?:ql)?\b|\b(?:public|auth|storage)\.[a-z_]\w*|\b(?:foreign key|unique|exclusion|check|not-null) constraint\b|violates .*constraint|row.level security|\brls\b|permission denied for|relation .+ does not exist|column .+ does not exist|on conflict|prepared statement|transaction is aborted|syntax error|database|migration|\.env\b|vite_\w+|backend url|api[_ -]?key|client secret|access token|stack trace|traceback|cannot read properties|is not a function|unexpected token|\[object object\]|https?:\/\//i
 
-/** Customer-facing copy only. Never render raw infrastructure errors. */
+import { reportUnexpectedError } from './error-reporting.ts'
+
 export function customerErrorMessage(error: unknown, fallback = defaultMessage): string {
+  const message = formatCustomerError(error, fallback)
+  reportUnexpectedError(error, message)
+  return message
+}
+
+/** Customer-facing copy only. Never render raw infrastructure errors. */
+function formatCustomerError(error: unknown, fallback = defaultMessage): string {
   const safeFallback = technicalDetails.test(fallback) ? defaultMessage : fallback
   const value = error && typeof error === "object" ? error as { message?: unknown; code?: unknown } : null
   const message = typeof error === "string" ? error : typeof value?.message === "string" ? value.message : ""

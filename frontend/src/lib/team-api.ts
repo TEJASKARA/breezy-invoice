@@ -39,7 +39,7 @@ export async function sendWorkspaceInvitation(
     if (detail.includes("Purchase an additional monthly seat")) {
       throw new Error("Both included additional-user seats are already reserved. Disable a team member or add a paid seat before inviting another person.")
     }
-    throw new Error(customerErrorMessage(detail, "The invitation could not be sent."))
+    throw new Error(customerErrorMessage({ message: detail, status: response.status }, "The invitation could not be sent."))
   }
   return payload as InvitationResult
 }

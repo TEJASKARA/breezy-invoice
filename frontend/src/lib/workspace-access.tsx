@@ -1,4 +1,5 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
+import { setErrorWorkspace } from "@/lib/error-reporting"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { User } from "@supabase/supabase-js"
 
@@ -46,6 +47,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   const hydrate = useCallback(async (nextUser: User | null, preferredWorkspaceId?: string | null) => {
     setUser(nextUser)
     if (!nextUser) {
+      setErrorWorkspace(null)
       setWorkspace(null)
       setMembership(null)
       setSubscription(null)
@@ -60,7 +62,9 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
     try {
       const storageKey = `chanax-active-workspace:${nextUser.id}`
       const preferred = preferredWorkspaceId ?? window.localStorage.getItem(storageKey)
+      setErrorWorkspace(preferred)
       const next = await loadWorkspaceAccess(nextUser, preferred)
+      setErrorWorkspace(next.workspace?.id ?? null)
       setWorkspace(next.workspace)
       setMembership(next.membership)
       setSubscription(next.subscription)

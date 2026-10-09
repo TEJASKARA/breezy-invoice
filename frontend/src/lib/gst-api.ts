@@ -37,7 +37,7 @@ export async function verifyGstin(gstin: string, workspaceId: string): Promise<G
     const detail = payload && typeof payload === "object" && "detail" in payload
       ? String((payload as { detail?: unknown }).detail || "")
       : ""
-    throw new Error(customerErrorMessage(detail, "GSTIN verification could not be completed."))
+    throw new Error(customerErrorMessage({ message: detail, status: response.status }, "GSTIN verification could not be completed."))
   }
   trackAction("gstin_verified")
   return payload as GstVerification

@@ -98,7 +98,7 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
     const detail = payload && typeof payload === "object" && "detail" in payload
       ? String((payload as { detail?: unknown }).detail || "")
       : ""
-    throw new Error(customerErrorMessage(detail, "The billing request could not be completed."))
+    throw new Error(customerErrorMessage({ message: detail, status: response.status }, "The billing request could not be completed."))
   }
   return payload as T
 }

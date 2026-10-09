@@ -44,7 +44,7 @@ export async function sendEmployeeLetterEmail(input: {
   })
   let payload: { detail?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
-  if (!response.ok) throw new Error(customerErrorMessage(payload.detail, "The employee letter email could not be sent."))
+  if (!response.ok) throw new Error(customerErrorMessage({ message: payload.detail, status: response.status }, "The employee letter email could not be sent."))
   trackAction("email_sent", { document: "employee_letter" })
   return payload.message || `The letter was emailed to ${input.toEmail}.`
 }
@@ -81,7 +81,7 @@ export async function sendDocumentEmail(input: {
   })
   let payload: { detail?: string; message?: string } = {}
   try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
-  if (!response.ok) throw new Error(customerErrorMessage(payload.detail, "The document email could not be sent."))
+  if (!response.ok) throw new Error(customerErrorMessage({ message: payload.detail, status: response.status }, "The document email could not be sent."))
   trackAction("email_sent", { document: input.documentType })
   return payload.message || `The document was emailed to ${input.toEmail}.`
 }
@@ -132,7 +132,7 @@ export async function sendDocumentWhatsApp(input: {
     const detail = Array.isArray(payload.detail)
       ? String(payload.detail[0]?.msg || "").replace(/^Value error,\s*/i, "")
       : payload.detail
-    throw new Error(customerErrorMessage(detail || payload.error || (payload.success === false ? payload.message : undefined), "The document could not be sent on WhatsApp. Please try again."))
+    throw new Error(customerErrorMessage({ message: detail || payload.error || (payload.success === false ? payload.message : undefined), status: response.status }, "The document could not be sent on WhatsApp. Please try again."))
   }
   if (!payload.message) throw new Error("We couldn't confirm whether WhatsApp accepted this message. Check whether it arrived before trying again.")
   trackAction("whatsapp_sent", { document: input.documentType })

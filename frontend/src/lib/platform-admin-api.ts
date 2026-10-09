@@ -40,7 +40,7 @@ async function adminRequest<T>(path: string, init: RequestInit = {}): Promise<T>
     const detail = payload && typeof payload === "object" && "detail" in payload
       ? String((payload as { detail?: unknown }).detail || "")
       : ""
-    throw new Error(customerErrorMessage(detail, "The platform administration request failed."))
+    throw new Error(customerErrorMessage({ message: detail, status: response.status }, "The platform administration request failed."))
   }
   return payload as T
 }

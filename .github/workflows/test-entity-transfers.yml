@@ -35,3 +35,4 @@ jobs:
           -f supabase/tests/entity_transfer_failures.sql
           -f supabase/tests/entity_deletion.sql
           -f supabase/tests/invoice_tax_mode.sql
+          -f supabase/tests/product_error_logs.sql
