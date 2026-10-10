@@ -36,3 +36,11 @@ jobs:
           -f supabase/tests/entity_deletion.sql
           -f supabase/tests/invoice_tax_mode.sql
           -f supabase/tests/product_error_logs.sql
+      - name: Test CA partner invitations and isolation
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: test-only
+        run: |
+          createdb chanax_ca_partner_tests
+          psql -d chanax_ca_partner_tests -v ON_ERROR_STOP=1 -f supabase/tests/ca_partner_fixture.sql -f supabase/tests/ca_partners.sql

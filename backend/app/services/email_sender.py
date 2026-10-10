@@ -37,15 +37,18 @@ def _send(
     to_email: str,
     subject: str,
     message: str,
-    filename: str,
-    pdf: bytes,
+    filename: str = "",
+    pdf: bytes = b"",
 ) -> None:
     email = EmailMessage()
     email["From"] = formataddr((settings.smtp_from_name, settings.smtp_from_email))
     email["To"] = to_email
     email["Subject"] = subject
     email.set_content(message)
-    email.add_attachment(pdf, maintype="application", subtype="pdf", filename=filename)
+    if pdf:
+        email.add_attachment(
+            pdf, maintype="application", subtype="pdf", filename=filename
+        )
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as smtp:
             if settings.smtp_use_tls:
@@ -82,8 +85,8 @@ async def _send_with_resend_api(
     to_email: str,
     subject: str,
     message: str,
-    filename: str,
-    pdf: bytes,
+    filename: str = "",
+    pdf: bytes = b"",
 ) -> None:
     sender = formataddr((settings.smtp_from_name, settings.smtp_from_email))
     try:
@@ -99,12 +102,18 @@ async def _send_with_resend_api(
                     "to": [to_email],
                     "subject": subject,
                     "text": message,
-                    "attachments": [
+                    **(
                         {
-                            "filename": filename,
-                            "content": base64.b64encode(pdf).decode("ascii"),
+                            "attachments": [
+                                {
+                                    "filename": filename,
+                                    "content": base64.b64encode(pdf).decode("ascii"),
+                                }
+                            ]
                         }
-                    ],
+                        if pdf
+                        else {}
+                    ),
                 },
             )
     except httpx.HTTPError as exc:
@@ -141,8 +150,8 @@ async def _deliver(
     to_email: str,
     subject: str,
     message: str,
-    filename: str,
-    pdf: bytes,
+    filename: str = "",
+    pdf: bytes = b"",
 ) -> None:
     delivery = {
         "to_email": to_email,
@@ -155,6 +164,28 @@ async def _deliver(
         await _send_with_resend_api(settings, **delivery)
         return
     await asyncio.to_thread(_send, settings, **delivery)
+
+
+async def send_ca_client_invitation_email(
+    settings: Settings, *, to_email: str, firm_name: str, invitation_url: str
+) -> None:
+    if not settings.smtp_is_configured:
+        raise EmailConfigurationError("Client invitation email is not configured.")
+    await _deliver(
+        settings,
+        to_email=to_email,
+        subject="Your CA has invited you to ChanaX",
+        message=(
+            f"Hi,\n\n{firm_name} has invited you to ChanaX.\n\n"
+            f"Open your private invitation: {invitation_url}\n\n"
+            "Create an account or sign in, select your company workspace, and review "
+            "the page permissions before approving your CA. Opening this link does "
+            "not grant access. Your company owns its subscription, credits and data. "
+            "The CA uses one of your two included additional-user seats.\n\n"
+            "This invitation expires in 14 days. Do not forward this private link. "
+            "If you did not expect it, ignore it.\n\nRegards,\nChanaX"
+        ),
+    )
 
 
 async def send_employee_letter_email(

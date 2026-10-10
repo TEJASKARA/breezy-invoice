@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { supabase } from "@/lib/supabase"
+import { pendingCaInvitation } from "@/lib/ca-invitation-session"
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -47,12 +48,13 @@ export function LoginPage() {
       return
     }
     setBusy(true); setMessage("")
-    const result = isSignUp ? await supabase.auth.signUp({ email, password }) : await supabase.auth.signInWithPassword({ email, password })
+    const destination = pendingCaInvitation() ? '/ca-invite' : '/'
+    const result = isSignUp ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${destination}` } }) : await supabase.auth.signInWithPassword({ email, password })
     setBusy(false)
     setMessageIsError(Boolean(result.error))
     if (result.error) setMessage(customerErrorMessage(result.error))
     else if (isSignUp && !result.data.session) setMessage("Check your email to confirm your account, then sign in.")
-    else navigate("/")
+    else navigate(destination)
   }
   async function resetPassword() {
     if (!supabase) { setMessageIsError(true); setMessage("Your account connection is temporarily unavailable. Please try again later."); return }
@@ -63,7 +65,7 @@ export function LoginPage() {
     setMessageIsError(Boolean(error))
     setMessage(error ? customerErrorMessage(error) : "Password reset instructions were sent to your email.")
   }
-  async function google() { if (!supabase) { setMessageIsError(true); setMessage("Sign-in is temporarily unavailable. Please try again later."); return }; const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/` } }); if (error) { setMessageIsError(true); setMessage(customerErrorMessage(error)) } }
+  async function google() { if (!supabase) { setMessageIsError(true); setMessage("Sign-in is temporarily unavailable. Please try again later."); return }; const destination = pendingCaInvitation() ? '/ca-invite' : '/'; const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}${destination}` } }); if (error) { setMessageIsError(true); setMessage(customerErrorMessage(error)) } }
   return (
     <main className="public-light grid min-h-svh bg-white text-[#171717] lg:grid-cols-2">
       <section className="relative hidden overflow-hidden bg-[#111111] p-12 text-white lg:flex lg:flex-col">

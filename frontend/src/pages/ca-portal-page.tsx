@@ -4,6 +4,7 @@ import { Building2, CheckCircle2, Clock3, LogOut, Plus, Send, XCircle } from "lu
 import { Navigate, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { CaPartnerClients } from "@/components/ca-partner-clients"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -46,7 +47,6 @@ export function CaPortalPage() {
   }, [firmWorkspaceName, userProfile])
 
   const ownWorkspace = workspaceOptions.find((option) => option.workspace.owner_user_id === userProfile?.id || option.membership.role === "owner")
-  const clientWorkspaces = workspaceOptions.filter((option) => option.workspace.id !== ownWorkspace?.workspace.id)
 
   async function submitRequest(event: React.FormEvent) {
     event.preventDefault()
@@ -113,13 +113,7 @@ export function CaPortalPage() {
           {ownWorkspace ? <Card className="max-w-2xl"><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-5" />{ownWorkspace.workspace.name}<Badge variant="secondary">My firm</Badge></CardTitle><CardDescription>You own this workspace. Client subscriptions and credits are never used here.</CardDescription></CardHeader><CardContent><Button onClick={() => void openWorkspace(ownWorkspace.workspace.id)}>Open my workspace</Button></CardContent></Card> : <Card className="max-w-2xl border-dashed"><CardHeader><CardTitle>Create a workspace for your firm</CardTitle><CardDescription>This is optional. Create it only if your CA practice needs to issue its own invoices or manage its own employees. You can review plans before purchasing.</CardDescription></CardHeader><CardContent><form className="flex flex-col gap-3 sm:flex-row" onSubmit={createFirmWorkspace}><div className="flex-1 space-y-2"><Label htmlFor="firm-workspace-name">Firm or practice name</Label><Input id="firm-workspace-name" required maxLength={160} value={firmWorkspaceName} onChange={(event) => setFirmWorkspaceName(event.target.value)} placeholder="Your CA practice name" /></div><Button className="sm:self-end" type="submit" disabled={saving}><Plus />Create my workspace</Button></form></CardContent></Card>}
         </section>
 
-        <section className="space-y-3">
-          <div><h2 className="text-xl font-semibold">Client workspaces</h2><p className="text-sm text-muted-foreground">Each client owns its subscription, credits, data and the permissions granted to you.</p></div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {clientWorkspaces.map((option) => <Card key={option.workspace.id}><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-5" />{option.workspace.name}</CardTitle><CardDescription>Access granted as {option.membership.role}. The company’s page permissions apply.</CardDescription></CardHeader><CardContent><Button className="w-full" onClick={() => void openWorkspace(option.workspace.id)}>Open client workspace</Button></CardContent></Card>)}
-          {!clientWorkspaces.length ? <Card className="border-dashed md:col-span-2"><CardContent className="flex min-h-48 flex-col items-center justify-center p-8 text-center"><Building2 className="mb-3 size-8 text-muted-foreground" /><p className="font-semibold">No client access yet</p><p className="mt-1 max-w-md text-sm text-muted-foreground">Ask a client to invite your ChanaX email, or send a secure request using their owner email or subscription code.</p></CardContent></Card> : null}
-          </div>
-        </section>
+        <CaPartnerClients openWorkspace={openWorkspace} />
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <Card><CardHeader><CardTitle>Request client access</CardTitle><CardDescription>The company owner must approve the request. Approval uses one of the company’s included or paid team seats.</CardDescription></CardHeader><CardContent><form className="space-y-4" onSubmit={submitRequest}><div className="space-y-2"><Label htmlFor="company-reference">Company owner email or subscription code</Label><Input id="company-reference" required value={companyReference} onChange={(event) => setCompanyReference(event.target.value)} placeholder="owner@company.com or subscription code" /></div><div className="space-y-2"><Label htmlFor="request-message">Message (optional)</Label><textarea id="request-message" maxLength={500} value={message} onChange={(event) => setMessage(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="Explain which accounting work you will manage." /></div><Button type="submit" disabled={saving}><Send />Send access request</Button></form></CardContent></Card>

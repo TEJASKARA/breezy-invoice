@@ -26,6 +26,7 @@ const WorkspaceSettingsPage = lazy(() => import("@/pages/workspace-settings-page
 const PricingPage = lazy(() => import("@/pages/pricing-page").then((module) => ({ default: module.PricingPage })))
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then((module) => ({ default: module.PlatformAdminPage })))
 const CaPortalPage = lazy(() => import("@/pages/ca-portal-page").then((module) => ({ default: module.CaPortalPage })))
+const CaInvitationPage = lazy(() => import("@/pages/ca-invitation-page").then((module) => ({ default: module.CaInvitationPage })))
 const TermsPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.TermsPage })))
 const PrivacyPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.PrivacyPage })))
 const ContactPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.ContactPage })))
@@ -87,6 +88,7 @@ function App() {
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/cancellation-refunds" element={<CancellationRefundsPage />} />
       <Route element={<WorkspaceProviders />}>
+        <Route path="/ca-invite" element={<CaInvitationPage />} />
         <Route path="/setup" element={<Protected><OnboardingPage /></Protected>} />
         <Route path="/ca" element={<Protected><CaPortalPage /></Protected>} />
         <Route element={<Protected><SetupGate><AppShell /></SetupGate></Protected>}>
