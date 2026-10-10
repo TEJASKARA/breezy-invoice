@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run test:errors
       - run: npm run test:gst
+      - run: npm run test:pdf
       - run: npm run test:ca
       - run: npm run lint
       - run: npm run build

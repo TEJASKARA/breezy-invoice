@@ -121,6 +121,7 @@ export function TemplatesPage() {
   const [selectedTextId, setSelectedTextId] = useState<string | null>(template.customTexts[0]?.id ?? null)
   const [selectedElementId, setSelectedElementId] = useState<TemplateElementId | null>("invoiceTitle")
   const [previewDocumentType, setPreviewDocumentType] = useState<"invoice" | "quotation">("invoice")
+  const [showFinalPdf, setShowFinalPdf] = useState(false)
 
   const previewEntity: Company = scopeEntity ?? companies[0] ?? {
     id: "preview-entity",
@@ -567,7 +568,7 @@ export function TemplatesPage() {
               <Button size="sm" variant={previewDocumentType === "invoice" ? "default" : "ghost"} onClick={() => setPreviewDocumentType("invoice")}><ReceiptText />Sales invoice</Button>
               <Button size="sm" variant={previewDocumentType === "quotation" ? "default" : "ghost"} onClick={() => setPreviewDocumentType("quotation")}><FilePlus2 />Quotation / proforma</Button>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Move className="size-4" />Drag elements toward the left, centre, or right guide to align them. Coordinates and arrow-key movement remain available.</div>
+            <Button variant="outline" onClick={() => setShowFinalPdf((value) => !value)}>{showFinalPdf ? <Move /> : <Eye />}{showFinalPdf ? "Back to layout editor" : "Preview actual PDF"}</Button>
           </div>
           {previewDocumentType === "quotation" ? <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Quotation previews and PDFs are always marked as not being sales or tax invoices.</p> : null}
           <InvoicePreview
@@ -577,7 +578,7 @@ export function TemplatesPage() {
             template={template}
             documentType={previewDocumentType}
             canRemoveBranding={brandingCanBeRemoved}
-            editor={{
+            editor={showFinalPdf ? undefined : {
               selectedTextId,
               selectedElementId,
               onSelectText: (id) => { setSelectedTextId(id); setSelectedElementId(null) },

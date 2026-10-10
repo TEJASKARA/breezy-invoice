@@ -34,7 +34,11 @@ function fontName(style: TemplateSettings["fontStyle"]) {
 function addLogo(doc: JsPdfDocument, logoDataUrl: string, x: number, y: number, width: number, height: number) {
   const format = logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG"
   try {
-    doc.addImage(logoDataUrl, format, x, y, width, height, undefined, "FAST")
+    const image = doc.getImageProperties(logoDataUrl)
+    const scale = Math.min(width / image.width, height / image.height)
+    const imageWidth = image.width * scale
+    const imageHeight = image.height * scale
+    doc.addImage(logoDataUrl, format, x + (width - imageWidth) / 2, y + (height - imageHeight) / 2, imageWidth, imageHeight, undefined, "FAST")
     return true
   } catch {
     return false
@@ -45,7 +49,7 @@ function addressLines(doc: JsPdfDocument, address: string, width: number) {
   return doc.splitTextToSize(address || "Address not provided", width) as string[]
 }
 
-type InvoicePdfInput = {
+export type InvoicePdfInput = {
   invoice: Invoice
   entity?: Company
   customer?: Customer
@@ -82,7 +86,8 @@ export async function createInvoicePdf({
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
   const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
-  const logoSize = Math.min(36, Math.max(14, template.logoSize / 3))
+  // The editor's 760px-wide page maps to A4, not one millimetre per 3px.
+  const logoSize = Math.min(120, Math.max(40, template.logoSize)) * pageWidth / 760
   const hasCorrectionNotice = !isQuotation && (invoice.status === "Cancelled" || invoice.status === "Amended" || Boolean(invoice.correctsInvoiceNumber))
   const shift = (id: TemplateElementId) => ({
     x: (element(id).offsetX / 100) * pageWidth,
@@ -129,18 +134,23 @@ export async function createInvoicePdf({
   const logoShown = Boolean(element("logo").visible && template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin + logoShift.x, headerY + logoShift.y, logoSize, logoSize))
   const issuerShift = shift("issuer")
   const issuerX = (logoShown ? margin + logoSize + 5 : margin) + issuerShift.x
+  let headerBottom = headerY + (logoShown ? logoSize + logoShift.y : 0)
   if (element("issuer").visible) {
     doc.setFont(baseFont, "bold")
     doc.setFontSize(template.preset === "minimal" ? 15 : 17)
-    doc.text(issuerName, issuerX, headerY + 6 + issuerShift.y)
+    const issuerWidth = Math.max(25, pageWidth - margin - 70 - issuerX)
+    const issuerNameLines = doc.splitTextToSize(issuerName, issuerWidth) as string[]
+    doc.text(issuerNameLines, issuerX, headerY + 6 + issuerShift.y)
+    const addressY = headerY + 6 + issuerShift.y + issuerNameLines.length * 6 + 2
     doc.setFont(baseFont, "normal")
     doc.setFontSize(8.5)
     doc.setTextColor(...muted)
-    const issuerAddress = addressLines(doc, entity?.billingAddress || entity?.premisesAddress || "", 88)
-    doc.text(issuerAddress.slice(0, 3), issuerX, headerY + 12 + issuerShift.y)
-    const issuerMetaY = headerY + 12 + issuerShift.y + Math.min(issuerAddress.length, 3) * 4
+    const issuerAddress = addressLines(doc, entity?.billingAddress || entity?.premisesAddress || "", issuerWidth)
+    doc.text(issuerAddress, issuerX, addressY)
+    const issuerMetaY = addressY + issuerAddress.length * 4
     if (entity?.gstin) doc.text(`GSTIN: ${entity.gstin}`, issuerX, issuerMetaY)
     if (entity?.pan) doc.text(`PAN: ${entity.pan}`, issuerX, issuerMetaY + 4)
+    headerBottom = Math.max(headerBottom, issuerMetaY + 8)
   }
 
   if (element("invoiceTitle").visible) {
@@ -148,15 +158,18 @@ export async function createInvoicePdf({
     doc.setTextColor(...accent)
     doc.setFont(baseFont, "bold")
     doc.setFontSize(template.preset === "minimal" ? 17 : 20)
-    doc.text(displayedTitle, pageWidth - margin + titleShift.x, headerY + 6 + titleShift.y, { align: "right" })
+    const titleLines = doc.splitTextToSize(displayedTitle, 62) as string[]
+    doc.text(titleLines, pageWidth - margin + titleShift.x, headerY + 6 + titleShift.y, { align: "right" })
+    const titleMetaY = headerY + 6 + titleShift.y + titleLines.length * 7
     doc.setTextColor(...muted)
     doc.setFontSize(9)
     doc.setFont(baseFont, "normal")
-    doc.text(invoiceNumber, pageWidth - margin + titleShift.x, headerY + 13 + titleShift.y, { align: "right" })
-    doc.text(`Status: ${invoice.status}`, pageWidth - margin + titleShift.x, headerY + 18 + titleShift.y, { align: "right" })
+    doc.text(invoiceNumber, pageWidth - margin + titleShift.x, titleMetaY, { align: "right" })
+    doc.text(invoice.date, pageWidth - margin + titleShift.x, titleMetaY + 5, { align: "right" })
+    headerBottom = Math.max(headerBottom, titleMetaY + 10)
   }
 
-  const dividerY = 56 + compactOffset
+  const dividerY = Math.max(56 + compactOffset, headerBottom + 5)
   doc.setDrawColor(template.preset === "minimal" ? 210 : accent[0], template.preset === "minimal" ? 214 : accent[1], template.preset === "minimal" ? 220 : accent[2])
   doc.setLineWidth(template.preset === "minimal" ? 0.25 : 0.45)
   doc.line(margin, dividerY, pageWidth - margin, dividerY)
@@ -194,6 +207,7 @@ export async function createInvoicePdf({
   }
 
   const infoY = dividerY + (isQuotation || hasCorrectionNotice ? 20 : 10)
+  let infoBottom = infoY + 25
   if (element("customer").visible) {
     const customerShift = shift("customer")
     doc.setFont(baseFont, "bold")
@@ -202,13 +216,18 @@ export async function createInvoicePdf({
     doc.text(element("customer").label.toUpperCase(), margin + customerShift.x, infoY + customerShift.y)
     doc.setTextColor(...ink)
     doc.setFontSize(11)
-    doc.text(customerName, margin + customerShift.x, infoY + 7 + customerShift.y)
+    const nameLines = doc.splitTextToSize(customerName, 100) as string[]
+    doc.text(nameLines, margin + customerShift.x, infoY + 7 + customerShift.y)
     doc.setFont(baseFont, "normal")
     doc.setFontSize(8.5)
     doc.setTextColor(...muted)
-    doc.text(addressLines(doc, customer?.billingAddress || customer?.premisesAddress || "", 96).slice(0, 4), margin + customerShift.x, infoY + 13 + customerShift.y)
-    if (customer?.gstin) doc.text(`GSTIN: ${customer.gstin}`, margin + customerShift.x, infoY + 31 + customerShift.y)
-    if (customer?.pan) doc.text(`PAN: ${customer.pan}`, margin + customerShift.x, infoY + 35 + customerShift.y)
+    const customerAddress = addressLines(doc, customer?.billingAddress || customer?.premisesAddress || "", 100)
+    const customerAddressY = infoY + 7 + customerShift.y + nameLines.length * 5 + 1
+    doc.text(customerAddress, margin + customerShift.x, customerAddressY)
+    let customerMetaY = customerAddressY + customerAddress.length * 4 + 1
+    if (customer?.gstin) { doc.text(`GSTIN: ${customer.gstin}`, margin + customerShift.x, customerMetaY); customerMetaY += 4 }
+    if (customer?.pan) { doc.text(`PAN: ${customer.pan}`, margin + customerShift.x, customerMetaY); customerMetaY += 4 }
+    infoBottom = Math.max(infoBottom, customerMetaY)
   }
 
   if (element("invoiceDetails").visible) {
@@ -237,9 +256,29 @@ export async function createInvoicePdf({
       doc.setFont(baseFont, "bold")
       doc.text(invoice.sourceProformaNumber, pageWidth - margin + detailsShift.x, infoY + 21 + detailsShift.y, { align: "right" })
     }
+    const statusY = infoY + detailsShift.y + (isQuotation && validUntil || invoice.sourceProformaNumber ? 28 : 21)
+    doc.setFont(baseFont, "normal")
+    doc.text(`Status: ${invoice.status}   |   Items: ${lineItems.length}`, 132 + detailsShift.x, statusY)
+    infoBottom = Math.max(infoBottom, statusY + 5)
   }
 
   const itemsShift = shift("lineItems")
+  const tableColumns = isGstInvoice
+    ? [{ label: "Description", width: 36 }, { label: "HSN/SAC", width: 14 }, { label: "Qty", width: 9 }, { label: "Unit price", width: 20 }, { label: "Amount", width: 21 }, { label: "CGST", width: 17 }, { label: "SGST", width: 17 }, { label: "IGST", width: 17 }, { label: "Total", width: 27 }]
+    : [{ label: "Description", width: 62 }, { label: "HSN/SAC", width: 20 }, { label: "Qty", width: 14 }, { label: "Unit price", width: 27 }, { label: "Amount", width: 27 }, { label: "Total", width: 28 }]
+  const tableNumber = (value: number) => value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const drawCell = (text: string, columnIndex: number, y: number, bold = false) => {
+    const column = tableColumns[columnIndex]
+    const x = margin + itemsShift.x + tableColumns.slice(0, columnIndex).reduce((sum, item) => sum + item.width, 0)
+    const leftAligned = columnIndex < 2
+    doc.setFont(baseFont, bold ? "bold" : "normal")
+    let fontSize = isGstInvoice ? 6.5 : 8
+    doc.setFontSize(fontSize)
+    while (doc.getTextWidth(text) > column.width - 3 && fontSize > 5) { fontSize -= 0.25; doc.setFontSize(fontSize) }
+    const lines = doc.splitTextToSize(text, column.width - 3) as string[]
+    doc.text(lines, x + (leftAligned ? 1.5 : column.width - 1.5), y, { align: leftAligned ? "left" : "right" })
+    return lines.length
+  }
   const drawTableHeader = (y: number) => {
     if (template.preset === "breeze") {
       doc.setFillColor(...accent)
@@ -249,22 +288,18 @@ export async function createInvoicePdf({
       doc.setTextColor(...ink)
     }
     doc.rect(margin + itemsShift.x, y, pageWidth - margin * 2, 10, "F")
-    doc.setFont(baseFont, "bold")
-    doc.setFontSize(7.5)
-    doc.text("DESCRIPTION", margin + 3 + itemsShift.x, y + 6.5)
-    doc.text("HSN/SAC", 79 + itemsShift.x, y + 6.5)
-    doc.text("QTY", 111 + itemsShift.x, y + 6.5, { align: "right" })
-    doc.text("UNIT PRICE", 140 + itemsShift.x, y + 6.5, { align: "right" })
-    doc.text("TAX", 159 + itemsShift.x, y + 6.5, { align: "right" })
-    doc.text("TAXABLE VALUE", pageWidth - margin - 3 + itemsShift.x, y + 6.5, { align: "right" })
+    tableColumns.forEach((column, index) => drawCell(column.label, index, y + 6, true))
   }
 
-  let rowY = 117 + compactOffset + itemsShift.y + (isQuotation ? 10 : 0)
+  let rowY = Math.max(117 + compactOffset, infoBottom + 18) + itemsShift.y
+  const tablePageBottom = 250
   if (element("lineItems").visible) drawTableHeader(rowY - 10)
   if (element("lineItems").visible) lineItems.forEach((item, index) => {
-    const descriptionLines = (doc.splitTextToSize(item.description, 56) as string[]).slice(0, 3)
-    const rowHeight = Math.max(template.compact ? 11 : 14, descriptionLines.length * 4 + 6)
-    if (rowY + rowHeight > 222) {
+    doc.setFont(baseFont, "normal")
+    doc.setFontSize(isGstInvoice ? 6.5 : 8)
+    const descriptionLines = doc.splitTextToSize(item.description, tableColumns[0].width - 3) as string[]
+    const rowHeight = Math.max(template.compact ? 10 : 13, descriptionLines.length * 3.5 + 6)
+    if (rowY + rowHeight > tablePageBottom) {
       doc.addPage()
       paintPageBackground()
       doc.setFont(baseFont, "bold")
@@ -277,14 +312,10 @@ export async function createInvoicePdf({
     const taxAmount = item.cgstAmount + item.sgstAmount + item.igstAmount
     doc.setTextColor(...ink)
     doc.setFont(baseFont, "normal")
-    doc.setFontSize(7.5)
-    doc.text(descriptionLines, margin + 3 + itemsShift.x, rowY + 6)
-    doc.text(item.hsnSac || customer?.hsnSac || "-", 79 + itemsShift.x, rowY + 6)
-    doc.text(String(item.quantity ?? 1), 111 + itemsShift.x, rowY + 6, { align: "right" })
-    doc.text((item.unitPrice ?? item.taxableAmount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 140 + itemsShift.x, rowY + 6, { align: "right" })
-    doc.text(taxAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 159 + itemsShift.x, rowY + 6, { align: "right" })
-    doc.setFont(baseFont, "bold")
-    doc.text(money(item.taxableAmount), pageWidth - margin - 3 + itemsShift.x, rowY + 6, { align: "right" })
+    doc.setFontSize(isGstInvoice ? 6.5 : 8)
+    doc.text(descriptionLines, margin + 1.5 + itemsShift.x, rowY + 5)
+    const cells = [item.hsnSac || customer?.hsnSac || "-", String(item.quantity ?? 1), tableNumber(item.unitPrice ?? item.taxableAmount), tableNumber(item.taxableAmount), ...(isGstInvoice ? [tableNumber(item.cgstAmount), tableNumber(item.sgstAmount), tableNumber(item.igstAmount)] : []), tableNumber(item.taxableAmount + taxAmount)]
+    cells.forEach((value, index) => drawCell(value, index + 1, rowY + 5, index === cells.length - 1))
     doc.setDrawColor(220, 224, 230)
     doc.setLineWidth(0.25)
     doc.line(margin + itemsShift.x, rowY + rowHeight, pageWidth - margin + itemsShift.x, rowY + rowHeight)
@@ -292,7 +323,8 @@ export async function createInvoicePdf({
     if (index === lineItems.length - 1) rowY += 2
   })
 
-  if (rowY > 165) {
+  // Reserve space for totals and footer, rather than breaking after four rows.
+  if (rowY + 80 + Math.max(0, shift("totals").y) > pageHeight - 16) {
     doc.addPage()
     paintPageBackground()
     doc.setFont(baseFont, "bold")
@@ -308,12 +340,10 @@ export async function createInvoicePdf({
       const summaryX = margin + totalsShift.x
       const summaryY = totalsY - 3
       const summaryWidth = pageWidth - margin * 2
-      const columnWidth = summaryWidth / 4
+      const columnWidth = summaryWidth / (isGstInvoice ? 4 : 1)
       const summaryItems: [string, number][] = [
         ["TAXABLE VALUE", totals.taxableAmount],
-        ["CGST", totals.cgstAmount],
-        ["SGST", totals.sgstAmount],
-        ["IGST", totals.igstAmount],
+        ...(isGstInvoice ? [["CGST", totals.cgstAmount], ["SGST", totals.sgstAmount], ["IGST", totals.igstAmount]] as [string, number][] : []),
       ]
       if (template.preset === "classic") doc.setDrawColor(...accent)
       else doc.setDrawColor(220, 224, 230)

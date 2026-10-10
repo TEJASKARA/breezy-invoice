@@ -1,8 +1,9 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 
 import type { Company, Customer, Invoice, TemplateElementId, TemplateElementSetting, TemplateSettings } from "@/lib/mvp-store"
 import { calculateInvoiceTotals, getInvoiceLineItems } from "@/lib/invoice-calculations"
 import { cn } from "@/lib/utils"
+import { createInvoicePdf } from "@/lib/invoice-pdf"
 
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -56,7 +57,48 @@ function EditableInvoiceElement({ id, setting, editor, onPointerDown, children, 
   )
 }
 
-export function InvoicePreview({
+type InvoicePreviewProps = {
+  invoice: Invoice
+  entity?: Company
+  customer?: Customer
+  template: TemplateSettings
+  documentType?: "invoice" | "quotation"
+  editor?: PreviewEditor
+  canRemoveBranding?: boolean
+}
+
+/** Non-editing previews use the download renderer, including its page breaks. */
+export function InvoicePreview(props: InvoicePreviewProps) {
+  return props.editor ? <EditableInvoicePreview {...props} /> : <GeneratedInvoicePreview {...props} />
+}
+
+function GeneratedInvoicePreview({ invoice, entity, customer, template, documentType, canRemoveBranding }: InvoicePreviewProps) {
+  const [pdf, setPdf] = useState<{ url: string; pages: string[]; error: boolean }>({ url: "", pages: [], error: false })
+  useEffect(() => {
+    let cancelled = false
+    let url = ""
+    setPdf({ url: "", pages: [], error: false })
+    void createInvoicePdf({ invoice, entity, customer, template, documentType, canRemoveBranding }).then(async (doc) => {
+      if (cancelled) return
+      url = URL.createObjectURL(doc.output("blob"))
+      const { renderPdfPreview } = await import("@/lib/pdf-preview")
+      const pages = await renderPdfPreview(doc.output("arraybuffer"), () => cancelled)
+      if (!cancelled) setPdf({ url, pages, error: false })
+    }).catch(() => {
+      if (url) URL.revokeObjectURL(url)
+      if (!cancelled) setPdf({ url: "", pages: [], error: true })
+    })
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
+  }, [invoice, entity, customer, template, documentType, canRemoveBranding])
+  if (pdf.error) return <p role="alert" className="rounded-lg border p-4 text-sm">We couldn't prepare the PDF preview. Please close it and try again.</p>
+  if (!pdf.url) return <p role="status" className="p-8 text-center text-sm text-muted-foreground">Preparing PDF preview…</p>
+  return <div className="space-y-2">
+    <p className="text-center text-xs text-muted-foreground">This is the generated PDF, including all pages. <a className="underline" href={pdf.url} target="_blank" rel="noreferrer">Open PDF in a new tab</a></p>
+    {pdf.pages.map((page, index) => <img key={index} src={page} alt={`${documentType === "quotation" ? "Quotation" : "Invoice"} PDF page ${index + 1} of ${pdf.pages.length}`} className="mx-auto w-full max-w-[760px] border bg-white shadow-sm" />)}
+  </div>
+}
+
+function EditableInvoicePreview({
   invoice,
   entity,
   customer,
