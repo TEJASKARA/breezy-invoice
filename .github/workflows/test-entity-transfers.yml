@@ -36,6 +36,22 @@ jobs:
           -f supabase/tests/entity_deletion.sql
           -f supabase/tests/invoice_tax_mode.sql
           -f supabase/tests/product_error_logs.sql
+          -f supabase/tests/gstin_change_only_validation.sql
+      - name: Verify transfers and deletion with updated GST validation
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: test-only
+        run: |
+          createdb chanax_gstin_regression_tests
+          psql -d chanax_gstin_regression_tests -v ON_ERROR_STOP=1 \
+            -f supabase/tests/entity_transfers_fixture.sql \
+            -f supabase/migrations/202610100003_gstin_change_only_validation.sql \
+            -f supabase/tests/entity_transfers.sql \
+            -f supabase/tests/entity_transfer_failures.sql \
+            -f supabase/tests/entity_deletion.sql \
+            -f supabase/tests/invoice_tax_mode.sql \
+            -f supabase/tests/product_error_logs.sql
       - name: Test CA partner invitations and isolation
         env:
           PGHOST: localhost
