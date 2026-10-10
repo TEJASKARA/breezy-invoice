@@ -1,5 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { assertInvoiceTaxMode, type GstTaxMode } from "@/lib/invoice-gst"
+import { invoiceReplacementSaveOrder, replacementInvoiceCompany } from "@/lib/invoice-replacement"
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import {
@@ -839,10 +840,11 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       if (!original) throw new Error("The original invoice could not be found.")
       if (original.status === "Draft") throw new Error("Draft invoices should be edited instead of replaced.")
       if (original.status === "Cancelled") throw new Error("This invoice has already been cancelled.")
-      const company = current.companies.find((candidate) => candidate.companyName === replacement.entityName)
+      const company = replacementInvoiceCompany(original, replacement, current.companies, current.customers)
       const issuedNumber = numberFromCompany(company, current.setup, current.invoices)
       const added: Invoice = {
         ...replacement,
+        entityId: company.id,
         id: id(),
         number: issuedNumber,
         correctsInvoiceId: original.id,
@@ -850,6 +852,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       }
       const correctedOriginal: Invoice = {
         ...original,
+        entityId: company.id,
         status: "Cancelled",
         correction: {
           ...correction,
@@ -867,7 +870,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       await persistAndWait(async (userId, workspaceId) => {
         if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
         if (updatedCompany) await upsertCompanies(userId, workspaceId, [updatedCompany])
-        await upsertInvoices(userId, workspaceId, [correctedOriginal, added])
+        await upsertInvoices(userId, workspaceId, invoiceReplacementSaveOrder(correctedOriginal, added))
       })
       commit({
         ...stateRef.current,

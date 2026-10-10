@@ -35,6 +35,8 @@ jobs:
           -f supabase/tests/entity_transfer_failures.sql
           -f supabase/tests/entity_deletion.sql
           -f supabase/tests/invoice_tax_mode.sql
+          -f supabase/tests/invoice_replacement.sql
+          -f supabase/tests/invoice_replacement_legacy.sql
           -f supabase/tests/product_error_logs.sql
           -f supabase/tests/gstin_change_only_validation.sql
       - name: Verify transfers and deletion with updated GST validation
@@ -51,6 +53,8 @@ jobs:
             -f supabase/tests/entity_transfer_failures.sql \
             -f supabase/tests/entity_deletion.sql \
             -f supabase/tests/invoice_tax_mode.sql \
+            -f supabase/tests/invoice_replacement.sql \
+            -f supabase/tests/invoice_replacement_legacy.sql \
             -f supabase/tests/product_error_logs.sql
       - name: Test CA partner invitations and isolation
         env:
