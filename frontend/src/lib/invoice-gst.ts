@@ -1,6 +1,7 @@
 export type GstTaxMode = "split" | "igst"
 type TaxAmounts = { cgstAmount?: number | string; sgstAmount?: number | string; igstAmount?: number | string }
 export type GstDraftLine = {
+  quantity?: string; unitPrice?: string
   taxableAmount: string; totalAmount: string
   cgstAmount: string; sgstAmount: string; igstAmount: string
   cgstRate: string; sgstRate: string; igstRate: string
@@ -9,6 +10,21 @@ export type GstDraftLine = {
 const money = (value: number) => Math.round(value * 100) / 100
 const input = (value: number) => value > 0 ? String(money(value)) : ""
 const rate = (value: string) => Math.min(100, Math.max(0, Number(value) || 0))
+export const gstRateOptions = [0, 5, 12, 18, 28] as const
+export const unitPriceFromTaxable = (amount: number, quantity = 1) => quantity > 0 ? Math.round(amount / quantity * 1_000_000) / 1_000_000 : 0
+const unitPriceFields = (line: GstDraftLine, taxable: number) => line.quantity === undefined ? {} : {
+  unitPrice: taxable > 0 ? String(unitPriceFromTaxable(taxable, Number(line.quantity))) : "",
+}
+export function updateDraftQuantity<T extends GstDraftLine>(line: T, quantity: string): T {
+  const price = line.unitPrice === undefined ? unitPriceFromTaxable(Number(line.taxableAmount) || 0, Number(line.quantity ?? 1)) : Number(line.unitPrice) || 0
+  const taxableAmount = input(Math.max(0, Number(quantity) || 0) * price)
+  const updated = recalculateDraftLineFromTaxable({ ...line, quantity, taxableAmount, amountBasis: "taxable" })
+  return { ...updated, unitPrice: line.unitPrice ?? (price ? String(price) : "") }
+}
+export function updateDraftUnitPrice<T extends GstDraftLine>(line: T, unitPrice: string): T {
+  const taxableAmount = input(Math.max(0, Number(line.quantity ?? 1) || 0) * Math.max(0, Number(unitPrice) || 0))
+  return { ...recalculateDraftLineFromTaxable({ ...line, unitPrice, taxableAmount, amountBasis: "taxable" }), unitPrice }
+}
 const tax = (line: GstDraftLine, amount: number) => ({
   cgstAmount: money(amount * rate(line.cgstRate) / 100),
   sgstAmount: money(amount * rate(line.sgstRate) / 100),
@@ -17,7 +33,7 @@ const tax = (line: GstDraftLine, amount: number) => ({
 export function recalculateDraftLineFromTaxable<T extends GstDraftLine>(line: T): T {
   const taxable = Math.max(0, Number(line.taxableAmount) || 0)
   const taxes = tax(line, taxable)
-  return { ...line, cgstAmount: input(taxes.cgstAmount), sgstAmount: input(taxes.sgstAmount),
+  return { ...line, ...unitPriceFields(line, taxable), cgstAmount: input(taxes.cgstAmount), sgstAmount: input(taxes.sgstAmount),
     igstAmount: input(taxes.igstAmount), totalAmount: input(taxable + taxes.cgstAmount + taxes.sgstAmount + taxes.igstAmount) }
 }
 export function recalculateDraftLineFromTotal<T extends GstDraftLine>(line: T): T {
@@ -26,7 +42,7 @@ export function recalculateDraftLineFromTotal<T extends GstDraftLine>(line: T): 
   const taxes = tax(line, total / (1 + totalRate / 100))
   // Keep the entered inclusive total exact after rounding tax components to paise.
   const taxable = money(total - taxes.cgstAmount - taxes.sgstAmount - taxes.igstAmount)
-  return { ...line, taxableAmount: input(taxable), cgstAmount: input(taxes.cgstAmount),
+  return { ...line, ...unitPriceFields(line, taxable), taxableAmount: input(taxable), cgstAmount: input(taxes.cgstAmount),
     sgstAmount: input(taxes.sgstAmount), igstAmount: input(taxes.igstAmount), totalAmount: input(total) }
 }
 export function recalculateGstDraftLine<T extends GstDraftLine>(line: T): T {

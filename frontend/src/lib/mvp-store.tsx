@@ -45,6 +45,8 @@ export type InvoiceLineItem = {
   id: string
   description: string
   hsnSac: string
+  quantity?: number
+  unitPrice?: number
   taxableAmount: number
   cgstAmount: number
   sgstAmount: number

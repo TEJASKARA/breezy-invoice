@@ -225,7 +225,7 @@ export function InvoicePreview({
       <EditableInvoiceElement id="lineItems" setting={element("lineItems")} editor={editor} onPointerDown={startElementDrag} className="overflow-hidden border">
         <table className="w-full text-left text-xs">
           <thead style={{ backgroundColor: isMinimal || isClassic ? "#f4f4f5" : template.accentColor, color: isMinimal || isClassic ? "#18181b" : "white" }}>
-            <tr><th className="p-2.5">Description</th><th className="p-2.5">HSN/SAC</th><th className="p-2.5 text-right">Amount</th>{isGstInvoice ? <><th className="p-2.5 text-right">CGST</th><th className="p-2.5 text-right">SGST</th><th className="p-2.5 text-right">IGST</th></> : null}<th className="p-2.5 text-right">Total</th></tr>
+            <tr><th className="p-2.5">Description</th><th className="p-2.5">HSN/SAC</th><th className="p-2 text-right">Qty</th><th className="p-2 text-right">Unit price</th><th className="p-2.5 text-right">Amount</th>{isGstInvoice ? <><th className="p-2.5 text-right">CGST</th><th className="p-2.5 text-right">SGST</th><th className="p-2.5 text-right">IGST</th></> : null}<th className="p-2.5 text-right">Total</th></tr>
           </thead>
           <tbody>
             {items.map((item) => {
@@ -234,6 +234,8 @@ export function InvoicePreview({
                 <tr key={item.id} className="border-t">
                   <td className="p-2.5 font-medium">{item.description}</td>
                   <td className="p-2.5 text-zinc-500">{item.hsnSac || "—"}</td>
+                  <td className="p-2 text-right">{item.quantity}</td>
+                  <td className="whitespace-nowrap p-2 text-right">{money(item.unitPrice ?? item.taxableAmount)}</td>
                   <td className="whitespace-nowrap p-2.5 text-right">{money(item.taxableAmount)}</td>
                   {isGstInvoice ? <><td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.cgstAmount)}</td><td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.sgstAmount)}</td><td className="whitespace-nowrap p-2.5 text-right text-zinc-500">{money(item.igstAmount)}</td></> : null}
                   <td className="whitespace-nowrap p-2.5 text-right font-semibold">{money(item.taxableAmount + tax)}</td>

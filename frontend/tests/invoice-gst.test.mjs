@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { applyInvoiceTaxMode, invoiceTaxError, recalculateGstDraftLine } from "../src/lib/invoice-gst.ts"
+import { applyInvoiceTaxMode, gstRateOptions, invoiceTaxError, recalculateGstDraftLine, updateDraftQuantity, updateDraftUnitPrice } from "../src/lib/invoice-gst.ts"
 
 const line = (overrides = {}) => ({ taxableAmount: "100", totalAmount: "", cgstAmount: "", sgstAmount: "", igstAmount: "", cgstRate: "9", sgstRate: "9", igstRate: "", amountBasis: "taxable", ...overrides })
 const totals = (value) => Math.round((Number(value.taxableAmount) + Number(value.cgstAmount) + Number(value.sgstAmount) + Number(value.igstAmount)) * 100) / 100
@@ -20,7 +20,8 @@ test("switching invoice type clears incompatible taxes on all lines", () => {
 })
 
 test("standard GST choices use the invoice-wide tax type", () => {
-  for (const gst of [5, 12, 18, 28]) {
+  assert.deepEqual(gstRateOptions, [0, 5, 12, 18, 28])
+  for (const gst of gstRateOptions) {
     const split = applyInvoiceTaxMode(line(), "split", gst)
     const integrated = applyInvoiceTaxMode(line(), "igst", gst)
     assert.equal(Number(split.cgstRate), gst / 2)
@@ -29,6 +30,35 @@ test("standard GST choices use the invoice-wide tax type", () => {
     assert.equal(Number(split.totalAmount), 100 + gst)
     assert.equal(Number(integrated.totalAmount), 100 + gst)
   }
+})
+
+test("quantity and unit price calculate the line base and tax, not tax twice", () => {
+  const initial = line({ quantity: "1", unitPrice: "100" })
+  const three = updateDraftQuantity(initial, "3")
+  assert.equal(three.taxableAmount, "300")
+  assert.equal(three.totalAmount, "354")
+  assert.equal(three.unitPrice, "100")
+  const fractional = updateDraftUnitPrice(updateDraftQuantity(three, "2.5"), "40")
+  assert.equal(fractional.taxableAmount, "100")
+  assert.equal(fractional.totalAmount, "118")
+  for (const mode of ["split", "igst"]) {
+    const zero = applyInvoiceTaxMode(three, mode, 0)
+    assert.equal(zero.totalAmount, "300")
+    assert.equal(Number(zero.cgstAmount) + Number(zero.sgstAmount) + Number(zero.igstAmount), 0)
+    assert.equal(zero.quantity, "3")
+  }
+})
+
+test("inclusive total and direct taxable inputs derive unit price without changing total", () => {
+  const inclusive = recalculateGstDraftLine(line({ quantity: "2", unitPrice: "", totalAmount: "236", amountBasis: "total" }))
+  assert.equal(inclusive.taxableAmount, "200")
+  assert.equal(inclusive.unitPrice, "100")
+  assert.equal(updateDraftQuantity(inclusive, "3").totalAmount, "354")
+  const taxable = recalculateGstDraftLine(line({ quantity: "4", taxableAmount: "100", unitPrice: "" }))
+  assert.equal(taxable.unitPrice, "25")
+  const paise = recalculateGstDraftLine(line({ quantity: "3", totalAmount: "100.03", amountBasis: "total" }))
+  assert.equal(totals(paise), 100.03)
+  assert.equal(updateDraftQuantity(updateDraftQuantity(taxable, ""), "4").taxableAmount, "100")
 })
 
 test("inclusive totals survive switching and paise rounding", () => {

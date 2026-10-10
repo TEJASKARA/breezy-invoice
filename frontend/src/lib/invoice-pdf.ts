@@ -252,15 +252,17 @@ export async function createInvoicePdf({
     doc.setFont(baseFont, "bold")
     doc.setFontSize(7.5)
     doc.text("DESCRIPTION", margin + 3 + itemsShift.x, y + 6.5)
-    doc.text("HSN/SAC", 101 + itemsShift.x, y + 6.5)
-    doc.text("TAX", 139 + itemsShift.x, y + 6.5, { align: "right" })
+    doc.text("HSN/SAC", 79 + itemsShift.x, y + 6.5)
+    doc.text("QTY", 111 + itemsShift.x, y + 6.5, { align: "right" })
+    doc.text("UNIT PRICE", 140 + itemsShift.x, y + 6.5, { align: "right" })
+    doc.text("TAX", 159 + itemsShift.x, y + 6.5, { align: "right" })
     doc.text("TAXABLE VALUE", pageWidth - margin - 3 + itemsShift.x, y + 6.5, { align: "right" })
   }
 
   let rowY = 117 + compactOffset + itemsShift.y + (isQuotation ? 10 : 0)
   if (element("lineItems").visible) drawTableHeader(rowY - 10)
   if (element("lineItems").visible) lineItems.forEach((item, index) => {
-    const descriptionLines = (doc.splitTextToSize(item.description, 72) as string[]).slice(0, 3)
+    const descriptionLines = (doc.splitTextToSize(item.description, 56) as string[]).slice(0, 3)
     const rowHeight = Math.max(template.compact ? 11 : 14, descriptionLines.length * 4 + 6)
     if (rowY + rowHeight > 222) {
       doc.addPage()
@@ -275,10 +277,12 @@ export async function createInvoicePdf({
     const taxAmount = item.cgstAmount + item.sgstAmount + item.igstAmount
     doc.setTextColor(...ink)
     doc.setFont(baseFont, "normal")
-    doc.setFontSize(8.5)
+    doc.setFontSize(7.5)
     doc.text(descriptionLines, margin + 3 + itemsShift.x, rowY + 6)
-    doc.text(item.hsnSac || customer?.hsnSac || "-", 101 + itemsShift.x, rowY + 6)
-    doc.text(money(taxAmount), 139 + itemsShift.x, rowY + 6, { align: "right" })
+    doc.text(item.hsnSac || customer?.hsnSac || "-", 79 + itemsShift.x, rowY + 6)
+    doc.text(String(item.quantity ?? 1), 111 + itemsShift.x, rowY + 6, { align: "right" })
+    doc.text((item.unitPrice ?? item.taxableAmount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 140 + itemsShift.x, rowY + 6, { align: "right" })
+    doc.text(taxAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 159 + itemsShift.x, rowY + 6, { align: "right" })
     doc.setFont(baseFont, "bold")
     doc.text(money(item.taxableAmount), pageWidth - margin - 3 + itemsShift.x, rowY + 6, { align: "right" })
     doc.setDrawColor(220, 224, 230)
