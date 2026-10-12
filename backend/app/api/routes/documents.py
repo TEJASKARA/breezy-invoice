@@ -11,12 +11,15 @@ from app.schemas.documents import (
     DocumentWhatsAppResponse,
     EmployeeLetterEmailRequest,
     EmployeeLetterEmailResponse,
+    PayslipEmailRequest,
+    PayslipEmailResponse,
 )
 from app.services.email_sender import (
     EmailConfigurationError,
     EmailDeliveryError,
     send_document_email,
     send_employee_letter_email,
+    send_payslip_email,
 )
 from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
 from app.services.whatsapp_sender import (
@@ -149,4 +152,48 @@ async def email_employee_letter(
         ) from exc
     return EmployeeLetterEmailResponse(
         message=f"The letter was emailed to {request.to_email.strip().lower()}."
+    )
+
+
+@router.post("/payslip-email", response_model=PayslipEmailResponse)
+async def email_payslips(
+    request: PayslipEmailRequest,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PayslipEmailResponse:
+    gateway = SupabaseGateway(settings)
+    access_token = _bearer_token(authorization)
+    count = len(request.attachments)
+    try:
+        await gateway.authenticated_user(access_token)
+        await gateway.assert_workspace_permission(
+            access_token, request.workspace_id, "payslips.read"
+        )
+        await gateway.assert_workspace_employee_payslips(
+            request.workspace_id,
+            request.employee_id,
+            [attachment.payslip_id for attachment in request.attachments],
+            request.to_email,
+        )
+        await send_payslip_email(
+            settings,
+            to_email=request.to_email,
+            subject=request.subject.strip(),
+            message=request.message.strip(),
+            attachments=[
+                (attachment.filename, attachment.pdf_base64)
+                for attachment in request.attachments
+            ],
+        )
+    except EmailConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except (EmailDeliveryError, SupabaseGatewayError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    noun = "payslip was" if count == 1 else f"{count} payslips were"
+    return PayslipEmailResponse(
+        message=f"{noun[0].upper()}{noun[1:]} emailed to {request.to_email}."
     )

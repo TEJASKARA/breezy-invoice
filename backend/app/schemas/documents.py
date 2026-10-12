@@ -1,7 +1,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class EmployeeLetterEmailRequest(BaseModel):
@@ -93,4 +93,58 @@ class DocumentWhatsAppRequest(BaseModel):
 
 
 class DocumentWhatsAppResponse(BaseModel):
+    message: str
+
+
+UUID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+MAX_PAYSLIPS_PER_EMAIL = 24
+MAX_PAYSLIP_EMAIL_BASE64 = 30_000_000
+
+
+class PayslipEmailAttachment(BaseModel):
+    payslip_id: str = Field(pattern=UUID_PATTERN)
+    filename: str = Field(min_length=1, max_length=240)
+    pdf_base64: str = Field(min_length=4, max_length=10_000_000)
+
+    @field_validator("filename")
+    @classmethod
+    def pdf_filename(cls, value: str) -> str:
+        cleaned = re.sub(r"[\\/\r\n\x00]", "_", value.strip())
+        return cleaned if cleaned.lower().endswith(".pdf") else f"{cleaned}.pdf"
+
+
+class PayslipEmailRequest(BaseModel):
+    workspace_id: str = Field(min_length=36, max_length=36)
+    employee_id: str = Field(pattern=UUID_PATTERN)
+    to_email: str = Field(min_length=3, max_length=320)
+    subject: str = Field(min_length=1, max_length=300)
+    message: str = Field(min_length=1, max_length=5000)
+    attachments: list[PayslipEmailAttachment] = Field(
+        min_length=1, max_length=MAX_PAYSLIPS_PER_EMAIL
+    )
+
+    @field_validator("to_email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+            raise ValueError("Enter a valid employee email address.")
+        return normalized
+
+    @model_validator(mode="after")
+    def unique_and_within_size(self) -> "PayslipEmailRequest":
+        ids = [attachment.payslip_id for attachment in self.attachments]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Each payslip can be attached only once.")
+        total = sum(len(attachment.pdf_base64) for attachment in self.attachments)
+        if total > MAX_PAYSLIP_EMAIL_BASE64:
+            raise ValueError(
+                "These payslips are too large for one email. Send fewer at a time."
+            )
+        return self
+
+
+class PayslipEmailResponse(BaseModel):
     message: str

@@ -80,3 +80,50 @@ def test_resend_api_sends_the_pdf_attachment(
     assert isinstance(payload, dict)
     assert payload["to"] == ["employee@example.com"]
     assert payload["attachments"][0]["filename"] == "offer.pdf"
+
+
+def test_resend_api_sends_every_payslip_attachment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        is_success = True
+
+    class Client:
+        async def __aenter__(self) -> "Client":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: object) -> Response:
+            captured.update(url=url, **kwargs)
+            return Response()
+
+    monkeypatch.setattr(email_sender.httpx, "AsyncClient", lambda **_kwargs: Client())
+    settings = Settings(
+        _env_file=None,
+        smtp_host="smtp.resend.com",
+        smtp_username="resend",
+        smtp_password="re_test",
+        smtp_from_email="payroll@chanax.in",
+    )
+    pdf = base64.b64encode(b"%PDF-1.7\nexample").decode()
+
+    asyncio.run(
+        email_sender.send_payslip_email(
+            settings,
+            to_email="employee@example.com",
+            subject="Payslips",
+            message="Attached.",
+            attachments=[("aug.pdf", pdf), ("sep.pdf", pdf)],
+        )
+    )
+
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert [item["filename"] for item in payload["attachments"]] == [
+        "aug.pdf",
+        "sep.pdf",
+    ]

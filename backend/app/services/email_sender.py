@@ -31,6 +31,18 @@ def _decoded_pdf(value: str) -> bytes:
     return data
 
 
+Attachment = tuple[str, bytes]
+
+
+def _attachments(
+    filename: str, pdf: bytes, attachments: list[Attachment] | None
+) -> list[Attachment]:
+    combined = list(attachments or [])
+    if pdf:
+        combined.append((filename, pdf))
+    return combined
+
+
 def _send(
     settings: Settings,
     *,
@@ -39,15 +51,19 @@ def _send(
     message: str,
     filename: str = "",
     pdf: bytes = b"",
+    attachments: list[Attachment] | None = None,
 ) -> None:
     email = EmailMessage()
     email["From"] = formataddr((settings.smtp_from_name, settings.smtp_from_email))
     email["To"] = to_email
     email["Subject"] = subject
     email.set_content(message)
-    if pdf:
+    for attachment_name, attachment_pdf in _attachments(filename, pdf, attachments):
         email.add_attachment(
-            pdf, maintype="application", subtype="pdf", filename=filename
+            attachment_pdf,
+            maintype="application",
+            subtype="pdf",
+            filename=attachment_name,
         )
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as smtp:
@@ -87,7 +103,9 @@ async def _send_with_resend_api(
     message: str,
     filename: str = "",
     pdf: bytes = b"",
+    attachments: list[Attachment] | None = None,
 ) -> None:
+    files = _attachments(filename, pdf, attachments)
     sender = formataddr((settings.smtp_from_name, settings.smtp_from_email))
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -106,12 +124,15 @@ async def _send_with_resend_api(
                         {
                             "attachments": [
                                 {
-                                    "filename": filename,
-                                    "content": base64.b64encode(pdf).decode("ascii"),
+                                    "filename": attachment_name,
+                                    "content": base64.b64encode(
+                                        attachment_pdf
+                                    ).decode("ascii"),
                                 }
+                                for attachment_name, attachment_pdf in files
                             ]
                         }
-                        if pdf
+                        if files
                         else {}
                     ),
                 },
@@ -152,6 +173,7 @@ async def _deliver(
     message: str,
     filename: str = "",
     pdf: bytes = b"",
+    attachments: list[Attachment] | None = None,
 ) -> None:
     delivery = {
         "to_email": to_email,
@@ -159,6 +181,7 @@ async def _deliver(
         "message": message,
         "filename": filename,
         "pdf": pdf,
+        "attachments": attachments,
     }
     if settings.smtp_host.strip().lower() == "smtp.resend.com":
         await _send_with_resend_api(settings, **delivery)
@@ -233,4 +256,30 @@ async def send_document_email(
         message=message,
         filename=filename,
         pdf=pdf,
+    )
+
+
+async def send_payslip_email(
+    settings: Settings,
+    *,
+    to_email: str,
+    subject: str,
+    message: str,
+    attachments: list[tuple[str, str]],
+) -> None:
+    """Sends one email carrying every payslip PDF as a separate attachment."""
+    if not settings.smtp_is_configured:
+        raise EmailConfigurationError(
+            "Payslip email is not configured on the ChanaX server."
+        )
+    if not attachments:
+        raise EmailDeliveryError("Select at least one payslip to email.")
+    await _deliver(
+        settings,
+        to_email=to_email,
+        subject=subject,
+        message=message,
+        attachments=[
+            (filename, _decoded_pdf(pdf_base64)) for filename, pdf_base64 in attachments
+        ],
     )

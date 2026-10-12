@@ -110,6 +110,57 @@ class SupabaseGateway:
                 "This email address is not saved on an employee in this workspace."
             )
 
+    async def assert_workspace_employee_payslips(
+        self,
+        workspace_id: str,
+        employee_id: str,
+        payslip_ids: list[str],
+        email: str,
+    ) -> None:
+        """Payslips must belong to this employee, sent only to their saved email."""
+        employees = await self._get(
+            "breezy_employees",
+            {
+                "select": "payload",
+                "id": f"eq.{employee_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "limit": "1",
+            },
+        )
+        if not employees:
+            raise SupabaseGatewayError(
+                "This employee is not saved in the selected workspace."
+            )
+        payload = employees[0].get("payload")
+        saved_email = (
+            str(payload.get("email") or "").strip().lower()
+            if isinstance(payload, dict)
+            else ""
+        )
+        if not saved_email:
+            raise SupabaseGatewayError(
+                "Add an email address to this employee before emailing payslips."
+            )
+        if saved_email != email.strip().lower():
+            raise SupabaseGatewayError(
+                "Payslips can only be emailed to the address saved on the employee."
+            )
+        rows = await self._get(
+            "breezy_payslips",
+            {
+                "select": "id,employee_id",
+                "workspace_id": f"eq.{workspace_id}",
+                "id": f"in.({','.join(payslip_ids)})",
+            },
+        )
+        found = {
+            str(row.get("id")): str(row.get("employee_id") or "") for row in rows
+        }
+        if any(found.get(payslip_id) != employee_id for payslip_id in payslip_ids):
+            raise SupabaseGatewayError(
+                "Some selected payslips are not saved for this employee."
+            )
+
     async def assert_workspace_employee_letter_exists(
         self, workspace_id: str, letter_id: str
     ) -> None:
