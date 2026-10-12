@@ -29,6 +29,7 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { SubscriptionCode } from "@/components/subscription-code"
 import { FirstLoginTour } from "@/components/first-login-tour"
 import { ProductFeedbackDialog } from "@/components/product-feedback-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -265,7 +266,8 @@ function WorkspaceShell() {
               {can("entities.read") ? <DropdownMenuItem onClick={() => openEntityManager("manage")}><Settings2 />Manage entities</DropdownMenuItem> : null}
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+            {userProfile?.account_type === "ca" && workspace?.subscription_code ? <SubscriptionCode key={workspace.id} code={workspace.subscription_code} label="Workspace subscription code" /> : null}
             <Button
               variant="outline"
               className="h-9 gap-2 px-2.5 sm:px-3"
