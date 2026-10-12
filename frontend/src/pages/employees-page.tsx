@@ -1,11 +1,11 @@
 import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useMemo, useRef, useState } from "react"
-import { CalendarCheck2, Copy, Download, Eye, FileSignature, Pencil, Plus, Share2, Trash2, Upload, UserPlus, X } from "lucide-react"
+import { CalendarCheck2, Copy, Download, Eye, FileSignature, Mail, Pencil, Plus, Trash2, Upload, UserPlus, X } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { AttendanceEditor } from "@/components/attendance-editor"
-import { DocumentShareDialog } from "@/components/document-share-dialog"
+import { PayslipEmailDialog, type PayslipEmailGroup } from "@/components/payslip-email-dialog"
 import { PageHeader } from "@/components/page-header"
 import { PayslipPreview } from "@/components/payslip-preview"
 import { Badge } from "@/components/ui/badge"
@@ -20,8 +20,7 @@ import { createPayslipPdfFile, downloadPayslipPdf as downloadPayslipPdfFile } fr
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { downloadZip } from "@/lib/zip-download"
-import { sendDocumentWhatsApp } from "@/lib/document-email-api"
-import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
+import { sendPayslipEmail } from "@/lib/document-email-api"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 
@@ -135,7 +134,8 @@ export function EmployeesPage() {
   const [payslipDraft, setPayslipDraft] = useState<PayslipDraft | null>(null)
   const [rememberStructure, setRememberStructure] = useState(true)
   const [previewPayslip, setPreviewPayslip] = useState<Payslip | null>(null)
-  const [sharePayslipTarget, setSharePayslipTarget] = useState<Payslip | null>(null)
+  const [emailPayslips, setEmailPayslips] = useState<Payslip[] | null>(null)
+  const [selectedPayslipIds, setSelectedPayslipIds] = useState<string[]>([])
   const [employeeImportPreview, setEmployeeImportPreview] = useState<ImportEmployee[]>([])
   const [bulkPreview, setBulkPreview] = useState<ImportPayslip[]>([])
   const [bulkDownloadPending, setBulkDownloadPending] = useState(false)
@@ -650,39 +650,31 @@ export function EmployeesPage() {
     }
   }
 
-  const sharePayslipOnWhatsApp = async (payslip: Payslip) => {
-    clearMessages()
-    try {
+  const sendPayslipGroup = async (group: PayslipEmailGroup) => {
+    if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
+    const files = []
+    for (const payslip of group.payslips) {
       const entity = companies.find((company) => company.id === payslip.entityId)
-      const result = await sharePdfViaWhatsApp({
-        title: `${formatSalaryMonth(payslip.month)} payslip`,
-        message: `${payslip.employeeName}'s payslip for ${formatSalaryMonth(payslip.month)} from ${entity?.companyName || payslip.entityName || "the employer"}.`,
-        createFile: () => createPayslipPdfFile({ payslip, entity, template: templateFor(payslip.entityId), canRemoveBranding: brandingCanBeRemoved }),
-      })
-      if (result === "shared") setNotice("Payslip prepared. Choose WhatsApp in the share panel to send the PDF.")
-      if (result === "opened") setNotice("WhatsApp opened with the payslip message. This browser cannot attach the generated PDF automatically.")
-    } catch (caught) {
-      setError(customerErrorMessage(caught, "The payslip could not be shared through WhatsApp."))
+      const file = await createPayslipPdfFile({ payslip, entity, template: templateFor(payslip.entityId), canRemoveBranding: brandingCanBeRemoved })
+      files.push({ payslipId: payslip.id, ...file })
     }
+    const employer = companies.find((company) => company.id === group.payslips[0]?.entityId)?.companyName || group.payslips[0]?.entityName || "your employer"
+    const months = group.payslips.map((payslip) => formatSalaryMonth(payslip.month))
+    const period = months.length === 1 ? months[0] : `${months[0]} to ${months[months.length - 1]}`
+    return sendPayslipEmail({
+      workspaceId: workspace.id,
+      employeeId: group.employeeId,
+      toEmail: group.email,
+      subject: months.length === 1 ? `Payslip for ${period} – ${employer}` : `Payslips for ${period} – ${employer}`,
+      message: `Dear ${group.employeeName},\n\nPlease find attached your ${months.length === 1 ? "payslip" : "payslips"} for ${months.join(", ")} from ${employer}.\n\nRegards,\n${employer}`,
+      files,
+    })
   }
 
-  const sendPayslipOnWhatsApp = async (payslip: Payslip, toNumber: string) => {
-    if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
-    const entity = companies.find((company) => company.id === payslip.entityId)
-    const file = await createPayslipPdfFile({ payslip, entity, template: templateFor(payslip.entityId), canRemoveBranding: brandingCanBeRemoved })
-    const documentNumber = `${payslip.employeeCode}-${payslip.month}`
-    const message = await sendDocumentWhatsApp({
-      workspaceId: workspace.id,
-      documentId: payslip.id,
-      toNumber,
-      documentType: "payslip",
-      documentNumber,
-      message: `${payslip.employeeName}'s payslip for ${formatSalaryMonth(payslip.month)} from ${entity?.companyName || payslip.entityName || "the employer"}.`,
-      filename: file.name,
-      pdf: file.data,
-    })
-    setNotice(message)
-  }
+  const togglePayslipSelection = (payslipId: string, checked: boolean) =>
+    setSelectedPayslipIds((current) => checked ? [...new Set([...current, payslipId])] : current.filter((id) => id !== payslipId))
+  const visibleSelectedPayslips = entityPayslips.filter((payslip) => selectedPayslipIds.includes(payslip.id))
+  const allPayslipsSelected = entityPayslips.length > 0 && visibleSelectedPayslips.length === entityPayslips.length
 
   if (!companies.length) {
     return <Card><CardHeader><CardTitle>Add an entity first</CardTitle><CardDescription>Payslips are generated by an entity. Create an entity, then add its employees here.</CardDescription></CardHeader></Card>
@@ -808,7 +800,7 @@ export function EmployeesPage() {
       {previewPayslip && (
         <Card>
           <CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Payslip preview</CardTitle><CardDescription>Check the final layout before downloading.</CardDescription></div><Button size="icon" variant="ghost" aria-label="Close preview" onClick={() => setPreviewPayslip(null)}><X /></Button></CardHeader>
-          <CardContent className="space-y-4"><div className="overflow-auto rounded-xl bg-muted p-3 sm:p-6"><PayslipPreview payslip={previewPayslip} entity={companies.find((company) => company.id === previewPayslip.entityId)} template={templateFor(previewPayslip.entityId)} canRemoveBranding={brandingCanBeRemoved} /></div><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setSharePayslipTarget(previewPayslip)}><Share2 />Share via WhatsApp</Button><Button onClick={() => void downloadPayslipPdf({ payslip: previewPayslip, entity: companies.find((company) => company.id === previewPayslip.entityId), template: templateFor(previewPayslip.entityId), canRemoveBranding: brandingCanBeRemoved })}><Download />Download PDF</Button></div></CardContent>
+          <CardContent className="space-y-4"><div className="overflow-auto rounded-xl bg-muted p-3 sm:p-6"><PayslipPreview payslip={previewPayslip} entity={companies.find((company) => company.id === previewPayslip.entityId)} template={templateFor(previewPayslip.entityId)} canRemoveBranding={brandingCanBeRemoved} /></div><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setEmailPayslips([previewPayslip])}><Mail />Email payslip</Button><Button onClick={() => void downloadPayslipPdf({ payslip: previewPayslip, entity: companies.find((company) => company.id === previewPayslip.entityId), template: templateFor(previewPayslip.entityId), canRemoveBranding: brandingCanBeRemoved })}><Download />Download PDF</Button></div></CardContent>
         </Card>
       )}
 
@@ -840,27 +832,29 @@ export function EmployeesPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Payslip history</CardTitle><CardDescription>Saved payslips remain available to preview, edit, copy into the next month, download, or delete.</CardDescription></CardHeader>
+        <CardHeader>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div><CardTitle>Payslip history</CardTitle><CardDescription>Saved payslips remain available to preview, edit, copy into the next month, download, email, or delete. Select payslips to email several at once.</CardDescription></div>
+            {visibleSelectedPayslips.length ? <div className="flex shrink-0 flex-wrap items-center gap-2"><span className="text-sm text-muted-foreground">{visibleSelectedPayslips.length} selected</span><Button size="sm" variant="ghost" onClick={() => setSelectedPayslipIds([])}>Clear</Button><Button size="sm" onClick={() => setEmailPayslips(visibleSelectedPayslips)}><Mail />Email {visibleSelectedPayslips.length === 1 ? "payslip" : `${visibleSelectedPayslips.length} payslips`}</Button></div> : null}
+          </div>
+        </CardHeader>
         <CardContent>
-          <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Month</TableHead><TableHead>Attendance</TableHead><TableHead>Net pay</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
-            {entityPayslips.length ? entityPayslips.map((payslip) => <TableRow key={payslip.id}><TableCell className="font-medium">{payslip.employeeName}<p className="text-xs font-normal text-muted-foreground">{payslip.employeeCode}</p></TableCell><TableCell>{formatSalaryMonth(payslip.month)}</TableCell><TableCell><p>{payslip.payableDays || "—"} payable days</p>{payslip.attendance ? <p className="text-xs text-muted-foreground">{payslip.attendance.paidLeaveDays} leave · {payslip.attendance.excessLeaveDays || 0} excess · ₹{(payslip.attendance.leaveDeductionAmount || 0).toLocaleString("en-IN")} LOP</p> : null}</TableCell><TableCell>₹{payslip.netPay.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={payslip.status === "Draft" ? "secondary" : "outline"}>{payslip.status}</Badge></TableCell><TableCell className="text-right">{pendingDelete?.type === "payslip" && pendingDelete.id === payslip.id && canManage ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deletePayslip(payslip.id); setPendingDelete(null); setNotice(`${payslip.employeeName}'s ${formatSalaryMonth(payslip.month)} payslip was deleted.`) } catch (caught) { setError(customerErrorMessage(caught, "The payslip could not be deleted.")) } }}>Confirm</Button></span> : <span className="inline-flex"><Button size="icon" variant="ghost" aria-label="Preview payslip" onClick={() => setPreviewPayslip(payslip)}><Eye /></Button>{canManage ? <><Button size="icon" variant="ghost" aria-label="Edit payslip" onClick={() => editPayslip(payslip)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label="Copy into next month" onClick={() => copyPayslipToNextMonth(payslip)}><Copy /></Button></> : null}<Button size="icon" variant="ghost" aria-label="Download payslip PDF" onClick={() => void downloadPayslipPdf({ payslip, entity: companies.find((company) => company.id === payslip.entityId), template: templateFor(payslip.entityId) })}><Download /></Button><Button size="icon" variant="ghost" aria-label="Share payslip through WhatsApp" title="Share via WhatsApp" onClick={() => setSharePayslipTarget(payslip)}><Share2 /></Button>{canManage ? <Button size="icon" variant="ghost" aria-label="Delete payslip" onClick={() => setPendingDelete({ type: "payslip", id: payslip.id })}><Trash2 /></Button> : null}</span>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">Create an individual payslip or upload the monthly Excel file.</TableCell></TableRow>}
+          <Table><TableHeader><TableRow><TableHead className="w-10"><input type="checkbox" className="size-4 accent-primary align-middle" aria-label="Select all payslips" checked={allPayslipsSelected} disabled={!entityPayslips.length} onChange={(event) => setSelectedPayslipIds(event.target.checked ? entityPayslips.map((payslip) => payslip.id) : [])} /></TableHead><TableHead>Employee</TableHead><TableHead>Month</TableHead><TableHead>Attendance</TableHead><TableHead>Net pay</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+            {entityPayslips.length ? entityPayslips.map((payslip) => <TableRow key={payslip.id} data-state={selectedPayslipIds.includes(payslip.id) ? "selected" : undefined}><TableCell><input type="checkbox" className="size-4 accent-primary align-middle" aria-label={`Select ${payslip.employeeName}'s ${formatSalaryMonth(payslip.month)} payslip`} checked={selectedPayslipIds.includes(payslip.id)} onChange={(event) => togglePayslipSelection(payslip.id, event.target.checked)} /></TableCell><TableCell className="font-medium">{payslip.employeeName}<p className="text-xs font-normal text-muted-foreground">{payslip.employeeCode}</p></TableCell><TableCell>{formatSalaryMonth(payslip.month)}</TableCell><TableCell><p>{payslip.payableDays || "—"} payable days</p>{payslip.attendance ? <p className="text-xs text-muted-foreground">{payslip.attendance.paidLeaveDays} leave · {payslip.attendance.excessLeaveDays || 0} excess · ₹{(payslip.attendance.leaveDeductionAmount || 0).toLocaleString("en-IN")} LOP</p> : null}</TableCell><TableCell>₹{payslip.netPay.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant={payslip.status === "Draft" ? "secondary" : "outline"}>{payslip.status}</Badge></TableCell><TableCell className="text-right">{pendingDelete?.type === "payslip" && pendingDelete.id === payslip.id && canManage ? <span className="inline-flex gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deletePayslip(payslip.id); setPendingDelete(null); setNotice(`${payslip.employeeName}'s ${formatSalaryMonth(payslip.month)} payslip was deleted.`) } catch (caught) { setError(customerErrorMessage(caught, "The payslip could not be deleted.")) } }}>Confirm</Button></span> : <span className="inline-flex"><Button size="icon" variant="ghost" aria-label="Preview payslip" onClick={() => setPreviewPayslip(payslip)}><Eye /></Button>{canManage ? <><Button size="icon" variant="ghost" aria-label="Edit payslip" onClick={() => editPayslip(payslip)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label="Copy into next month" onClick={() => copyPayslipToNextMonth(payslip)}><Copy /></Button></> : null}<Button size="icon" variant="ghost" aria-label="Download payslip PDF" onClick={() => void downloadPayslipPdf({ payslip, entity: companies.find((company) => company.id === payslip.entityId), template: templateFor(payslip.entityId) })}><Download /></Button><Button size="icon" variant="ghost" aria-label="Email payslip" title="Email payslip" onClick={() => setEmailPayslips([payslip])}><Mail /></Button>{canManage ? <Button size="icon" variant="ghost" aria-label="Delete payslip" onClick={() => setPendingDelete({ type: "payslip", id: payslip.id })}><Trash2 /></Button> : null}</span>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">Create an individual payslip or upload the monthly Excel file.</TableCell></TableRow>}
           </TableBody></Table>
         </CardContent>
       </Card>
 
-      <DocumentShareDialog
-        open={Boolean(sharePayslipTarget)}
-        title={sharePayslipTarget ? `${formatSalaryMonth(sharePayslipTarget.month)} payslip` : "payslip"}
-        onClose={() => setSharePayslipTarget(null)}
-        onWhatsApp={async () => {
-          if (!sharePayslipTarget) return
-          await sharePayslipOnWhatsApp(sharePayslipTarget)
-          setSharePayslipTarget(null)
-        }}
-        onWhatsAppSend={async (number) => {
-          if (!sharePayslipTarget) return
-          await sendPayslipOnWhatsApp(sharePayslipTarget, number)
-          setSharePayslipTarget(null)
+      <PayslipEmailDialog
+        open={Boolean(emailPayslips?.length)}
+        payslips={emailPayslips || []}
+        employees={employees}
+        onClose={() => setEmailPayslips(null)}
+        onSend={sendPayslipGroup}
+        onFinished={(sentIds) => {
+          if (!sentIds.length) return
+          setSelectedPayslipIds((current) => current.filter((id) => !sentIds.includes(id)))
+          setNotice(`${sentIds.length} payslip${sentIds.length === 1 ? " was" : "s were"} emailed.`)
         }}
       />
     </div>

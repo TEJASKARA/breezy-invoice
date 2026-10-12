@@ -86,6 +86,47 @@ export async function sendDocumentEmail(input: {
   return payload.message || `The document was emailed to ${input.toEmail}.`
 }
 
+/** Emails one or more payslips to an employee in a single message, one PDF per payslip. */
+export async function sendPayslipEmail(input: {
+  workspaceId: string
+  employeeId: string
+  toEmail: string
+  subject: string
+  message: string
+  files: { payslipId: string; name: string; data: Uint8Array }[]
+}) {
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
+  if (!input.files.length) throw new Error("Select at least one payslip to email.")
+  const { data, error } = await supabase.auth.getSession()
+  if (error || !data.session?.access_token) throw new Error("Sign in again before emailing payslips.")
+  let response: Response
+  try {
+    response = await fetch(`${apiUrl}/api/v1/documents/payslip-email`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspace_id: input.workspaceId,
+        employee_id: input.employeeId,
+        to_email: input.toEmail,
+        subject: input.subject,
+        message: input.message,
+        attachments: input.files.map((file) => ({ payslip_id: file.payslipId, filename: file.name, pdf_base64: base64Bytes(file.data) })),
+      }),
+    })
+  } catch {
+    throw new Error("We couldn't confirm the email because the connection was interrupted. Check whether it arrived before trying again.")
+  }
+  let payload: { detail?: string | { msg?: string }[]; message?: string } = {}
+  try { payload = await response.json() as typeof payload } catch { /* Empty provider response. */ }
+  if (!response.ok) {
+    const detail = Array.isArray(payload.detail) ? String(payload.detail[0]?.msg || "").replace(/^Value error,\s*/i, "") : payload.detail
+    throw new Error(customerErrorMessage({ message: detail, status: response.status }, "The payslip email could not be sent."))
+  }
+  trackAction("email_sent", { document: "payslip", count: input.files.length })
+  return payload.message || `Payslips were emailed to ${input.toEmail}.`
+}
+
 /** Sends the PDF to the recipient's WhatsApp through the ChanaX WhatsApp number (backend → n8n). */
 export async function sendDocumentWhatsApp(input: {
   workspaceId: string
