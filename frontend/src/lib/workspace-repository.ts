@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase"
 import { friendlyWorkspaceError } from "@/lib/workspace-errors"
 import { invoiceTaxError } from "@/lib/invoice-gst"
 import type { Company, Customer, Employee, EmployeeLetter, Expense, Invoice, MvpState, Payslip, Proforma, Setup, TemplateSettings } from "@/lib/mvp-store"
+import { withRegeneratedDates } from "@/lib/invoice-replacement"
 
 type PayloadRow = { id: string; payload: Record<string, unknown> }
 type RelatedPayloadRow = PayloadRow & { entity_id: string }
@@ -85,7 +86,7 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
     template: (settingsResult.data?.template as TemplateSettings | undefined),
     companies: ((entitiesResult.data || []) as (PayloadRow & { transferred_at: string | null })[]).map((row) => ({ ...row.payload, id: row.id, transferredAt: row.transferred_at || undefined }) as Company),
     customers: ((customersResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Customer),
-    invoices: ((invoicesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id || undefined }) as Invoice),
+    invoices: withRegeneratedDates(((invoicesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id || undefined }) as Invoice)),
     proformas: ((proformasResult.error ? [] : proformasResult.data || []) as ProformaPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id, customerId: row.customer_id || undefined }) as Proforma),
     employees: ((employeesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Employee),
     payslips: ((payslipsResult.data || []) as PayslipPayloadRow[]).map((row) => ({

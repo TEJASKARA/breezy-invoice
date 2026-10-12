@@ -1,6 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { assertInvoiceTaxMode, type GstTaxMode } from "@/lib/invoice-gst"
-import { invoiceReplacementSaveOrder, replacementInvoiceCompany } from "@/lib/invoice-replacement"
+import { invoiceReplacementSaveOrder, localDateFromTimestamp, replacementInvoiceCompany } from "@/lib/invoice-replacement"
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import {
@@ -90,6 +90,8 @@ export type Invoice = {
   correction?: InvoiceCorrection
   correctsInvoiceId?: string
   correctsInvoiceNumber?: string
+  /** Date (YYYY-MM-DD) this replacement invoice was regenerated from the cancelled original. */
+  regeneratedAt?: string
 }
 export type Proforma = Invoice & { entityId: string; validUntil?: string; convertedInvoiceId?: string; convertedInvoiceNumber?: string }
 export type PayrollComponent = { id: string; label: string; amount: number }
@@ -849,6 +851,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         number: issuedNumber,
         correctsInvoiceId: original.id,
         correctsInvoiceNumber: original.sourceNumber || original.number,
+        regeneratedAt: localDateFromTimestamp(correction.recordedAt) || localDateFromTimestamp(new Date().toISOString()),
       }
       const correctedOriginal: Invoice = {
         ...original,

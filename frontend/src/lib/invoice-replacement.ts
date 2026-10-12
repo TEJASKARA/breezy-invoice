@@ -22,3 +22,21 @@ export function invoiceReplacementSaveOrder(original: Invoice, replacement: Invo
   // row's trigger checks correction.replacementInvoiceId.
   return [replacement, original]
 }
+
+/** Calendar date (YYYY-MM-DD) in the user's local time zone, matching invoice dates. */
+export function localDateFromTimestamp(timestamp: string) {
+  const parsed = new Date(timestamp)
+  if (Number.isNaN(parsed.getTime())) return ""
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`
+}
+
+/** Older replacements were saved without regeneratedAt: derive it from the cancelled original. */
+export function withRegeneratedDates(invoices: Invoice[]): Invoice[] {
+  return invoices.map((invoice) => {
+    if (!invoice.correctsInvoiceId || invoice.regeneratedAt) return invoice
+    const original = invoices.find((candidate) => candidate.id === invoice.correctsInvoiceId)
+    const regeneratedAt = original?.correction?.recordedAt ? localDateFromTimestamp(original.correction.recordedAt) : ""
+    return regeneratedAt ? { ...invoice, regeneratedAt } : invoice
+  })
+}

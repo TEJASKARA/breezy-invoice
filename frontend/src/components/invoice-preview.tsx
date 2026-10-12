@@ -244,7 +244,7 @@ function EditableInvoicePreview({
       ) : null}
       {!isQuotation && invoice.correctsInvoiceNumber ? (
         <div className="mt-4 rounded-md border border-blue-400 bg-blue-50 px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-blue-900">
-          Corrected replacement for invoice {invoice.correctsInvoiceNumber}.
+          Corrected replacement for invoice {invoice.correctsInvoiceNumber}{invoice.regeneratedAt ? ` — regenerated on ${invoice.regeneratedAt}` : ""}.
         </div>
       ) : null}
 

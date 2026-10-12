@@ -199,7 +199,7 @@ export async function createInvoicePdf({
     doc.setTextColor(isOriginalCorrection ? 153 : 30, isOriginalCorrection ? 27 : 64, isOriginalCorrection ? 27 : 175)
     const replacement = invoice.correction?.replacementInvoiceNumber ? ` REPLACEMENT: ${invoice.correction.replacementInvoiceNumber}.` : ""
     doc.text(
-      invoice.status === "Cancelled" ? `CANCELLED INVOICE — DO NOT USE FOR PAYMENT OR TAX REPORTING.${replacement}` : invoice.status === "Amended" ? "AMENDED INVOICE — REFER TO THE RECORDED CORRECTION BEFORE USE." : `CORRECTED REPLACEMENT FOR INVOICE ${invoice.correctsInvoiceNumber}.`,
+      invoice.status === "Cancelled" ? `CANCELLED INVOICE — DO NOT USE FOR PAYMENT OR TAX REPORTING.${replacement}` : invoice.status === "Amended" ? "AMENDED INVOICE — REFER TO THE RECORDED CORRECTION BEFORE USE." : `CORRECTED REPLACEMENT FOR INVOICE ${invoice.correctsInvoiceNumber}${invoice.regeneratedAt ? ` — REGENERATED ON ${invoice.regeneratedAt}` : ""}.`,
       pageWidth / 2,
       dividerY + 9,
       { align: "center" },
