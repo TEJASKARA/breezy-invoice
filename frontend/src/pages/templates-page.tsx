@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import { AlignCenter, AlignLeft, AlignRight, Building2, Check, Eye, EyeOff, FilePlus2, ImagePlus, Move, Plus, ReceiptText, RotateCcw, Save, Trash2, Undo2, Upload } from "lucide-react"
 
@@ -98,7 +99,8 @@ export function TemplatesPage() {
   const { can, subscription } = useWorkspaceAccess()
 
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
-  const [scopeId, setScopeId] = useState<string>(DEFAULT_SCOPE)
+  const { selectedEntityId } = useEntitySelection()
+  const [scopeId, setScopeId] = useState<string>(selectedEntityId || DEFAULT_SCOPE)
   const scopeEntity = scopeId === DEFAULT_SCOPE ? undefined : companies.find((company) => company.id === scopeId)
   const canManage = can("templates.manage") && !scopeEntity?.transferredAt
   const activeScopeId = scopeEntity ? scopeEntity.id : DEFAULT_SCOPE

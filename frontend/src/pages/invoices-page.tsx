@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Download, Eye, FilePenLine, LoaderCircle, Plus, Search, Share2, Star, Trash2, TriangleAlert, Upload, X } from "lucide-react"
@@ -132,22 +133,28 @@ const invoiceColumns = [
   "Net Receivable", "Status",
 ]
 
-export function InvoicesPage() {
+export function CustomersPage() {
+  return <InvoicesPage view="customers" />
+}
+
+export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "customers" } = {}) {
+  const customersOnly = view === "customers"
+  const { selectedEntityId, selectedEntity: workingEntity } = useEntitySelection()
   const { loading, setup, companies, customers, invoices, proformas, payslips, templateFor, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, updateInvoice, replaceInvoice, deleteInvoice } = useMvpStore()
   const location = useLocation()
   const navigate = useNavigate()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
-  const canManage = can("invoices.manage")
+  const canManage = can("invoices.manage") && !workingEntity?.transferredAt
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
   const [showForm, setShowForm] = useState(false)
-  const [entityName, setEntityName] = useState("")
-  const [bulkEntityName, setBulkEntityName] = useState("")
-  const [customerEntityId, setCustomerEntityId] = useState("")
+  const [entityName, setEntityName] = useState(workingEntity?.companyName || "")
+  const [bulkEntityName] = useState(workingEntity?.companyName || "")
+  const customerEntityId = selectedEntityId
   const [companyName, setCompanyName] = useState("")
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [status, setStatus] = useState<"Draft" | "Generated">("Draft")
-  const [lineItems, setLineItems] = useState<DraftLineItem[]>([newDraftLine()])
+  const [lineItems, setLineItems] = useState<DraftLineItem[]>([{ ...newDraftLine(), hsnSac: entityHsnCodes(workingEntity)[0] || "" }])
   const [taxMode, setTaxMode] = useState<GstTaxMode>("split")
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
@@ -205,6 +212,7 @@ export function InvoicesPage() {
   const maximumInvoiceAmount = invoiceAmountMax === "" ? null : Number(invoiceAmountMax)
   const hasInvoiceFilters = Boolean(normalizedInvoiceSearch || invoiceEntityFilter || invoiceDateFilter || invoiceAmountMin || invoiceAmountMax)
   const filteredInvoices = invoices.filter((invoice) => {
+    if (!workingEntity || (invoice.entityId ? invoice.entityId !== workingEntity.id : invoice.entityName !== workingEntity.companyName)) return false
     const searchableText = [invoice.sourceNumber, invoice.number, invoice.entityName, invoice.companyName, invoice.correctsInvoiceNumber, invoice.correction?.replacementInvoiceNumber]
       .filter(Boolean)
       .join(" ")
@@ -217,7 +225,7 @@ export function InvoicesPage() {
     return true
   })
   const visibleInvoices = showAllInvoices ? filteredInvoices : filteredInvoices.slice(0, 5)
-  const draftStorageKey = workspace?.id ? `chanax.invoice-draft.${workspace.id}` : ""
+  const draftStorageKey = !customersOnly && workspace?.id && selectedEntityId ? `chanax.invoice-draft.${workspace.id}.${selectedEntityId}` : ""
   const showNotice = (text: string, isError = false) => { setNotice(text); setNoticeIsError(isError) }
 
   const verifyManualCustomerGstin = async () => {
@@ -275,10 +283,11 @@ export function InvoicesPage() {
     const conversionId = (location.state as { convertProformaId?: string } | null)?.convertProformaId
     if (conversionId) return
     try {
-      const saved = localStorage.getItem(draftStorageKey)
+      const saved = localStorage.getItem(draftStorageKey) || localStorage.getItem(`chanax.invoice-draft.${workspace?.id}`)
       if (!saved) return
       const draft = JSON.parse(saved) as Partial<InvoiceDraft>
-      setEntityName(String(draft.entityName || ""))
+      if (draft.entityName && draft.entityName !== workingEntity?.companyName) return
+      setEntityName(String(draft.entityName || workingEntity?.companyName || ""))
       setCompanyName(String(draft.companyName || ""))
       if (draft.date) setDate(draft.date)
       if (draft.status === "Draft" || draft.status === "Generated") setStatus(draft.status)
@@ -295,7 +304,7 @@ export function InvoicesPage() {
     } catch {
       localStorage.removeItem(draftStorageKey)
     }
-  }, [draftStorageKey, location.state])
+  }, [draftStorageKey, location.state, workspace?.id, workingEntity?.companyName])
 
   useEffect(() => {
     if (!draftStorageKey || loadedDraftKey.current !== draftStorageKey || !showForm) return
@@ -519,9 +528,9 @@ export function InvoicesPage() {
 
   const resetForm = () => {
     if (draftStorageKey) localStorage.removeItem(draftStorageKey)
-    setEntityName("")
+    setEntityName(workingEntity?.companyName || "")
     setCompanyName("")
-    setLineItems([newDraftLine()])
+    setLineItems([{ ...newDraftLine(), hsnSac: entityHsnCodes(workingEntity)[0] || "" }])
     setTaxMode("split")
     setTdsAmount("")
     setOtherDeduction("")
@@ -530,15 +539,6 @@ export function InvoicesPage() {
     setCorrectionSource(null)
     setDraftFormError("")
     setShowForm(false)
-  }
-
-  const selectInvoiceEntity = (nextEntityName: string) => {
-    const nextEntity = companies.find((company) => company.companyName === nextEntityName)
-    const defaultHsnSac = entityHsnCodes(nextEntity)[0] || ""
-    setEntityName(nextEntityName)
-    setCompanyName("")
-    setLineItems((items) => items.map((item) => ({ ...item, hsnSac: defaultHsnSac })))
-    setDraftFormError("")
   }
 
   const save = async () => {
@@ -1086,7 +1086,7 @@ export function InvoicesPage() {
     }
     if (visibleCustomers.some((savedCustomer) =>
       savedCustomer.companyName.trim().toLowerCase() === customer.companyName.toLowerCase()
-      || savedCustomer.gstin === customer.gstin
+      || Boolean(customer.gstin && savedCustomer.gstin === customer.gstin)
     )) {
       setManualCustomerError("This customer name or GSTIN already exists for the selected entity.")
       return
@@ -1104,11 +1104,12 @@ export function InvoicesPage() {
 
   return (
     <div className="space-y-7">
+      {customersOnly && canManage ? <input ref={customerFileInput} type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCustomerFile(file); event.target.value = "" }} /> : null}
       <PageHeader
-        eyebrow="Documents"
-        title="Invoices"
-        description="Maintain invoice customers, create invoices separately, or import a monthly invoice batch."
-        actions={canManage ? (
+        eyebrow={customersOnly ? "Master data" : "Documents"}
+        title={customersOnly ? "Customers" : "Invoices"}
+        description={customersOnly ? `Customers for ${workingEntity?.companyName || "the selected entity"}. Change the working entity from the navbar.` : "Create invoices individually or import a monthly invoice batch. Manage customer records on the Customers page."}
+        actions={canManage && !customersOnly ? (
           <>
             <input
               ref={customerFileInput}
@@ -1135,20 +1136,20 @@ export function InvoicesPage() {
                 })
               }}
             />
-            <Button disabled={!companies.length || !customers.length} onClick={() => setShowForm((value) => !value)}><Plus />New invoice</Button>
+            <Button disabled={!workingEntity || !individualCustomers.length} onClick={() => setShowForm((value) => !value)}><Plus />New invoice</Button>
           </>
         ) : null}
       />
 
-      {invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Document credits:</strong> {invoiceAllowance.remaining} remaining for invoices or payslips. Quotations use a separate balance. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
+      {!customersOnly && invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Document credits:</strong> {invoiceAllowance.remaining} remaining for invoices or payslips. Quotations use a separate balance. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
 
-      {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access to invoices. You can search, preview, and download saved invoices, but creating, importing, or deleting records requires invoice management permission.</p> : null}
+      {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access. Adding, importing or deleting records requires invoice management permission.</p> : null}
 
       {notice && <p role={noticeIsError ? "alert" : "status"} className={noticeIsError ? "rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{notice}</p>}
       {!companies.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Create at least one managed Entity. The selected entity will be the invoice issuer.</p>}
-      {!customers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Select an entity in the Customers List section, then add a customer manually or import that entity's customer list.</p>}
+      {!customersOnly && !individualCustomers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add customers for this entity on the <a className="underline" href="/customers">Customers page</a> before creating an invoice.</p>}
 
-      {showForm && canManage && (
+      {!customersOnly && showForm && canManage && (
         <Card>
           <CardHeader><CardTitle>{editingInvoiceId ? "Edit draft invoice" : correctionSource ? `Replace invoice ${correctionSource.invoiceNumber}` : sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{editingInvoiceId ? "Update this draft in place. Its invoice number remains unchanged and no additional credit is used." : correctionSource ? "Review the corrected details carefully. Saving creates the next invoice number and permanently links it to the cancelled original." : sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
           <CardContent className="space-y-6" onKeyDown={moveToNextInvoiceField}>
@@ -1157,10 +1158,7 @@ export function InvoicesPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
-                <select id="invoice-entity" value={entityName} onChange={(event) => selectInvoiceEntity(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="">Select entity</option>
-                  {companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id}>{company.companyName}</option>)}
-                </select>
+                <Input id="invoice-entity" value={entityName} readOnly aria-label="Issuing entity" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invoice-company">Client company</Label>
@@ -1242,7 +1240,7 @@ export function InvoicesPage() {
         </Card>
       )}
 
-      {canManage && customerPreview.length > 0 && (
+      {customersOnly && canManage && customerPreview.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Invoice customer import preview</CardTitle>
@@ -1272,31 +1270,14 @@ export function InvoicesPage() {
         </Card>
       )}
 
-      <Card>
+      {customersOnly && <Card>
         <CardHeader>
           <CardTitle>Customers List</CardTitle>
-          <CardDescription>Select an entity to maintain the customers that entity invoices.</CardDescription>
+          <CardDescription>Customers belonging to the entity selected in your navbar.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-64 space-y-2">
-              <Label htmlFor="customer-master-entity">Entity</Label>
-              <select
-                id="customer-master-entity"
-                value={customerEntityId}
-                onChange={(event) => {
-                  setCustomerEntityId(event.target.value)
-                  setCustomerPreview([])
-                  setShowManualCustomer(false)
-                  setManualCustomer(emptyManualCustomer())
-                  setManualCustomerError("")
-                }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Select entity</option>
-                {companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}
-              </select>
-            </div>
+            <p className="mr-auto text-sm font-medium">Entity: {workingEntity?.companyName || "Select an entity from the navbar"}</p>
             {canManage ? <Button
               disabled={!customerEntityId}
               onClick={() => {
@@ -1382,13 +1363,13 @@ export function InvoicesPage() {
                     )}
                   </TableCell>
                 </TableRow>
-              )) : <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">{customerEntityId ? "No customers are saved for this entity. Add one manually or import the customer list." : "Select an entity to view its customer list."}</TableCell></TableRow>}
+              )) : <TableRow><TableCell colSpan={5} className="h-32 whitespace-normal text-center text-muted-foreground">{customerEntityId ? "No customers are saved for this entity. Add one manually or import the customer list." : "Select an entity to view its customer list."}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </Card>}
 
-      {canManage ? <Card>
+      {!customersOnly && canManage ? <Card>
         <CardHeader>
           <CardTitle>Bulk invoice generation</CardTitle>
           <CardDescription>Select the entity once, download the format, fill one invoice line item per row, and upload the completed workbook.</CardDescription>
@@ -1397,23 +1378,7 @@ export function InvoicesPage() {
           <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
             <div className="space-y-2">
               <Label htmlFor="bulk-invoice-entity">Entity issuing the invoices</Label>
-              <select
-                id="bulk-invoice-entity"
-                value={bulkEntityName}
-                onChange={(event) => {
-                  setBulkEntityName(event.target.value)
-                  setPreview([])
-                  setBulkNewCustomers([])
-                  setBulkInvoicesSaved(false)
-                  setShowDownloadChoices(false)
-                  setBulkImportMessage("")
-                  setBulkImportHasError(false)
-                }}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Select entity</option>
-                {companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id}>{company.companyName}</option>)}
-              </select>
+              <Input id="bulk-invoice-entity" value={bulkEntityName} readOnly aria-label="Entity issuing the invoices" />
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <Button variant="outline" disabled={!bulkEntityName} onClick={() => setShowDownloadChoices(true)}><Download />Download Excel template</Button>
@@ -1443,7 +1408,7 @@ export function InvoicesPage() {
         </CardContent>
       </Card> : null}
 
-      {canManage && preview.length > 0 ? (
+      {!customersOnly && canManage && preview.length > 0 ? (
         <div ref={bulkPreviewRef} tabIndex={-1} className="scroll-mt-6 outline-none">
           <Card>
             <CardHeader>
@@ -1492,17 +1457,17 @@ export function InvoicesPage() {
         </div>
       ) : null}
 
-      <Card>
+      {!customersOnly && <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Invoice register</CardTitle>
               <CardDescription>
                 {hasInvoiceFilters
-                  ? `${filteredInvoices.length} of ${invoices.length} invoices match your filters.`
+                  ? `${filteredInvoices.length} invoices match your filters for this entity.`
                   : filteredInvoices.length > 5 && !showAllInvoices
                   ? `Showing the latest 5 of ${filteredInvoices.length} invoices.`
-                  : `${invoices.length} invoice${invoices.length === 1 ? "" : "s"} maintained in this workspace.`}
+                  : `${filteredInvoices.length} invoice${filteredInvoices.length === 1 ? "" : "s"} maintained for this entity.`}
               </CardDescription>
             </div>
             {filteredInvoices.length > 5 && (
@@ -1529,10 +1494,7 @@ export function InvoicesPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="invoice-register-entity">Entity</Label>
-              <select id="invoice-register-entity" value={invoiceEntityFilter} onChange={(event) => { setInvoiceEntityFilter(event.target.value); setShowAllInvoices(false) }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">All entities</option>
-                {companies.map((company) => <option key={company.id} value={company.companyName}>{company.companyName}</option>)}
-              </select>
+              <Input id="invoice-register-entity" value={workingEntity?.companyName || "No entity selected"} readOnly />
             </div>
             <div className="space-y-2">
               <Label htmlFor="invoice-register-date">Invoice date</Label>
@@ -1573,7 +1535,7 @@ export function InvoicesPage() {
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </Card>}
 
       {correctionTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="invoice-correction-title">

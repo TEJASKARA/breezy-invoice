@@ -14,7 +14,7 @@ import type { WorkspacePermission } from "@/lib/workspace-access-service"
 const DashboardPage = lazy(() => import("@/pages/dashboard-page").then((module) => ({ default: module.DashboardPage })))
 const AttendancePage = lazy(() => import("@/pages/attendance-page").then((module) => ({ default: module.AttendancePage })))
 const EmployeesPage = lazy(() => import("@/pages/employees-page").then((module) => ({ default: module.EmployeesPage })))
-const EntitiesPage = lazy(() => import("@/pages/entities-page").then((module) => ({ default: module.EntitiesPage })))
+const CustomersPage = lazy(() => import("@/pages/invoices-page").then((module) => ({ default: module.CustomersPage })))
 const ExpensesPage = lazy(() => import("@/pages/expenses-page").then((module) => ({ default: module.ExpensesPage })))
 const InvoicesPage = lazy(() => import("@/pages/invoices-page").then((module) => ({ default: module.InvoicesPage })))
 const ProformasPage = lazy(() => import("@/pages/proformas-page").then((module) => ({ default: module.ProformasPage })))
@@ -93,7 +93,8 @@ function App() {
         <Route path="/ca" element={<Protected><CaPortalPage /></Protected>} />
         <Route element={<Protected><SetupGate><AppShell /></SetupGate></Protected>}>
           <Route path="/workspace" element={<DashboardPage />} />
-          <Route path="/entities" element={<PermissionGate permission="entities.read"><EntitiesPage /></PermissionGate>} />
+          <Route path="/entities" element={<Navigate to="/customers" replace />} />
+          <Route path="/customers" element={<PermissionGate permission="invoices.read"><CustomersPage /></PermissionGate>} />
           <Route path="/invoices" element={<PermissionGate permission="invoices.read"><InvoicesPage /></PermissionGate>} />
           <Route path="/proformas" element={<PermissionGate permission="invoices.read"><ProformasPage /></PermissionGate>} />
           <Route path="/employees" element={<PermissionGate permission="payslips.read"><EmployeesPage /></PermissionGate>} />

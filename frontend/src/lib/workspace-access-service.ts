@@ -274,8 +274,8 @@ export async function loadWorkspaceCaAdministration(workspaceId: string) {
 export const permissionOptions: { permission: WorkspacePermission; label: string }[] = [
   { permission: "entities.read", label: "View entities" },
   { permission: "entities.manage", label: "Manage entities" },
-  { permission: "invoices.read", label: "View invoices" },
-  { permission: "invoices.manage", label: "Manage invoices" },
+  { permission: "invoices.read", label: "View invoices and customers" },
+  { permission: "invoices.manage", label: "Manage invoices and customers" },
   { permission: "payslips.read", label: "View employees and payslips" },
   { permission: "payslips.manage", label: "Manage employees and payslips" },
   { permission: "expenses.read", label: "View expenses" },

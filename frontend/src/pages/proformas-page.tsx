@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Download, Eye, FilePlus2, ReceiptText, Share2, Trash2 } from "lucide-react"
@@ -56,10 +57,10 @@ export function ProformasPage() {
   const { setup, companies, activeCompanies, customers, proformas, templateFor, addProforma, deleteProforma } = useMvpStore()
   const navigate = useNavigate()
   const { can, refresh, workspace, subscription, creditAccount } = useWorkspaceAccess()
-  const canManage = can("invoices.manage")
+  const { selectedEntityId: entityId, selectEntity: setEntityId } = useEntitySelection()
+  const canManage = can("invoices.manage") && !companies.find((company) => company.id === entityId)?.transferredAt
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const quotationAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "quotation", proformas.length)
-  const [entityId, setEntityId] = useState(activeCompanies[0]?.id || "")
   const availableCustomers = customers.filter((customer) => customer.entityId === entityId)
   const [customerId, setCustomerId] = useState(availableCustomers[0]?.id || "")
   const [date, setDate] = useState(today())
@@ -74,16 +75,17 @@ export function ProformasPage() {
   const entity = companies.find((company) => company.id === entityId)
   const customer = customers.find((item) => item.id === customerId)
   const entityHsnCodes = hsnCodesFor(entity)
-  const draftStorageKey = workspace?.id ? `chanax.proforma-draft.${workspace.id}` : ""
+  const draftStorageKey = workspace?.id ? `chanax.proforma-draft.${workspace.id}.${entityId}` : ""
   const loadedDraftKey = useRef("")
 
   useEffect(() => {
     if (!draftStorageKey || loadedDraftKey.current === draftStorageKey) return
     loadedDraftKey.current = draftStorageKey
     try {
-      const saved = localStorage.getItem(draftStorageKey)
+      const saved = localStorage.getItem(draftStorageKey) || localStorage.getItem(`chanax.proforma-draft.${workspace?.id}`)
       if (!saved) return
       const draft = JSON.parse(saved) as Partial<ProformaDraft>
+      if (draft.entityId && draft.entityId !== entityId) return
       if (draft.entityId) setEntityId(draft.entityId)
       if (draft.customerId) setCustomerId(draft.customerId)
       if (draft.date) setDate(draft.date)
@@ -92,7 +94,7 @@ export function ProformasPage() {
     } catch {
       localStorage.removeItem(draftStorageKey)
     }
-  }, [draftStorageKey])
+  }, [draftStorageKey, entityId, workspace?.id, setEntityId])
 
   useEffect(() => {
     if (!draftStorageKey || loadedDraftKey.current !== draftStorageKey) return
@@ -100,9 +102,9 @@ export function ProformasPage() {
   }, [customerId, date, draftStorageKey, entityId, items, validUntil])
 
   useEffect(() => {
-    if (activeCompanies.some((company) => company.id === entityId)) return
+    if (companies.some((company) => company.id === entityId)) return
     setEntityId(activeCompanies[0]?.id || "")
-  }, [activeCompanies, entityId])
+  }, [activeCompanies, entityId, companies, setEntityId])
 
   useEffect(() => {
     if (!entityId || availableCustomers.some((available) => available.id === customerId)) return
@@ -125,6 +127,7 @@ export function ProformasPage() {
       return { ...item, [field]: rate, [field === "cgstRate" ? "cgstAmount" : "sgstAmount"]: roundMoney(item.taxableAmount * rate / 100), ...(rate > 0 ? { igstRate: 0, igstAmount: 0 } : {}) }
     }))
   }
+  const visibleProformas = proformas.filter((record) => record.entityId === entityId)
   const proformaTemplate = (entityIdForTemplate?: string) => {
     const template = templateFor(entityIdForTemplate)
     return { ...template, elements: { ...template.elements, invoiceTitle: { ...template.elements.invoiceTitle, label: "QUOTATION / PROFORMA" } } }
@@ -229,7 +232,7 @@ export function ProformasPage() {
       <div className="flex flex-wrap items-center justify-between gap-3"><Button variant="outline" onClick={() => setItems((current) => [...current, line(entityHsnCodes[0])])}><FilePlus2 />Add description</Button><div className="text-right"><p className="text-sm text-muted-foreground">Taxable ₹{totals.taxableAmount.toLocaleString("en-IN")}</p><p className="text-lg font-semibold">Total ₹{totals.amount.toLocaleString("en-IN")}</p></div></div>
       <div className="flex justify-end"><Button disabled={!canManage || !companies.length || !availableCustomers.length || quotationAllowance?.remaining === 0} onClick={() => void save()}><ReceiptText />Generate quotation</Button></div>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>Quotation register</CardTitle><CardDescription>Generated quotations can be downloaded, shared or converted without changing their original record.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{proformas.length ? proformas.map((record) => <TableRow key={record.id}><TableCell className="font-medium">{record.number}</TableCell><TableCell>{record.companyName}</TableCell><TableCell>{record.date}</TableCell><TableCell>₹{record.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant="outline">{record.convertedInvoiceId ? "Converted" : record.status}</Badge>{record.convertedInvoiceId ? <p className="text-xs text-muted-foreground">{record.convertedInvoiceNumber ? `Invoice ${record.convertedInvoiceNumber}` : "Invoice created"}</p> : null}</div></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" aria-label="Preview quotation" onClick={() => setPreview(record)}><Eye /></Button><Button size="icon" variant="ghost" aria-label="Download quotation" onClick={() => void download(record)}><Download /></Button><Button size="icon" variant="ghost" aria-label="Share quotation" onClick={() => setShareTarget(record)}><Share2 /></Button><Button size="sm" variant="outline" disabled={!canManage || Boolean(record.convertedInvoiceId) || Boolean(companies.find((company) => company.id === record.entityId)?.transferredAt)} onClick={() => convert(record)}>Convert to invoice</Button><Button size="icon" variant="ghost" aria-label="Delete quotation" disabled={!canManage || Boolean(companies.find((company) => company.id === record.entityId)?.transferredAt)} onClick={() => void deleteProforma(record.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No quotations yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    <Card><CardHeader><CardTitle>Quotation register</CardTitle><CardDescription>Generated quotations can be downloaded, shared or converted without changing their original record.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Number</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{visibleProformas.length ? visibleProformas.map((record) => <TableRow key={record.id}><TableCell className="font-medium">{record.number}</TableCell><TableCell>{record.companyName}</TableCell><TableCell>{record.date}</TableCell><TableCell>₹{record.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant="outline">{record.convertedInvoiceId ? "Converted" : record.status}</Badge>{record.convertedInvoiceId ? <p className="text-xs text-muted-foreground">{record.convertedInvoiceNumber ? `Invoice ${record.convertedInvoiceNumber}` : "Invoice created"}</p> : null}</div></TableCell><TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" aria-label="Preview quotation" onClick={() => setPreview(record)}><Eye /></Button><Button size="icon" variant="ghost" aria-label="Download quotation" onClick={() => void download(record)}><Download /></Button><Button size="icon" variant="ghost" aria-label="Share quotation" onClick={() => setShareTarget(record)}><Share2 /></Button><Button size="sm" variant="outline" disabled={!canManage || Boolean(record.convertedInvoiceId) || Boolean(companies.find((company) => company.id === record.entityId)?.transferredAt)} onClick={() => convert(record)}>Convert to invoice</Button><Button size="icon" variant="ghost" aria-label="Delete quotation" disabled={!canManage || Boolean(companies.find((company) => company.id === record.entityId)?.transferredAt)} onClick={() => void deleteProforma(record.id)}><Trash2 /></Button></div></TableCell></TableRow>) : <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No quotations yet.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
     {preview ? <div className="fixed inset-0 z-50 overflow-auto bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Quotation preview"><div className="mx-auto max-w-5xl space-y-3"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShareTarget(preview)}><Share2 />Share</Button><Button variant="secondary" onClick={() => setPreview(null)}>Close preview</Button></div><InvoicePreview invoice={preview} entity={companies.find((item) => item.id === preview.entityId)} customer={customers.find((item) => item.id === preview.customerId)} template={proformaTemplate(preview.entityId)} documentType="quotation" canRemoveBranding={brandingCanBeRemoved} /></div></div> : null}
     <DocumentShareDialog open={Boolean(shareTarget)} title={shareTarget ? `quotation ${shareTarget.number}` : "quotation"} onClose={() => setShareTarget(null)} onEmail={async (toEmail) => { if (!shareTarget) return; await email(shareTarget, toEmail); setShareTarget(null) }} onWhatsApp={async () => { if (!shareTarget) return; await share(shareTarget); setShareTarget(null) }} onWhatsAppSend={async (number) => { if (!shareTarget) return; await sendOnWhatsApp(shareTarget, number); setShareTarget(null) }} />
   </div>

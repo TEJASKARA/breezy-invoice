@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils"
 
 const PAGE_LABELS: Record<string, string> = {
   "/workspace": "Dashboard",
-  "/entities": "Entities",
+  "/entities": "Entities (previous page)",
+  "/customers": "Customers",
   "/invoices": "Invoices",
   "/proformas": "Quotations / proformas",
   "/employees": "Employees & payslips",

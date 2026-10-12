@@ -11,6 +11,7 @@
     "test:gst": "node --test tests/invoice-gst.test.mjs",
     "test:pdf": "node --test tests/invoice-pdf.test.mjs",
     "test:replacement": "node --test tests/invoice-replacement.test.mjs",
+    "test:entities": "node --test tests/entity-selection.test.mjs",
     "test:ca": "node --test tests/ca-invitation-session.test.mjs",
     "preview": "vite preview"
   },

@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useMemo, useRef, useState } from "react"
 import { CalendarCheck2, Copy, Download, Eye, FileSignature, Pencil, Plus, Share2, Trash2, Upload, UserPlus, X } from "lucide-react"
@@ -107,7 +108,6 @@ export function EmployeesPage() {
   const {
     setup,
     companies,
-    activeCompanies,
     employees,
     payslips,
     invoices,
@@ -125,10 +125,10 @@ export function EmployeesPage() {
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const downloadPayslipPdf = (input: Parameters<typeof downloadPayslipPdfFile>[0]) => downloadPayslipPdfFile({ ...input, canRemoveBranding: brandingCanBeRemoved })
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
-  const [selectedEntityId, setSelectedEntityId] = useState(activeCompanies[0]?.id || "")
+  const { selectedEntityId, selectEntity: setSelectedEntityId } = useEntitySelection()
   const canManage = can("payslips.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const [showEmployeeForm, setShowEmployeeForm] = useState(false)
-  const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(activeCompanies[0]?.id || ""))
+  const [employeeDraft, setEmployeeDraft] = useState<Omit<Employee, "id">>(blankEmployee(selectedEntityId))
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
   const [showPayslipForm, setShowPayslipForm] = useState(false)
   const [editingPayslipId, setEditingPayslipId] = useState<string | null>(null)

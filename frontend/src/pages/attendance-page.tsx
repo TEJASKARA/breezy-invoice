@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useMemo, useState } from "react"
 import { CalendarCheck2, Download, FileSpreadsheet, Settings2, Users } from "lucide-react"
@@ -55,10 +56,10 @@ export function AttendancePage() {
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
   const payslipAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "payslip", invoices.length + payslips.length)
-  const initialEntityId = companies.find((company) => !company.transferredAt)?.id || ""
+  const { selectedEntityId, selectEntity: setSelectedEntityId, openEntityManager } = useEntitySelection()
+  const initialEntityId = selectedEntityId
   const initialMonth = currentMonth()
   const initialDraft = setup?.attendanceDrafts?.[`${initialEntityId}:${initialMonth}`]
-  const [selectedEntityId, setSelectedEntityId] = useState(initialEntityId)
   const canManage = can("payslips.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const [month, setMonth] = useState(initialMonth)
   const [attendanceMode, setAttendanceMode] = useState<AttendanceMode>("daily")
@@ -333,7 +334,7 @@ export function AttendancePage() {
     }
   }
 
-  if (!companies.length) return <Card><CardHeader><CardTitle>Add an entity first</CardTitle><CardDescription>Attendance is recorded for employees within an entity.</CardDescription></CardHeader><CardContent><Button asChild><Link to="/entities">Go to entities</Link></Button></CardContent></Card>
+  if (!companies.length) return <Card><CardHeader><CardTitle>Add an entity first</CardTitle><CardDescription>Attendance is recorded for employees within an entity.</CardDescription></CardHeader><CardContent><Button onClick={() => openEntityManager("add")} disabled={!can("entities.manage")}>Add entity from navbar</Button></CardContent></Card>
 
   return (
     <div className="space-y-7">

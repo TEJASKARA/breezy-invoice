@@ -46,7 +46,7 @@ const hasFormData = (form: EntityForm) => [
   form.hsnSac,
 ].some((value) => value.trim()) || Boolean(form.hsnSacCodes?.length)
 
-export function EntitiesPage() {
+export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: boolean; onCreated?: (name: string) => void } = {}) {
   const { setup, companies, addCompanies, updateCompany, deleteCompany } = useMvpStore()
   const blankForm = () => newCompanyForm(setup, companies.length)
   const blankFormRef = useRef(blankForm)
@@ -56,7 +56,7 @@ export function EntitiesPage() {
   const { can, workspace, membership } = useWorkspaceAccess()
   const [transferCompany, setTransferCompany] = useState<Company | null>(null)
   const canManage = can("entities.manage")
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(initialAdd)
   const [form, setForm] = useState(blankForm)
   const [draftReady, setDraftReady] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -70,26 +70,26 @@ export function EntitiesPage() {
   const [hsnEditingCompanyId, setHsnEditingCompanyId] = useState<string | null>(null)
   const [hsnEditCodes, setHsnEditCodes] = useState<string[]>([])
   const [hsnEditInput, setHsnEditInput] = useState("")
-  const draftStorageKey = user ? `breezyinvoice-entity-draft:${user.id}` : null
+  const draftStorageKey = user && workspace ? `chanax.entity-draft:${user.id}:${workspace.id}` : null
 
   useEffect(() => {
     if (!draftStorageKey) return
     setDraftReady(false)
     setForm(blankFormRef.current())
-    setShowForm(false)
+    setShowForm(initialAdd)
     try {
       const saved = window.localStorage.getItem(draftStorageKey)
       if (saved) {
         const draft = { ...blankFormRef.current(), ...JSON.parse(saved) } as EntityForm
         setForm(draft)
-        setShowForm(hasFormData(draft))
+        setShowForm(initialAdd || hasFormData(draft))
       }
     } catch {
       window.localStorage.removeItem(draftStorageKey)
     } finally {
       setDraftReady(true)
     }
-  }, [draftStorageKey])
+  }, [draftStorageKey, initialAdd])
 
   useEffect(() => {
     if (!draftStorageKey || !draftReady) return
@@ -197,6 +197,7 @@ export function EntitiesPage() {
       setShowForm(false)
       setNoticeIsError(false)
       setNotice(`Entity saved with ${hsnCodes.length} HSN/SAC code${hsnCodes.length === 1 ? "" : "s"}.`)
+      onCreated?.(form.companyName.trim())
     } catch (error) {
       setNoticeIsError(true)
       setNotice(customerErrorMessage(error, "The entity could not be saved. Please try again."))

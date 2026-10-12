@@ -240,7 +240,7 @@ export function OnboardingPage() {
         }
         await refreshWorkspaceAccess()
       }
-      navigate("/entities")
+      navigate("/customers")
     } catch (error) {
       setSaveError(customerErrorMessage(error, "We could not save your setup. Please try again."))
     } finally {

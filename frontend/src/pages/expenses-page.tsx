@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { Banknote, Download, FileText, IndianRupee, Paperclip, Plus, ReceiptText, Trash2, Upload, Users } from "lucide-react"
 import { lazy, Suspense, type FormEvent, useMemo, useState } from "react"
@@ -43,8 +44,8 @@ export function ExpensesPage() {
   const { user } = useAuthUser()
   const { companies, invoices, proformas, payslips, expenses, addExpense, deleteExpense } = useMvpStore()
   const { can } = useWorkspaceAccess()
-  const canManage = can("expenses.manage")
-  const [selectedEntityId, setSelectedEntityId] = useState("all")
+  const { selectedEntityId, selectEntity: setSelectedEntityId, openEntityManager } = useEntitySelection()
+  const canManage = can("expenses.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
@@ -56,7 +57,7 @@ export function ExpensesPage() {
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [draft, setDraft] = useState({
-    entityId: companies.find((company) => !company.transferredAt)?.id || "",
+    entityId: selectedEntityId,
     name: "",
     category: "",
     customCategory: "",
@@ -101,7 +102,7 @@ export function ExpensesPage() {
   ]
 
   function openExpenseForm() {
-    setDraft((current) => ({ ...current, entityId: current.entityId || companies.find((company) => !company.transferredAt)?.id || "" }))
+    setDraft((current) => ({ ...current, entityId: current.entityId || selectedEntityId }))
     setError("")
     setNotice("")
     setShowForm(true)
@@ -196,7 +197,7 @@ export function ExpensesPage() {
       {notice ? <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div> : null}
 
       {!companies.length ? (
-        <Card className="border-dashed"><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><Banknote className="size-6 text-muted-foreground" /><div><p className="font-medium">No entity is available</p><p className="mt-1 text-sm text-muted-foreground">Every expense belongs to one of your companies.</p></div>{can("entities.manage") ? <Button asChild><Link to="/entities">Add entity</Link></Button> : null}</CardContent></Card>
+        <Card className="border-dashed"><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><Banknote className="size-6 text-muted-foreground" /><div><p className="font-medium">No entity is available</p><p className="mt-1 text-sm text-muted-foreground">Every expense belongs to one of your companies.</p></div>{can("entities.manage") ? <Button onClick={() => openEntityManager("add")}>Add entity</Button> : null}</CardContent></Card>
       ) : null}
 
       {showForm && canManage ? (
@@ -204,7 +205,7 @@ export function ExpensesPage() {
           <CardHeader><CardTitle>Add another expense</CardTitle><CardDescription>Create your own category and optionally attach the supporting bill.</CardDescription></CardHeader>
           <CardContent>
             <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" onSubmit={saveExpense}>
-              <div className="space-y-2"><Label htmlFor="custom-expense-entity">Company / entity *</Label><select id="custom-expense-entity" className={selectClass} required value={draft.entityId} onChange={(event) => setDraft((current) => ({ ...current, entityId: event.target.value }))}><option value="">Select an entity</option>{companies.filter((company) => !company.transferredAt).map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
+              <div className="space-y-2"><Label htmlFor="custom-expense-entity">Company / entity *</Label><select id="custom-expense-entity" className={selectClass} required value={draft.entityId} onChange={(event) => setDraft((current) => ({ ...current, entityId: event.target.value }))}><option value="">Select an entity</option>{companies.filter((company) => company.id === selectedEntityId).map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
               <div className="space-y-2"><Label htmlFor="custom-expense-name">Expense name *</Label><Input id="custom-expense-name" required placeholder="Example: Office internet" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
               <div className="space-y-2"><Label htmlFor="custom-expense-category">Category *</Label><select id="custom-expense-category" className={selectClass} required value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value, customCategory: event.target.value === "__custom__" ? current.customCategory : "" }))}><option value="">Select a category</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}<option value="__custom__">Custom</option></select></div>
               {draft.category === "__custom__" ? <div className="space-y-2"><Label htmlFor="custom-expense-category-name">Custom category name *</Label><Input id="custom-expense-category-name" required autoFocus placeholder="Example: Client entertainment" value={draft.customCategory} onChange={(event) => setDraft((current) => ({ ...current, customCategory: event.target.value }))} /></div> : null}
@@ -221,7 +222,7 @@ export function ExpensesPage() {
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="space-y-2"><Label htmlFor="expense-entity">Company / entity</Label><select id="expense-entity" value={selectedEntityId} onChange={(event) => setSelectedEntityId(event.target.value)} className={selectClass}><option value="all">All entities</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
+        <div className="space-y-2"><Label htmlFor="expense-entity">Company / entity</Label><select id="expense-entity" value={selectedEntityId} onChange={(event) => setSelectedEntityId(event.target.value)} className={selectClass}>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
         <div className="space-y-2"><Label htmlFor="expense-category-filter">Other-expense category</Label><select id="expense-category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className={selectClass}><option value="all">All categories</option>{categories.filter((category) => expenses.some((expense) => expense.category === category)).map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
         <div className="space-y-2"><Label htmlFor="expense-date-from">From date</Label><Input id="expense-date-from" type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} /></div>
         <div className="space-y-2"><Label htmlFor="expense-date-to">To date</Label><Input id="expense-date-to" type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} /></div>

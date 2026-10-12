@@ -1,3 +1,4 @@
+import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Archive, Download, FileCode2, Loader2, Save, Search, Upload } from "lucide-react"
@@ -45,9 +46,9 @@ function defaultTallySettings(companyName: string): TallySettings {
 export function TallyExportPage() {
   const { companies, customers, invoices, proformas, employees, payslips, expenses, setup, templateFor, updateCompany, updateCustomer, updateEmployee } = useMvpStore()
   const { can, subscription } = useWorkspaceAccess()
-  const canManage = can("data_export.manage")
+  const { selectedEntityId, selectEntity: setSelectedEntityId } = useEntitySelection()
+  const canManage = can("data_export.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
-  const [selectedEntityId, setSelectedEntityId] = useState(companies[0]?.id || "")
   const [dateFrom, setDateFrom] = useState(financialYearStart())
   const [dateTo, setDateTo] = useState(today())
   const [customerSearch, setCustomerSearch] = useState("")

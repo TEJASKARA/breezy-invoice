@@ -18,6 +18,7 @@ import {
   Monitor,
   Moon,
   PackageCheck,
+  Plus,
   ReceiptText,
   Settings2,
   ShieldCheck,
@@ -58,13 +59,16 @@ import { type Theme, useTheme } from "@/lib/theme"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import type { WorkspacePermission } from "@/lib/workspace-access-service"
 import { loadPlatformAdminAccess } from "@/lib/platform-admin-api"
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
+import { EntitySelectionProvider, useEntitySelection } from "@/lib/entity-selection"
+
+const EntityManager = lazy(() => import("@/pages/entities-page").then((module) => ({ default: module.EntitiesPage })))
 
 const PRODUCT_TOUR_VERSION = 1
 
 const navigation = [
   { label: "Overview", href: "/workspace", icon: LayoutDashboard, end: true, permission: null },
-  { label: "Entities", href: "/entities", icon: Building2, permission: "entities.read" },
+  { label: "Customers", href: "/customers", icon: Users, permission: "invoices.read" },
   { label: "Invoices", href: "/invoices", icon: ReceiptText, permission: "invoices.read" },
   { label: "Quotations", href: "/proformas", icon: FilePlus2, permission: "invoices.read" },
   { label: "Employees", href: "/employees", icon: Users, end: true, permission: "payslips.read" },
@@ -119,6 +123,10 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
 }
 
 export function AppShell() {
+  return <EntitySelectionProvider><WorkspaceShell /></EntitySelectionProvider>
+}
+
+function WorkspaceShell() {
   const navigate = useNavigate()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { user } = useAuthUser()
@@ -127,6 +135,7 @@ export function AppShell() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const { setup, companies, invoices, proformas, payslips, syncError } = useMvpStore()
+  const { selectedEntity, selectedEntityId, selectEntity, managerMode, openEntityManager, closeEntityManager, entityCreated } = useEntitySelection()
   const fullName = String(user?.user_metadata.full_name || user?.user_metadata.name || user?.email?.split("@")[0] || "User")
   const avatarUrl = String(user?.user_metadata.avatar_url || user?.user_metadata.picture || "")
   const initials = fullName.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()
@@ -218,7 +227,7 @@ export function AppShell() {
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b bg-background/90 px-4 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-2 border-b bg-background/90 px-3 py-2 backdrop-blur sm:px-6">
           <Sheet>
             <SheetTrigger asChild>
               <Button
@@ -242,6 +251,20 @@ export function AppShell() {
             </SheetContent>
           </Sheet>
 
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="max-w-[calc(100vw-80px)] gap-2 sm:max-w-72" aria-label={`Selected entity: ${selectedEntity?.companyName || "No entity"}. Change entity`}>
+                <Building2 className="shrink-0" /><span className="min-w-0 truncate">{selectedEntity?.companyName || "Select or add entity"}</span><ChevronDown className="shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-[70vh] w-72 overflow-y-auto">
+              <DropdownMenuLabel>Working entity</DropdownMenuLabel>
+              {companies.map((company) => <DropdownMenuItem key={company.id} onClick={() => selectEntity(company.id)}><Building2 /><span className="min-w-0 flex-1 truncate">{company.companyName}{company.transferredAt ? " (read-only)" : ""}</span>{company.id === selectedEntityId ? <Check /> : null}</DropdownMenuItem>)}
+              {!selectedEntityId ? <DropdownMenuLabel>No active entities yet</DropdownMenuLabel> : null}
+              {can("entities.manage") ? <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => openEntityManager("add")}><Plus />Add entity</DropdownMenuItem></> : null}
+              {can("entities.read") ? <DropdownMenuItem onClick={() => openEntityManager("manage")}><Settings2 />Manage entities</DropdownMenuItem> : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="outline"
@@ -362,10 +385,16 @@ export function AppShell() {
                 <strong>We couldn't save your latest changes.</strong> {syncError}
               </div>
             )}
-            <Outlet />
+            <Outlet key={selectedEntityId} />
           </div>
         </main>
       </div>
+      <Sheet open={managerMode !== null} onOpenChange={(open) => { if (!open) closeEntityManager() }}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
+          <SheetHeader><SheetTitle>{managerMode === "add" ? "Add entity" : "Manage entities"}</SheetTitle></SheetHeader>
+          <div className="p-4"><Suspense fallback={<p className="p-4 text-sm">Loading entity settings…</p>}>{managerMode ? <EntityManager key={`${workspace?.id}:${managerMode}`} initialAdd={managerMode === "add"} onCreated={entityCreated} /> : null}</Suspense></div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
