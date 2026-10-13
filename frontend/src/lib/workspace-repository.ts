@@ -128,6 +128,22 @@ export async function upsertCompanies(userId: string, workspaceId: string, compa
   throwIfError(error)
 }
 
+/** Existing entities must not enter the INSERT trigger during routine edits. */
+export async function updateExistingCompanies(_userId: string, workspaceId: string, companies: Company[]) {
+  if (companies.some((company) => company.transferredAt)) throw new Error("Moved companies are read-only in this account.")
+  for (const company of companies) {
+    const { data, error } = await client().from("breezy_entities")
+      .update({ payload: withoutKeys(company as unknown as Record<string, unknown>, ["id", "transferredAt"]) })
+      .eq("workspace_id", workspaceId)
+      .eq("id", company.id)
+      .is("transferred_at", null)
+      .select("id")
+      .maybeSingle()
+    throwIfError(error)
+    if (!data) throw new Error("This company is no longer available or you don't have permission to update it. Refresh the page and try again.")
+  }
+}
+
 export async function deleteCompanyRow(workspaceId: string, companyId: string, confirmedCompanyName: string) {
   const { data, error } = await client().rpc("breezy_delete_entity", {
     target_workspace_id: workspaceId,

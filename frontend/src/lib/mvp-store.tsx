@@ -16,6 +16,7 @@ import {
   saveFullWorkspace,
   saveWorkspaceSettings,
   upsertCompanies,
+  updateExistingCompanies,
   upsertCustomers,
   upsertEmployees,
   upsertExpenses,
@@ -731,7 +732,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const existing = stateRef.current.companies.find((company) => company.id === companyId)
       if (!existing) return
       const updated = { ...existing, ...changes }
-      await persistAndWait((userId, workspaceId) => upsertCompanies(userId, workspaceId, [updated]))
+      await persistAndWait((userId, workspaceId) => updateExistingCompanies(userId, workspaceId, [updated]))
       commit({ ...stateRef.current, companies: stateRef.current.companies.map((company) => company.id === companyId ? updated : company) })
     },
     deleteCompany: async (companyId, confirmedCompanyName) => {
@@ -793,7 +794,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         : current.setup
       await persistAndWait(async (userId, workspaceId) => {
         if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
-        if (updatedCompany) await upsertCompanies(userId, workspaceId, [updatedCompany])
+        if (updatedCompany) await updateExistingCompanies(userId, workspaceId, [updatedCompany])
         await upsertInvoices(userId, workspaceId, [added])
       })
       commit({ ...stateRef.current, setup: nextSetup, companies: nextCompanies, invoices: [added, ...stateRef.current.invoices] })
@@ -821,7 +822,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       })
       const changedCompanies = nextCompanies.filter((company, index) => company !== current.companies[index])
       await persistAndWait(async (userId, workspaceId) => {
-        if (changedCompanies.length) await upsertCompanies(userId, workspaceId, changedCompanies)
+        if (changedCompanies.length) await updateExistingCompanies(userId, workspaceId, changedCompanies)
         await upsertInvoices(userId, workspaceId, added)
       })
       commit({ ...stateRef.current, companies: nextCompanies, invoices: [...added, ...stateRef.current.invoices] })
@@ -872,7 +873,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         : current.setup
       await persistAndWait(async (userId, workspaceId) => {
         if (nextSetup !== current.setup) await saveWorkspaceSettings(userId, workspaceId, nextSetup, current.template)
-        if (updatedCompany) await upsertCompanies(userId, workspaceId, [updatedCompany])
+        if (updatedCompany) await updateExistingCompanies(userId, workspaceId, [updatedCompany])
         await upsertInvoices(userId, workspaceId, invoiceReplacementSaveOrder(correctedOriginal, added))
       })
       commit({
