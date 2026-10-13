@@ -1136,10 +1136,23 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                 })
               }}
             />
-            <Button disabled={!workingEntity || !individualCustomers.length} onClick={() => setShowForm((value) => !value)}><Plus />New invoice</Button>
           </>
         ) : null}
       />
+
+      {canManage && !customersOnly ? (
+        <div className="flex justify-center">
+          <Button
+            size="lg"
+            className="h-14 w-full max-w-xl gap-3 rounded-xl px-6 text-base font-semibold shadow-md ring-4 ring-primary/10 hover:shadow-lg"
+            disabled={!workingEntity || !individualCustomers.length}
+            aria-expanded={showForm}
+            onClick={() => setShowForm((value) => !value)}
+          >
+            <Plus className="size-5" />New invoice
+          </Button>
+        </div>
+      ) : null}
 
       {!customersOnly && invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Document credits:</strong> {invoiceAllowance.remaining} remaining for invoices or payslips. Quotations use a separate balance. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
 
@@ -1369,6 +1382,86 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         </CardContent>
       </Card>}
 
+      {!customersOnly && <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Invoice register</CardTitle>
+              <CardDescription>
+                {hasInvoiceFilters
+                  ? `${filteredInvoices.length} invoices match your filters for this entity.`
+                  : filteredInvoices.length > 5 && !showAllInvoices
+                  ? `Showing the latest 5 of ${filteredInvoices.length} invoices.`
+                  : `${filteredInvoices.length} invoice${filteredInvoices.length === 1 ? "" : "s"} maintained for this entity.`}
+              </CardDescription>
+            </div>
+            {filteredInvoices.length > 5 && (
+              <Button variant="outline" size="sm" onClick={() => setShowAllInvoices((showAll) => !showAll)}>
+                {showAllInvoices ? "Show latest 5" : `Show all ${filteredInvoices.length}`}
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.3fr)_180px_170px_150px_150px_auto]">
+            <div className="space-y-2">
+              <Label htmlFor="invoice-register-search">Invoice, customer or entity</Label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="invoice-register-search"
+                  value={invoiceSearch}
+                  onChange={(event) => { setInvoiceSearch(event.target.value); setShowAllInvoices(false) }}
+                  placeholder="Search by name or invoice number"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoice-register-entity">Entity</Label>
+              <Input id="invoice-register-entity" value={workingEntity?.companyName || "No entity selected"} readOnly />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoice-register-date">Invoice date</Label>
+              <Input id="invoice-register-date" type="date" value={invoiceDateFilter} onChange={(event) => { setInvoiceDateFilter(event.target.value); setShowAllInvoices(false) }} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoice-register-min">Minimum amount</Label>
+              <Input id="invoice-register-min" type="number" min="0" step="0.01" value={invoiceAmountMin} onChange={(event) => { setInvoiceAmountMin(event.target.value); setShowAllInvoices(false) }} placeholder="₹0" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoice-register-max">Maximum amount</Label>
+              <Input id="invoice-register-max" type="number" min="0" step="0.01" value={invoiceAmountMax} onChange={(event) => { setInvoiceAmountMax(event.target.value); setShowAllInvoices(false) }} placeholder="Any amount" />
+            </div>
+            <Button variant="outline" className="self-end" disabled={!hasInvoiceFilters} onClick={clearInvoiceFilters}><X />Clear</Button>
+          </div>
+          <Table>
+            <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Entity</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {visibleInvoices.length ? visibleInvoices.map((invoice) => (
+                <TableRow key={invoice.id}>
+                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}{invoice.correctsInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaces {invoice.correctsInvoiceNumber}</p> : null}{invoice.correction?.replacementInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaced by {invoice.correction.replacementInvoiceNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant={invoice.status === "Cancelled" ? "destructive" : invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge>{invoice.correction ? <p className="max-w-40 text-xs text-muted-foreground" title={invoice.correction.reason}>{correctionLabels[invoice.correction.method]}{invoice.correction.referenceNumber ? ` · ${invoice.correction.referenceNumber}` : ""}</p> : null}</div></TableCell>
+                  <TableCell className="text-right">
+                    {pendingDelete === invoice.id && canManage ? (
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(customerErrorMessage(error, "The invoice could not be deleted."), true) } }}>Confirm delete</Button></div>
+                    ) : (
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
+                        {invoice.status === "Draft" || invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title="Share invoice" onClick={() => setShareTarget(invoice)}><Share2 /></Button> : null}
+                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Edit ${invoice.sourceNumber || invoice.number}`} title="Edit draft" onClick={() => editDraftInvoice(invoice)}><FilePenLine /></Button> : null}
+                        {canManage && invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Correct ${invoice.sourceNumber || invoice.number}`} title="Correct issued invoice" onClick={() => openCorrection(invoice)}><FilePenLine /></Button> : null}
+                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} title="Delete draft" onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )) : <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">{hasInvoiceFilters ? "No invoices match these filters." : "Add an invoice separately or import your regular invoice spreadsheet."}</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>}
+
       {!customersOnly && canManage ? <Card>
         <CardHeader>
           <CardTitle>Bulk invoice generation</CardTitle>
@@ -1456,86 +1549,6 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
           </Card>
         </div>
       ) : null}
-
-      {!customersOnly && <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle>Invoice register</CardTitle>
-              <CardDescription>
-                {hasInvoiceFilters
-                  ? `${filteredInvoices.length} invoices match your filters for this entity.`
-                  : filteredInvoices.length > 5 && !showAllInvoices
-                  ? `Showing the latest 5 of ${filteredInvoices.length} invoices.`
-                  : `${filteredInvoices.length} invoice${filteredInvoices.length === 1 ? "" : "s"} maintained for this entity.`}
-              </CardDescription>
-            </div>
-            {filteredInvoices.length > 5 && (
-              <Button variant="outline" size="sm" onClick={() => setShowAllInvoices((showAll) => !showAll)}>
-                {showAllInvoices ? "Show latest 5" : `Show all ${filteredInvoices.length}`}
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.3fr)_180px_170px_150px_150px_auto]">
-            <div className="space-y-2">
-              <Label htmlFor="invoice-register-search">Invoice, customer or entity</Label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="invoice-register-search"
-                  value={invoiceSearch}
-                  onChange={(event) => { setInvoiceSearch(event.target.value); setShowAllInvoices(false) }}
-                  placeholder="Search by name or invoice number"
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invoice-register-entity">Entity</Label>
-              <Input id="invoice-register-entity" value={workingEntity?.companyName || "No entity selected"} readOnly />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invoice-register-date">Invoice date</Label>
-              <Input id="invoice-register-date" type="date" value={invoiceDateFilter} onChange={(event) => { setInvoiceDateFilter(event.target.value); setShowAllInvoices(false) }} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invoice-register-min">Minimum amount</Label>
-              <Input id="invoice-register-min" type="number" min="0" step="0.01" value={invoiceAmountMin} onChange={(event) => { setInvoiceAmountMin(event.target.value); setShowAllInvoices(false) }} placeholder="₹0" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invoice-register-max">Maximum amount</Label>
-              <Input id="invoice-register-max" type="number" min="0" step="0.01" value={invoiceAmountMax} onChange={(event) => { setInvoiceAmountMax(event.target.value); setShowAllInvoices(false) }} placeholder="Any amount" />
-            </div>
-            <Button variant="outline" className="self-end" disabled={!hasInvoiceFilters} onClick={clearInvoiceFilters}><X />Clear</Button>
-          </div>
-          <Table>
-            <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Entity</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {visibleInvoices.length ? visibleInvoices.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}{invoice.correctsInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaces {invoice.correctsInvoiceNumber}</p> : null}{invoice.correction?.replacementInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaced by {invoice.correction.replacementInvoiceNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant={invoice.status === "Cancelled" ? "destructive" : invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge>{invoice.correction ? <p className="max-w-40 text-xs text-muted-foreground" title={invoice.correction.reason}>{correctionLabels[invoice.correction.method]}{invoice.correction.referenceNumber ? ` · ${invoice.correction.referenceNumber}` : ""}</p> : null}</div></TableCell>
-                  <TableCell className="text-right">
-                    {pendingDelete === invoice.id && canManage ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(customerErrorMessage(error, "The invoice could not be deleted."), true) } }}>Confirm delete</Button></div>
-                    ) : (
-                      <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
-                        <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
-                        {invoice.status === "Draft" || invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title="Share invoice" onClick={() => setShareTarget(invoice)}><Share2 /></Button> : null}
-                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Edit ${invoice.sourceNumber || invoice.number}`} title="Edit draft" onClick={() => editDraftInvoice(invoice)}><FilePenLine /></Button> : null}
-                        {canManage && invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Correct ${invoice.sourceNumber || invoice.number}`} title="Correct issued invoice" onClick={() => openCorrection(invoice)}><FilePenLine /></Button> : null}
-                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} title="Delete draft" onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              )) : <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">{hasInvoiceFilters ? "No invoices match these filters." : "Add an invoice separately or import your regular invoice spreadsheet."}</TableCell></TableRow>}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>}
 
       {correctionTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="invoice-correction-title">
