@@ -22,10 +22,9 @@ export function PayslipPreview({
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
 
   return (
-    <article className={`${fontClass} relative mx-auto min-h-[760px] w-full max-w-[820px] overflow-hidden border p-8 text-zinc-900 shadow-sm md:p-12`} style={{ backgroundColor: template.pageColor }}>
+    <article data-payslip-document className={`${fontClass} relative mx-auto flex min-h-[1160px] w-[820px] shrink-0 flex-col border p-12 text-zinc-900`} style={{ backgroundColor: template.pageColor }}>
       {template.watermarkEnabled && template.watermarkText.trim() ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden"><span className="max-w-[85%] -rotate-[32deg] break-words text-center text-6xl font-bold uppercase tracking-[0.2em] text-zinc-700" style={{ opacity: watermarkOpacity }}>{template.watermarkText}</span></div> : null}
-      {showChanaxBranding ? <p className="pointer-events-none absolute bottom-3 right-4 z-30 text-[9px] font-medium tracking-wide text-zinc-400">Created by ChanaX</p> : null}
-      <header className="flex items-start justify-between gap-6 border-b pb-8">
+      <header data-pdf-keep-together className="flex items-start justify-between gap-6 border-b pb-8">
         <div className="flex min-w-0 items-start gap-4">
           {template.logoDataUrl ? (
             <img src={template.logoDataUrl} alt="Company logo" className="shrink-0 rounded-lg object-contain" style={{ width: logoSize, height: logoSize }} />
@@ -34,7 +33,7 @@ export function PayslipPreview({
               {(entity?.companyName || payslip.entityName || "B").charAt(0)}
             </div>
           )}
-          <div>
+          <div className="min-w-0">
             <h2 className="text-xl font-bold">{entity?.companyName || payslip.entityName || "Issuing entity"}</h2>
             <p className="mt-2 max-w-sm text-sm text-zinc-500">{entity?.billingAddress || entity?.premisesAddress || "Address not provided"}</p>
             {entity?.gstin && <p className="mt-1 text-xs text-zinc-500">GSTIN: {entity.gstin}</p>}
@@ -47,16 +46,16 @@ export function PayslipPreview({
         </div>
       </header>
 
-      <section className="my-8 grid gap-5 rounded-xl bg-zinc-50 p-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <section data-pdf-keep-together className="my-8 grid grid-cols-4 gap-5 rounded-xl bg-zinc-50 p-5 text-sm">
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Employee name</p><p className="mt-1 font-bold">{payslip.employeeName}</p><p className="text-xs text-zinc-500">ID: {payslip.employeeCode || "—"}</p></div>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Job designation</p><p className="mt-1 font-bold">{payslip.designation || "—"}</p><p className="text-xs text-zinc-500">{payslip.department || "Department not provided"}</p></div>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Tax & employment</p><p className="mt-1 font-bold">PAN: {payslip.pan || "—"}</p><p className="text-xs text-zinc-500">{payslip.employmentStatus || "Regular"}</p></div>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Disbursal bank</p><p className="mt-1 font-bold">{payslip.bankName || "—"}</p><p className="text-xs text-zinc-500">A/C: {maskBankAccount(payslip.bankAccount)}</p></div>
       </section>
 
-      {payslip.attendance ? <section className="mb-8 rounded-xl border p-4">
+      {payslip.attendance ? <section data-pdf-keep-together className="mb-8 rounded-xl border p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-bold uppercase tracking-wider">Attendance</h3><p className="mt-1 text-xs text-zinc-500">Calendar and paid-day summary for this pay period</p></div>{payslip.attendance.holidays.length ? <p className="max-w-md text-right text-xs text-zinc-500">Holidays: {payslip.attendance.holidays.map((holiday) => holiday.name).join(", ")}</p> : null}</div>
-        <div className="grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
+        <div className="grid grid-cols-6 gap-3 text-sm">
           <AttendanceValue label="Calendar" value={payslip.attendance.calendarDays} />
           <AttendanceValue label="Working" value={payslip.workingDays} />
           <AttendanceValue label="Present days" value={attendancePresentDays(payslip.attendance)} />
@@ -67,20 +66,21 @@ export function PayslipPreview({
         {payslip.attendance.leaveAllowancePeriod ? <p className="mt-3 text-xs text-zinc-500"><span className="capitalize">{payslip.attendance.leaveAllowancePeriod}</span> leave allowance: {payslip.attendance.leaveAllowanceDays || 0} days · Eligible paid leave: {payslip.attendance.eligiblePaidLeaveDays || 0} · Excess leave: {payslip.attendance.excessLeaveDays || 0} · Attendance deduction: ₹{(payslip.attendance.leaveDeductionAmount || 0).toLocaleString("en-IN")}</p> : null}
       </section> : null}
 
-      <section className="grid gap-8 lg:grid-cols-2">
+      <section className="grid grid-cols-2 gap-8">
         <PayrollTable title="Earnings & benefits" items={payslip.earnings} totalLabel="Total Earnings (A)" total={payslip.grossPay} accent={template.accentColor} />
         <PayrollTable title="Deductions & tax withholdings" items={payslip.deductions} totalLabel="Total Deductions (B)" total={payslip.totalDeductions} accent="#e11d48" deductions />
       </section>
 
-      <section className="mt-10 flex flex-col justify-between gap-4 rounded-xl border-2 p-5 sm:flex-row sm:items-end" style={{ borderColor: template.accentColor }}>
+      <section data-pdf-keep-together className="mt-10 flex flex-row items-end justify-between gap-4 rounded-xl border-2 p-5" style={{ borderColor: template.accentColor }}>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Net take-home salary (A − B)</p><p className="mt-1 text-3xl font-bold" style={{ color: template.accentColor }}>{money(payslip.netPay)}</p></div>
-        <div className="max-w-md text-left sm:text-right"><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Net salary in words</p><p className="mt-1 text-sm font-semibold italic">{amountInWords(payslip.netPay)}</p></div>
+        <div className="max-w-[50%] text-right"><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Net salary in words</p><p className="mt-1 text-sm font-semibold italic">{amountInWords(payslip.netPay)}</p></div>
       </section>
 
-      <footer className="mt-12 flex flex-wrap justify-between gap-4 border-t pt-5 text-xs text-zinc-500">
+      <footer data-pdf-keep-together className="mt-12 flex flex-wrap justify-between gap-4 border-t pt-5 text-xs text-zinc-500">
         <span>Working days: {payslip.workingDays || "—"} · Payable days: {payslip.payableDays || "—"}{payslip.attendance ? ` · Weekly offs: ${payslip.attendance.weeklyOffDays} · Holidays: ${payslip.attendance.holidayDays}` : ""}</span>
         <span>This is a computer-generated payslip.</span>
       </footer>
+      {showChanaxBranding ? <p className="pointer-events-none -mb-9 -mr-8 mt-auto pt-3 text-right text-[9px] font-medium tracking-wide text-zinc-400">Created by ChanaX</p> : null}
     </article>
   )
 }
@@ -106,18 +106,18 @@ function PayrollTable({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between border-b pb-3">
+      <div data-pdf-keep-together className="flex items-start justify-between gap-3 border-b pb-3">
         <h3 className="text-sm font-bold uppercase tracking-wider">{title}</h3>
-        <span className="text-xs font-bold" style={{ color: accent }}>IN INR (₹)</span>
+        <span className="shrink-0 whitespace-nowrap text-xs font-bold" style={{ color: accent }}>IN INR (₹)</span>
       </div>
       <div className="divide-y">
         {items.filter((item) => item.label || item.amount).map((item) => (
-          <div key={item.id} className="flex justify-between gap-4 py-3 text-sm">
+          <div data-pdf-keep-together key={item.id} className="flex justify-between gap-4 py-3 text-sm">
             <span className="text-zinc-600">{item.label || "Other"}</span>
-            <span className="font-semibold" style={{ color: deductions ? accent : undefined }}>{deductions ? "−" : ""}{money(item.amount)}</span>
+            <span className="shrink-0 whitespace-nowrap font-semibold" style={{ color: deductions ? accent : undefined }}>{deductions ? "−" : ""}{money(item.amount)}</span>
           </div>
         ))}
-        <div className="flex justify-between gap-4 py-4 text-sm font-bold">
+        <div data-pdf-keep-together className="flex justify-between gap-4 py-4 text-sm font-bold">
           <span>{totalLabel}</span><span style={{ color: accent }}>{money(total)}</span>
         </div>
       </div>
