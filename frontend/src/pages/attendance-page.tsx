@@ -1,10 +1,12 @@
 import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { CalendarCheck2, Download, FileSpreadsheet, Settings2, Users } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { AttendanceEditor } from "@/components/attendance-editor"
+import { AttendanceOverview } from "@/components/attendance-overview"
+import { localAttendanceDate } from "@/lib/attendance-view"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { downloadAttendanceExcel, downloadAttendancePdf, type AttendanceExportInput } from "@/lib/attendance-export"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { type AttendanceDayRecord, type AttendanceDayStatus, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
-import { attendancePresentDays, calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, dailyPresentDays, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
+import { attendancePresentDays, calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
 import { downloadZip } from "@/lib/zip-download"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -26,12 +28,8 @@ type AttendanceMode = "daily" | "monthly"
 type PreparedPayslip = Omit<Payslip, "id">
 
 const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-const currentMonth = () => new Date().toISOString().slice(0, 7)
-const firstDateForMonth = (month: string) => `${month}-${new Date().toISOString().startsWith(month) ? new Date().toISOString().slice(8, 10) : "01"}`
-const lastDateForMonth = (month: string) => {
-  const [year, monthNumber] = month.split("-").map(Number)
-  return `${month}-${String(new Date(year, monthNumber, 0).getDate()).padStart(2, "0")}`
-}
+const currentMonth = () => localAttendanceDate().slice(0, 7)
+const firstDateForMonth = (month: string) => `${month}-${localAttendanceDate().startsWith(month) ? localAttendanceDate().slice(8, 10) : "01"}`
 const leaveDeductionLabel = "Loss of pay (attendance)"
 const normalizedLabel = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "")
 const cloneComponents = (items: PayrollComponent[]) => items.map((item) => ({ ...item, id: payrollId() }))
@@ -52,6 +50,11 @@ function applyAttendance<T extends { month: string; earnings: PayrollComponent[]
 }
 
 export function AttendancePage() {
+  const { selectedEntityId } = useEntitySelection()
+  return <AttendancePageContent key={selectedEntityId} />
+}
+
+function AttendancePageContent() {
   const { setup, companies, employees, invoices, payslips, templateFor, addPayslips, updateEmployee, saveAttendanceDraft } = useMvpStore()
   const { can, subscription, creditAccount, refresh } = useWorkspaceAccess()
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
@@ -66,6 +69,7 @@ export function AttendancePage() {
   const [attendanceDate, setAttendanceDate] = useState(() => firstDateForMonth(currentMonth()))
   const [attendance, setAttendance] = useState<PayslipAttendance>(() => initialDraft?.attendance || defaultPayslipAttendance(initialMonth))
   const [employeeAttendance, setEmployeeAttendance] = useState<Record<string, AttendanceException>>(() => exceptionsFromRecords(initialDraft?.employeeRecords))
+  const monthCache = useRef(new Map<string, { attendance: PayslipAttendance; employeeAttendance: Record<string, AttendanceException> }>())
   const [excludedEmployeeIds, setExcludedEmployeeIds] = useState<string[]>([])
   const [search, setSearch] = useState("")
   const [preview, setPreview] = useState<PreparedPayslip[]>([])
@@ -97,9 +101,7 @@ export function AttendancePage() {
     return dates
   }, [attendance.saturdayWeeklyOff, attendance.sundayWeeklyOff, calendarSummary.attendance.calendarDays, month])
   const holidayDates = useMemo(() => new Set(attendance.holidays.map((holiday) => holiday.date)), [attendance.holidays])
-  const selectedDateHoliday = attendance.holidays.find((holiday) => holiday.date === attendanceDate)
-  const selectedDateIsWeeklyOff = weeklyOffDates.has(attendanceDate)
-  const selectedDateIsWorking = Boolean(attendanceDate) && !selectedDateIsWeeklyOff && !holidayDates.has(attendanceDate)
+  const selectedDateIsWorking = attendanceDate.startsWith(`${month}-`) && !weeklyOffDates.has(attendanceDate) && !holidayDates.has(attendanceDate)
 
   const clearMessages = () => { setNotice(""); setError("") }
   const resetPreview = () => { setPreview([]); setSaved(false) }
@@ -120,11 +122,14 @@ export function AttendancePage() {
     clearMessages()
   }
   const changeMonth = (nextMonth: string) => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(nextMonth) || nextMonth === month || savingAttendance) return
+    monthCache.current.set(month, { attendance, employeeAttendance })
     const draft = setup?.attendanceDrafts?.[`${selectedEntityId}:${nextMonth}`]
+    const cached = monthCache.current.get(nextMonth)
     setMonth(nextMonth)
     setAttendanceDate(firstDateForMonth(nextMonth))
-    setAttendance(draft?.attendance || defaultPayslipAttendance(nextMonth))
-    setEmployeeAttendance(exceptionsFromRecords(draft?.employeeRecords))
+    setAttendance(cached?.attendance || draft?.attendance || defaultPayslipAttendance(nextMonth))
+    setEmployeeAttendance(cached?.employeeAttendance || exceptionsFromRecords(draft?.employeeRecords))
     setExcludedEmployeeIds([])
     resetPreview()
     clearMessages()
@@ -137,23 +142,24 @@ export function AttendancePage() {
     resetPreview()
   }
   const setDailyStatus = (employeeId: string, date: string, status: AttendanceDayStatus | "") => {
+    if (!canManage || savingAttendance || existingEmployeeIds.has(employeeId) || !entityEmployees.some((employee) => employee.id === employeeId) || !date.startsWith(`${month}-`) || weeklyOffDates.has(date) || holidayDates.has(date)) return
     setEmployeeAttendance((current) => {
       const existing = current[employeeId] || blankAttendanceException(true)
       const records = (existing.dailyRecords || []).filter((record) => record.date !== date)
-      if (status) records.push({ date, status })
+      if (status) records.push({ ...existing.dailyRecords?.find((record) => record.date === date), date, status })
       return { ...current, [employeeId]: { ...existing, dailyRecords: records.sort((left, right) => left.date.localeCompare(right.date)) } }
     })
     resetPreview()
   }
   const markShownForDate = (status: AttendanceDayStatus | "") => {
-    if (!selectedDateIsWorking) return
+    if (!canManage || savingAttendance || !selectedDateIsWorking) return
     const employeesToMark = visibleEmployees.filter((employee) => !existingEmployeeIds.has(employee.id) && !excludedEmployeeIds.includes(employee.id))
     setEmployeeAttendance((current) => {
       const next = { ...current }
       for (const employee of employeesToMark) {
         const existing = next[employee.id] || blankAttendanceException(true)
         const records = (existing.dailyRecords || []).filter((record) => record.date !== attendanceDate)
-        if (status) records.push({ date: attendanceDate, status })
+        if (status) records.push({ ...existing.dailyRecords?.find((record) => record.date === attendanceDate), date: attendanceDate, status })
         next[employee.id] = { ...existing, dailyRecords: records.sort((left, right) => left.date.localeCompare(right.date)) }
       }
       return next
@@ -163,15 +169,14 @@ export function AttendancePage() {
   const validDailyRecordCount = (employeeId: string) => new Set((employeeAttendance[employeeId]?.dailyRecords || [])
     .filter((record) => record.date.startsWith(`${month}-`) && !weeklyOffDates.has(record.date) && !holidayDates.has(record.date))
     .map((record) => record.date)).size
-  const dailyStatusFor = (employeeId: string, date: string) => employeeAttendance[employeeId]?.dailyRecords?.find((record) => record.date === date)?.status || ""
   const attendanceForEmployee = (employeeId: string): Partial<PayslipAttendance> => {
     const exception = employeeAttendance[employeeId] || blankAttendanceException(attendanceMode === "daily")
     return attendanceMode === "daily"
       ? { ...attendance, dailyRecords: exception.dailyRecords || [] }
       : { ...attendance, halfDays: exception.halfDays, paidLeaveDays: exception.paidLeaveDays, unpaidLeaveDays: exception.unpaidLeaveDays, dailyRecords: undefined }
   }
-  const saveDailyAttendance = async () => {
-    if (!selectedEntityId) return
+  const saveDailyAttendance = async (records = employeeAttendance, rethrow = false) => {
+    if (!selectedEntityId || !canManage || savingAttendance) return
     setSavingAttendance(true)
     clearMessages()
     try {
@@ -179,15 +184,42 @@ export function AttendancePage() {
         entityId: selectedEntityId,
         month,
         attendance,
-        employeeRecords: Object.fromEntries(Object.entries(employeeAttendance).map(([employeeId, exception]) => [employeeId, exception.dailyRecords || []])),
+        employeeRecords: Object.fromEntries(Object.entries(records).map(([employeeId, exception]) => [employeeId, exception.dailyRecords || []])),
         updatedAt: new Date().toISOString(),
       })
       setNotice(`Daily attendance for ${formatSalaryMonth(month)} was saved to your workspace.`)
     } catch (caught) {
       setError(customerErrorMessage(caught, "Daily attendance could not be saved."))
+      if (rethrow) throw caught
     } finally {
       setSavingAttendance(false)
     }
+  }
+  const dataForMonth = (period: string) => {
+    const draft = setup?.attendanceDrafts?.[`${selectedEntityId}:${period}`]
+    const cached = monthCache.current.get(period)
+    const calendar = period === month ? attendance : cached?.attendance || draft?.attendance || defaultPayslipAttendance(period)
+    const exceptions = period === month ? employeeAttendance : cached?.employeeAttendance || exceptionsFromRecords(draft?.employeeRecords)
+    const records = Object.fromEntries(entityEmployees.map((employee) => {
+      const savedPayslip = payslips.find((item) => item.entityId === selectedEntityId && item.employeeId === employee.id && item.month === period)
+      return [employee.id, savedPayslip?.attendance?.dailyRecords || exceptions[employee.id]?.dailyRecords || []]
+    }))
+    return { calendar, records }
+  }
+  const changeDate = (date: string) => {
+    if (savingAttendance || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return
+    changeMonth(date.slice(0, 7))
+    setAttendanceDate(date)
+    clearMessages()
+  }
+  const saveQuickEntry = async (employeeId: string, record: AttendanceDayRecord) => {
+    if (!canManage || savingAttendance || !entityEmployees.some((employee) => employee.id === employeeId) || existingEmployeeIds.has(employeeId) || !record.date.startsWith(`${month}-`) || weeklyOffDates.has(record.date) || holidayDates.has(record.date)) throw new Error("This attendance entry cannot be changed.")
+    const existing = employeeAttendance[employeeId] || blankAttendanceException(true)
+    const next = { ...employeeAttendance, [employeeId]: { ...existing, dailyRecords: [...(existing.dailyRecords || []).filter((item) => item.date !== record.date), record].sort((a, b) => a.date.localeCompare(b.date)) } }
+    await saveDailyAttendance(next, true)
+    setEmployeeAttendance(next)
+    setAttendanceMode("daily")
+    resetPreview()
   }
   const attendanceExportInput = (): AttendanceExportInput | null => {
     if (!selectedEntity) return null
@@ -341,15 +373,15 @@ export function AttendancePage() {
       <PageHeader
         eyebrow="Payroll"
         title="Attendance"
-        description="Maintain monthly attendance for every employee and generate leave-adjusted payslips from one register."
+        description="Mark attendance, browse each employee’s monthly record, or select a date to see who was present."
         actions={<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("excel")}><FileSpreadsheet />{exportingAttendance === "excel" ? "Preparing Excel…" : "Download Excel"}</Button><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("pdf")}><Download />{exportingAttendance === "pdf" ? "Preparing PDF…" : "Download PDF"}</Button><Button variant="outline" asChild><Link to="/employees"><Users />Employees & payslips</Link></Button></div>}
       />
 
       {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Document credits:</strong> {payslipAllowance.remaining} remaining for invoices or payslips. Quotations use a separate balance. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only payroll access. Attendance changes and payslip generation require payroll management permission.</p> : null}
-      {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-      {notice ? <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p> : null}
+      {error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
+      {notice ? <p role="status" className="rounded-lg border bg-primary/5 p-3 text-sm text-foreground">{notice}</p> : null}
 
       <Card>
         <CardHeader><CardTitle>Attendance period</CardTitle><CardDescription>Select the employing entity and salary month before recording attendance.</CardDescription></CardHeader>
@@ -360,45 +392,29 @@ export function AttendancePage() {
         </CardContent>
       </Card>
 
-      <AttendanceEditor month={month} value={attendance} onChange={(next) => { setAttendance(next); resetPreview() }} showExceptions={false} title="Monthly work calendar" description="Set weekly offs and public holidays once; they apply to every employee in this register." />
+      <AttendanceOverview
+        employees={entityEmployees} month={month} date={attendanceDate} search={search}
+        canManage={canManage} saving={savingAttendance} dataForMonth={dataForMonth}
+        onMonth={changeMonth} onDate={changeDate} onSearch={setSearch}
+        isLocked={(employeeId) => existingEmployeeIds.has(employeeId)}
+        onSave={saveQuickEntry} onClear={(employeeId, date) => setDailyStatus(employeeId, date, "")}
+        onSaveAll={() => void saveDailyAttendance()} onMarkAll={() => markShownForDate("present")}
+      />
 
-      <Card>
-        <CardHeader><CardTitle>How do you want to record attendance?</CardTitle><CardDescription>Use daily marking for an HR-managed register, or monthly totals for faster payroll entry.</CardDescription></CardHeader>
-        <CardContent className="space-y-5">
+      <details className="rounded-xl border bg-card p-4">
+        <summary className="cursor-pointer font-semibold">Work calendar & payroll entry settings</summary>
+        <div className="mt-4 space-y-4">
+          <fieldset disabled={!canManage || savingAttendance}><AttendanceEditor month={month} value={attendance} onChange={(next) => { setAttendance(next); resetPreview() }} showExceptions={false} title="Monthly work calendar" description="Set weekly offs and public holidays once; they apply to every employee in this register." /></fieldset>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Button type="button" variant={attendanceMode === "daily" ? "default" : "outline"} className="h-auto justify-start p-4 text-left" onClick={() => { setAttendanceMode("daily"); resetPreview(); clearMessages() }}>
-              <span><span className="block font-semibold">Daily marking</span><span className="mt-1 block text-xs opacity-75">HR marks every employee as present, half-day, paid leave, or absent.</span></span>
+            <Button type="button" variant={attendanceMode === "daily" ? "default" : "outline"} aria-pressed={attendanceMode === "daily"} className="h-auto justify-start p-4 text-left" onClick={() => { setAttendanceMode("daily"); resetPreview(); clearMessages() }}>
+              <span><span className="block font-semibold">Daily marking</span><span className="mt-1 block text-xs opacity-75">Calculate payroll from the attendance grid.</span></span>
             </Button>
-            <Button type="button" variant={attendanceMode === "monthly" ? "default" : "outline"} className="h-auto justify-start p-4 text-left" onClick={() => { setAttendanceMode("monthly"); resetPreview(); clearMessages() }}>
-              <span><span className="block font-semibold">Monthly totals</span><span className="mt-1 block text-xs opacity-75">Enter total half-days and leave directly for each employee.</span></span>
+            <Button type="button" variant={attendanceMode === "monthly" ? "default" : "outline"} aria-pressed={attendanceMode === "monthly"} className="h-auto justify-start p-4 text-left" onClick={() => { setAttendanceMode("monthly"); resetPreview(); clearMessages() }}>
+              <span><span className="block font-semibold">Monthly totals</span><span className="mt-1 block text-xs opacity-75">Enter total half-days and leave for payroll below. These totals do not create daily attendance entries.</span></span>
             </Button>
           </div>
-
-          {attendanceMode === "daily" ? <div className="space-y-4 rounded-lg border p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-2"><Label htmlFor="daily-attendance-date">Attendance date</Label><Input id="daily-attendance-date" className="w-full sm:w-56" type="date" min={`${month}-01`} max={lastDateForMonth(month)} value={attendanceDate} onChange={(event) => { setAttendanceDate(event.target.value); clearMessages() }} /></div>
-              {canManage ? <div className="flex flex-wrap gap-2">{selectedDateIsWorking ? <><Button type="button" variant="outline" onClick={() => markShownForDate("")}>Clear shown date</Button><Button type="button" variant="outline" onClick={() => markShownForDate("present")}><CalendarCheck2 />Mark all shown present</Button></> : null}<Button type="button" disabled={savingAttendance} onClick={() => void saveDailyAttendance()}>{savingAttendance ? "Saving attendance…" : "Save attendance"}</Button></div> : null}
-            </div>
-            {!selectedDateIsWorking ? <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{selectedDateHoliday ? `${selectedDateHoliday.name} is a public holiday.` : selectedDateIsWeeklyOff ? "This date is a weekly off." : "Select a date within the attendance month."} No employee marking is required.</p> : null}
-            <div className="max-h-96 overflow-auto rounded-md border">
-              <Table>
-                <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead className="w-64">Status for {attendanceDate}</TableHead><TableHead>Present this month</TableHead></TableRow></TableHeader>
-                <TableBody>{visibleEmployees.length ? visibleEmployees.map((employee) => {
-                  const alreadyExists = existingEmployeeIds.has(employee.id)
-                  const checked = !alreadyExists && !excludedEmployeeIds.includes(employee.id)
-                  const marked = validDailyRecordCount(employee.id)
-                  const presentDays = dailyPresentDays(employeeAttendance[employee.id]?.dailyRecords || [])
-                  return <TableRow key={`daily-${employee.id}`} className={alreadyExists || !checked ? "opacity-60" : undefined}>
-                    <TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></TableCell>
-                    <TableCell>{selectedDateIsWorking ? <select aria-label={`Attendance status for ${employee.employeeName}`} className={selectClass} disabled={!canManage || !checked} value={dailyStatusFor(employee.id, attendanceDate)} onChange={(event) => setDailyStatus(employee.id, attendanceDate, event.target.value as AttendanceDayStatus | "")}><option value="">Not marked</option><option value="present">Present</option><option value="half_day">Half-day</option><option value="paid_leave">Paid leave</option><option value="unpaid_leave">Absent / unpaid leave</option></select> : <Badge variant="secondary">No marking required</Badge>}</TableCell>
-                    <TableCell><span className={marked === calendarSummary.workingDays ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>{presentDays} / {calendarSummary.workingDays}</span>{alreadyExists ? <p className="text-xs text-muted-foreground">Payslip exists</p> : null}</TableCell>
-                  </TableRow>
-                }) : <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No employees match this search.</TableCell></TableRow>}</TableBody>
-              </Table>
-            </div>
-          </div> : null}
-        </CardContent>
-      </Card>
+        </div>
+      </details>
 
       <Card>
         <CardHeader><CardTitle>Employee attendance register</CardTitle><CardDescription>{attendanceMode === "daily" ? "Present days and leave are calculated automatically from HR's daily markings." : "Present days are calculated automatically from working days after half-days and leave are entered."}</CardDescription></CardHeader>
@@ -408,7 +424,6 @@ export function AttendancePage() {
               <div><p className="font-medium">{selectedCount} of {eligibleEmployees.length} eligible employees selected</p><p className="text-sm text-muted-foreground">Employees with an existing {formatSalaryMonth(month)} payslip are locked.</p></div>
               {canManage ? <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { const ids = new Set(visibleEmployees.map((employee) => employee.id)); setExcludedEmployeeIds((current) => current.filter((id) => !ids.has(id))); resetPreview() }}>Select shown</Button><Button size="sm" variant="outline" onClick={() => { setExcludedEmployeeIds((current) => [...new Set([...current, ...visibleEmployees.map((employee) => employee.id)])]); resetPreview() }}>Deselect shown</Button></div> : null}
             </div>
-            <Input aria-label="Search attendance employees" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search employee name, code, designation, or department…" />
           </div>
           <div className="max-h-[520px] overflow-auto [content-visibility:auto]">
             <Table>

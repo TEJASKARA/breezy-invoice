@@ -98,7 +98,7 @@ export type Proforma = Invoice & { entityId: string; validUntil?: string; conver
 export type PayrollComponent = { id: string; label: string; amount: number }
 export type AttendanceHoliday = { id: string; date: string; name: string }
 export type AttendanceDayStatus = "present" | "half_day" | "paid_leave" | "unpaid_leave"
-export type AttendanceDayRecord = { date: string; status: AttendanceDayStatus }
+export type AttendanceDayRecord = { date: string; status: AttendanceDayStatus; time?: string; remark?: string }
 export type PayslipAttendance = {
   saturdayWeeklyOff: boolean
   sundayWeeklyOff: boolean
