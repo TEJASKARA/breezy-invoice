@@ -22,6 +22,14 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - name: Verify one-time welcome email claims
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: test-only
+        run: |
+          createdb chanax_welcome_tests
+          psql -d chanax_welcome_tests -v ON_ERROR_STOP=1 -f supabase/tests/welcome_emails.sql
       - name: Exercise company transfers in a disposable database
         env:
           PGHOST: localhost

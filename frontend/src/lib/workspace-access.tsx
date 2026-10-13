@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { User } from "@supabase/supabase-js"
 
 import { supabase } from "@/lib/supabase"
+import { createWelcomeRequester } from "@/lib/welcome-email"
 import {
   allowsWorkspacePermission,
   loadWorkspaceAccess,
@@ -32,6 +33,15 @@ type WorkspaceAccessState = {
 }
 
 const WorkspaceAccessContext = createContext<WorkspaceAccessState | null>(null)
+const requestWelcome = createWelcomeRequester(String(import.meta.env.VITE_API_URL || ""), {
+  getSession: async () => {
+    if (!supabase) return null
+    const { data } = await supabase.auth.getSession()
+    return data.session
+  },
+  fetch: (...args) => fetch(...args),
+  now: () => Date.now(),
+})
 
 export function WorkspaceAccessProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -90,6 +100,9 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   }, [hydrate])
 
   const refresh = useCallback(async () => { await hydrate(user) }, [hydrate, user])
+  useEffect(() => {
+    if (!loading && !error && user?.email_confirmed_at) void requestWelcome(user.id)
+  }, [loading, error, user?.id, user?.email_confirmed_at])
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     if (!user) return
     await hydrate(user, workspaceId)

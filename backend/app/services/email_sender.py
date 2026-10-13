@@ -104,6 +104,8 @@ async def _send_with_resend_api(
     filename: str = "",
     pdf: bytes = b"",
     attachments: list[Attachment] | None = None,
+    html: str | None = None,
+    idempotency_key: str | None = None,
 ) -> None:
     files = _attachments(filename, pdf, attachments)
     sender = formataddr((settings.smtp_from_name, settings.smtp_from_email))
@@ -114,12 +116,14 @@ async def _send_with_resend_api(
                 headers={
                     "Authorization": f"Bearer {settings.smtp_password}",
                     "Content-Type": "application/json",
+                    **({"Idempotency-Key": idempotency_key} if idempotency_key else {}),
                 },
                 json={
                     "from": sender,
                     "to": [to_email],
                     "subject": subject,
                     "text": message,
+                    **({"html": html} if html else {}),
                     **(
                         {
                             "attachments": [

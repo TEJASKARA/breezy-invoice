@@ -12,6 +12,7 @@
     "test:pdf": "node --test tests/invoice-pdf.test.mjs",
     "test:payslip": "node --test tests/payslip-page-breaks.test.mjs",
     "test:attendance": "node --test tests/attendance-view.test.mjs",
+    "test:welcome": "node --test tests/welcome-email.test.mjs",
     "test:replacement": "node --test tests/invoice-replacement.test.mjs tests/company-updates.test.mjs",
     "test:entities": "node --test tests/entity-selection.test.mjs",
     "test:ca": "node --test tests/ca-invitation-session.test.mjs",

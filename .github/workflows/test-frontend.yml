@@ -26,6 +26,7 @@ jobs:
       - run: npm run test:pdf
       - run: npm run test:payslip
       - run: npm run test:attendance
+      - run: npm run test:welcome
       - run: npm run test:replacement
       - run: npm run test:entities
       - run: npm run test:ca
