@@ -43,6 +43,7 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
   let membershipResult = await membershipQuery.order("created_at").limit(1).maybeSingle()
   throwIfError(membershipResult.error)
   if (!membershipResult.data?.workspace_id) {
+    if (preferredWorkspaceId) throw new Error("This workspace is no longer available. Select another workspace or sign in again.")
     const profileResult = await db.from("profiles").select("account_type").eq("id", userId).maybeSingle()
     throwIfError(profileResult.error)
     if (profileResult.data?.account_type === "ca") return null

@@ -3,7 +3,66 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.config import Settings
-from app.services.supabase_gateway import SupabaseGateway
+from app.services.supabase_gateway import (
+    GstRegistrationConflict,
+    SupabaseGateway,
+    SupabaseGatewayError,
+)
+
+
+@pytest.mark.asyncio
+async def test_gst_check_is_bound_to_requested_workspace_and_does_not_reject_true():
+    gateway = SupabaseGateway(Settings())
+    gateway.user_rpc = AsyncMock(return_value=True)
+    await gateway.assert_gstin_available("token", "owner-workspace", " GSTIN ")
+    gateway.user_rpc.assert_awaited_once_with(
+        "token",
+        "breezy_is_gstin_available",
+        {"target_workspace_id": "owner-workspace", "target_gstin": "GSTIN"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_bad_gst_rpc_response_is_not_reported_as_a_duplicate():
+    gateway = SupabaseGateway(Settings())
+    gateway.user_rpc = AsyncMock(return_value=None)
+    with pytest.raises(SupabaseGatewayError, match="temporarily unavailable"):
+        await gateway.assert_gstin_available("token", "workspace", "GSTIN")
+
+
+@pytest.mark.asyncio
+async def test_gst_conflict_hint_discloses_only_another_owned_workspace():
+    gateway = SupabaseGateway(Settings())
+    gateway.user_rpc = AsyncMock(return_value=False)
+    gateway._get = AsyncMock(
+        side_effect=[
+            [{"id": "owner-workspace", "name": "Aakash Reddy"}],
+            [
+                {
+                    "workspace_id": "owner-workspace",
+                    "setup": {"gstin": "36ACJFA4386L1ZW"},
+                }
+            ],
+            [],
+        ]
+    )
+    with pytest.raises(GstRegistrationConflict, match="Aakash Reddy"):
+        await gateway.assert_gstin_available(
+            "token", "client-workspace", "36ACJFA4386L1ZW", user_id="owner-id"
+        )
+    assert gateway._get.call_args_list[0].args[1]["owner_user_id"] == "eq.owner-id"
+
+
+@pytest.mark.asyncio
+async def test_other_users_gst_conflict_does_not_expose_private_workspace_names():
+    gateway = SupabaseGateway(Settings())
+    gateway.user_rpc = AsyncMock(return_value=False)
+    gateway._get = AsyncMock(return_value=[])
+    with pytest.raises(GstRegistrationConflict, match="already registered in ChanaX"):
+        await gateway.assert_gstin_available(
+            "token", "client-workspace", "36ACJFA4386L1ZW", user_id="other-user"
+        )
+    assert gateway._get.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -43,6 +102,7 @@ async def test_employee_letter_email_must_match_saved_letter_and_employee() -> N
 
     assert gateway._get.await_count == 2
 
+
 @pytest.mark.asyncio
 async def test_special_credit_grant_records_platform_admin_actor() -> None:
     gateway = SupabaseGateway(Settings())
@@ -75,9 +135,7 @@ async def test_admin_workspace_search_accepts_email_or_subscription_code() -> No
         return_value=[{"workspace_id": "workspace-id"}]
     )
 
-    result = await gateway.admin_workspaces_by_identifier(
-        " owner@example.com "
-    )
+    result = await gateway.admin_workspaces_by_identifier(" owner@example.com ")
 
     assert result == [{"workspace_id": "workspace-id"}]
     gateway.service_rpc.assert_awaited_once_with(

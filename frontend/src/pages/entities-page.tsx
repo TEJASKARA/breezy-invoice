@@ -12,7 +12,6 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { verifyGstin } from "@/lib/gst-api"
 import { type Company, type Setup, formatInvoiceNumber, useMvpStore } from "@/lib/mvp-store"
-import { useAuthUser } from "@/lib/use-auth-user"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 type EntityForm = Omit<Company, "id">
@@ -47,15 +46,14 @@ const hasFormData = (form: EntityForm) => [
 ].some((value) => value.trim()) || Boolean(form.hsnSacCodes?.length)
 
 export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: boolean; onCreated?: (name: string) => void } = {}) {
-  const { setup, companies, addCompanies, updateCompany, deleteCompany } = useMvpStore()
+  const { setup, companies, addCompanies, updateCompany, deleteCompany, loading: dataLoading } = useMvpStore()
   const blankForm = () => newCompanyForm(setup, companies.length)
   const blankFormRef = useRef(blankForm)
   blankFormRef.current = blankForm
   const continuesSignupSequence = companies.length === 0 && setup?.invoiceNumbering?.mode === "continue"
-  const { user } = useAuthUser()
-  const { can, workspace, membership } = useWorkspaceAccess()
+  const { user, can, workspace, membership, loading: accessLoading } = useWorkspaceAccess()
   const [transferCompany, setTransferCompany] = useState<Company | null>(null)
-  const canManage = can("entities.manage")
+  const canManage = !accessLoading && !dataLoading && membership?.workspace_id === workspace?.id && can("entities.manage")
   const [showForm, setShowForm] = useState(initialAdd)
   const [form, setForm] = useState(blankForm)
   const [draftReady, setDraftReady] = useState(false)
@@ -71,6 +69,10 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
   const [hsnEditCodes, setHsnEditCodes] = useState<string[]>([])
   const [hsnEditInput, setHsnEditInput] = useState("")
   const draftStorageKey = user && workspace ? `chanax.entity-draft:${user.id}:${workspace.id}` : null
+  const requestContext = useRef({ workspaceId: workspace?.id, userId: user?.id, gstin: form.gstin })
+  requestContext.current = { workspaceId: workspace?.id, userId: user?.id, gstin: form.gstin }
+  const gstRequest = useRef<AbortController | null>(null)
+  useEffect(() => () => gstRequest.current?.abort(), [])
 
   useEffect(() => {
     if (!draftStorageKey) return
@@ -117,7 +119,7 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
 
   const fetchGstDetails = async () => {
     const gstin = form.gstin.trim().toUpperCase()
-    if (!workspace?.id) {
+    if (!workspace?.id || !canManage || !user) {
       setNoticeIsError(true)
       setNotice("Your workspace is still loading. Please try again.")
       return
@@ -129,8 +131,14 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
     }
     setVerifyingGstin(true)
     setNotice("")
+    gstRequest.current?.abort()
+    const controller = new AbortController()
+    gstRequest.current = controller
+    const scope = { workspaceId: workspace.id, userId: user.id, gstin: form.gstin }
+    const isCurrent = () => !controller.signal.aborted && Object.entries(scope).every(([key, value]) => requestContext.current[key as keyof typeof scope] === value)
     try {
-      const details = await verifyGstin(gstin, workspace.id)
+      const details = await verifyGstin(gstin, workspace.id, { signal: controller.signal, userId: user.id })
+      if (!isCurrent()) return
       setForm((current) => ({
         ...current,
         gstin: details.gstin,
@@ -142,10 +150,11 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
       setNoticeIsError(false)
       setNotice(`GST details verified with WhiteBooks${details.cached ? " using saved data" : ""}.`)
     } catch (error) {
+      if (!isCurrent()) return
       setNoticeIsError(true)
       setNotice(customerErrorMessage(error, "GSTIN verification failed."))
     } finally {
-      setVerifyingGstin(false)
+      if (gstRequest.current === controller) setVerifyingGstin(false)
     }
   }
 
@@ -161,6 +170,7 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
   }
 
   const save = async () => {
+    if (!canManage) { setNoticeIsError(true); setNotice("Wait for the selected workspace to finish loading before adding an entity."); return }
     const gstin = form.gstin.toUpperCase().trim()
     const pan = form.pan.toUpperCase().trim()
     if (!form.companyName.trim()) {
@@ -256,6 +266,8 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
           canManage ? <Button onClick={() => setShowForm((value) => !value)}><Plus />Add entity</Button> : null
         }
       />
+
+      <p className="rounded-lg border bg-muted/30 p-3 text-sm">Adding entities to workspace: <strong>{workspace?.name || "Loading…"}</strong>. GST verification and saved entities use this workspace.</p>
 
       <EntityTransferRequests />
       {transferCompany ? <EntityTransferForm company={transferCompany} onClose={() => setTransferCompany(null)} /> : null}

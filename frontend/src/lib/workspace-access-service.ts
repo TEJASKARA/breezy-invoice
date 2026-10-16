@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js"
 
 import { supabase } from "@/lib/supabase"
 import { friendlyWorkspaceError } from "@/lib/workspace-errors"
+import { selectWorkspaceMembership } from "@/lib/workspace-context"
 
 export type WorkspaceRole = "owner" | "admin" | "hr" | "accountant" | "viewer" | "custom"
 export type WorkspacePermission =
@@ -135,7 +136,7 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
   }
   const memberships = (membershipsResult.data || []) as WorkspaceMembership[]
   if (!memberships.length) return { membership: null, workspace: null, subscription: null, creditAccount: null, workspaceOptions: [], userProfile }
-  const membership = memberships.find((item) => item.workspace_id === preferredWorkspaceId) || memberships.at(-1)!
+  const membership = selectWorkspaceMembership(memberships, preferredWorkspaceId)!
 
   const workspacesResult = await supabase
     .from("breezy_workspaces")

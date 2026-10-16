@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import httpx
@@ -7,6 +8,17 @@ from app.core.config import Settings
 
 class SupabaseGatewayError(RuntimeError):
     pass
+
+
+class GstRegistrationConflict(SupabaseGatewayError):
+    pass
+
+
+class GstVerificationUnavailable(SupabaseGatewayError):
+    pass
+
+
+logger = logging.getLogger(__name__)
 
 
 GSTIN_ALREADY_REGISTERED_MESSAGE = "This GST number is already registered in ChanaX."
@@ -219,7 +231,11 @@ class SupabaseGateway:
             )
 
     async def assert_gstin_available(
-        self, access_token: str, workspace_id: str, gstin: str
+        self,
+        access_token: str,
+        workspace_id: str,
+        gstin: str,
+        user_id: str | None = None,
     ) -> None:
         result = await self.user_rpc(
             access_token,
@@ -229,8 +245,81 @@ class SupabaseGateway:
                 "target_gstin": gstin.strip().upper(),
             },
         )
+        if result is False:
+            logger.warning(
+                "GST registration conflict user_id=%s workspace_id=%s gstin_suffix=%s",
+                user_id,
+                workspace_id,
+                gstin[-4:],
+            )
+            hint = None
+            if user_id:
+                try:
+                    hint = await self._owned_gstin_workspace(
+                        user_id, workspace_id, gstin
+                    )
+                except (SupabaseGatewayError, httpx.HTTPError):
+                    logger.warning("GST workspace hint lookup unavailable")
+            if hint:
+                raise GstRegistrationConflict(
+                    f"This GSTIN belongs to your workspace “{hint}”. "
+                    "Select that workspace before adding this entity."
+                )
+            raise GstRegistrationConflict(GSTIN_ALREADY_REGISTERED_MESSAGE)
         if result is not True:
-            raise SupabaseGatewayError(GSTIN_ALREADY_REGISTERED_MESSAGE)
+            logger.error(
+                "Invalid GST availability response workspace_id=%s", workspace_id
+            )
+            raise GstVerificationUnavailable(
+                "GST verification is temporarily unavailable. Please try again."
+            )
+
+    async def _owned_gstin_workspace(
+        self, user_id: str, current_workspace_id: str, gstin: str
+    ) -> str | None:
+        """Disclose names only for other workspaces owned by this signed-in user."""
+        owned = await self._get(
+            "breezy_workspaces",
+            {
+                "select": "id,name",
+                "owner_user_id": f"eq.{user_id}",
+                "status": "eq.active",
+            },
+        )
+        names = {
+            str(row["id"]): str(row.get("name") or "your company")
+            for row in owned
+            if str(row["id"]) != current_workspace_id
+        }
+        if not names:
+            return None
+        scope = f"in.({','.join(names)})"
+        settings = await self._get(
+            "breezy_workspace_settings",
+            {
+                "select": "workspace_id,setup",
+                "workspace_id": scope,
+            },
+        )
+        entities = await self._get(
+            "breezy_entities",
+            {
+                "select": "workspace_id,payload",
+                "workspace_id": scope,
+                "transferred_at": "is.null",
+            },
+        )
+        for row in settings + entities:
+            payload = row.get("setup") or row.get("payload") or {}
+            if (
+                isinstance(payload, dict)
+                and str(payload.get("gstin") or "").strip().upper()
+                == gstin.strip().upper()
+            ):
+                name = names.get(str(row.get("workspace_id")))
+                if name:
+                    return " ".join(name.split())[:120]
+        return None
 
     async def create_payment_order(
         self,

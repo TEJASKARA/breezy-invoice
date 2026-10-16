@@ -1,11 +1,16 @@
 import re
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
 from app.core.config import Settings, get_settings
 from app.schemas.gst import GstVerificationResponse
-from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
+from app.services.supabase_gateway import (
+    GstRegistrationConflict,
+    GstVerificationUnavailable,
+    SupabaseGateway,
+    SupabaseGatewayError,
+)
 from app.services.whitebooks import (
     WhiteBooksConfigurationError,
     WhiteBooksRequestError,
@@ -120,11 +125,13 @@ def _invalid_payload_message(payload: dict[str, Any]) -> str:
 
 @router.get("/verify", response_model=GstVerificationResponse)
 async def verify_gstin(
+    response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str, Header()],
     gstin: str = Query(min_length=15, max_length=15),
     workspace_id: str = Query(min_length=36, max_length=36),
 ) -> GstVerificationResponse:
+    response.headers["Cache-Control"] = "private, no-store"
     normalized_gstin = gstin.strip().upper()
     if not GSTIN_PATTERN.fullmatch(normalized_gstin):
         raise HTTPException(
@@ -135,12 +142,12 @@ async def verify_gstin(
     gateway = SupabaseGateway(settings)
     try:
         access_token = _bearer_token(authorization)
-        await gateway.authenticated_user(access_token)
+        user = await gateway.authenticated_user(access_token)
         await gateway.assert_workspace_permission(
             access_token, workspace_id, "entities.manage"
         )
         await gateway.assert_gstin_available(
-            access_token, workspace_id, normalized_gstin
+            access_token, workspace_id, normalized_gstin, user_id=str(user["id"])
         )
         data = await gateway.cached_gstin(normalized_gstin)
         cached = data is not None
@@ -186,6 +193,16 @@ async def verify_gstin(
         workspace_verified = await gateway.verify_workspace_gstin(
             workspace_id, normalized_gstin
         )
+    except GstVerificationUnavailable as exc:
+        raise HTTPException(
+            503, str(exc), headers={"Cache-Control": "private, no-store"}
+        ) from exc
+    except GstRegistrationConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+            headers={"Cache-Control": "private, no-store"},
+        ) from exc
     except SupabaseGatewayError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -200,6 +217,7 @@ async def verify_gstin(
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     return GstVerificationResponse(
+        workspace_id=workspace_id,
         gstin=normalized_gstin,
         pan=normalized_gstin[2:12],
         cached=cached,

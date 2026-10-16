@@ -1,10 +1,11 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { setErrorWorkspace } from "@/lib/error-reporting"
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import type { User } from "@supabase/supabase-js"
 
 import { supabase } from "@/lib/supabase"
 import { createWelcomeRequester } from "@/lib/welcome-email"
+import { createWorkspaceLoadGuard } from "@/lib/workspace-context"
 import {
   allowsWorkspacePermission,
   loadWorkspaceAccess,
@@ -53,8 +54,16 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   const [userProfile, setUserProfile] = useState<UserWorkspaceProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const loadGuard = useRef(createWorkspaceLoadGuard())
+  const identity = useRef<string | null>(null)
 
   const hydrate = useCallback(async (nextUser: User | null, preferredWorkspaceId?: string | null) => {
+    const isCurrent = loadGuard.current.begin()
+    if (identity.current !== (nextUser?.id ?? null)) {
+      identity.current = nextUser?.id ?? null
+      setWorkspace(null); setMembership(null); setSubscription(null)
+      setCreditAccount(null); setWorkspaceOptions([]); setUserProfile(null)
+    }
     setUser(nextUser)
     if (!nextUser) {
       setErrorWorkspace(null)
@@ -71,9 +80,11 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
     setLoading(true)
     try {
       const storageKey = `chanax-active-workspace:${nextUser.id}`
-      const preferred = preferredWorkspaceId ?? window.localStorage.getItem(storageKey)
-      setErrorWorkspace(preferred)
+      let preferred = preferredWorkspaceId
+      if (!preferred) { try { preferred = window.localStorage.getItem(storageKey) || undefined } catch { /* Use the deterministic default when storage is unavailable. */ } }
+      setErrorWorkspace(preferred ?? null)
       const next = await loadWorkspaceAccess(nextUser, preferred)
+      if (!isCurrent()) return
       setErrorWorkspace(next.workspace?.id ?? null)
       setWorkspace(next.workspace)
       setMembership(next.membership)
@@ -81,12 +92,13 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setCreditAccount(next.creditAccount)
       setWorkspaceOptions(next.workspaceOptions)
       setUserProfile(next.userProfile)
-      if (next.workspace?.id) window.localStorage.setItem(storageKey, next.workspace.id)
+      if (next.workspace?.id) { try { window.localStorage.setItem(storageKey, next.workspace.id) } catch { /* The selected workspace remains valid in memory. */ } }
       setError(null)
     } catch (accessError) {
+      if (!isCurrent()) return
       setError(customerErrorMessage(accessError, "Workspace access could not be loaded."))
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }, [])
 
@@ -96,7 +108,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       queueMicrotask(() => void hydrate(session?.user ?? null))
     })
-    return () => data.subscription.unsubscribe()
+    return () => { loadGuard.current.invalidate(); data.subscription.unsubscribe() }
   }, [hydrate])
 
   const refresh = useCallback(async () => { await hydrate(user) }, [hydrate, user])

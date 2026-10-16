@@ -3,6 +3,7 @@ import { assertInvoiceTaxMode, type GstTaxMode } from "@/lib/invoice-gst"
 import { invoiceReplacementSaveOrder, localDateFromTimestamp, replacementInvoiceCompany } from "@/lib/invoice-replacement"
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { useWorkspaceAccess } from "@/lib/workspace-access"
 import {
   deleteCompanyRow,
   deleteCustomerRow,
@@ -572,6 +573,10 @@ function readState(storageKey: string): MvpState {
 }
 
 export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
+  const { user: accessUser, workspace: accessWorkspace, loading: accessLoading, workspaceOptions } = useWorkspaceAccess()
+  const selectedWorkspaceId = accessWorkspace?.id || null
+  const selectedUserId = accessUser?.id || null
+  const canImportLegacyCache = accessWorkspace?.owner_user_id === selectedUserId && workspaceOptions.length === 1
   const [state, setState] = useState<MvpState>(emptyState)
   const [storageKey, setStorageKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -581,6 +586,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
   const userIdRef = useRef<string | null>(null)
   const workspaceIdRef = useRef<string | null>(null)
   const loadSequence = useRef(0)
+  const loadedWorkspace = useRef<string | null>(null)
   const persistenceQueue = useRef<Promise<void>>(Promise.resolve())
 
   const commit = (next: MvpState) => {
@@ -619,12 +625,17 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     setSyncError(null)
     const task = persistenceQueue.current
       .catch(() => undefined)
-      .then(async () => { await operation(userId, workspaceId) })
+      .then(async () => {
+        if (userIdRef.current !== userId || workspaceIdRef.current !== workspaceId) throw new Error("Your workspace selection changed. Please try again in the selected workspace.")
+        await operation(userId, workspaceId)
+      })
     persistenceQueue.current = task
     try {
       await task
+      if (userIdRef.current !== userId || workspaceIdRef.current !== workspaceId) throw new Error("Your workspace selection changed. Please try again in the selected workspace.")
       setSyncStatus("synced")
     } catch (error) {
+      if (userIdRef.current !== userId || workspaceIdRef.current !== workspaceId) throw error
       const message = customerErrorMessage(error, "We couldn’t save this change. Please try again.")
       setSyncStatus("error")
       setSyncError(message)
@@ -633,6 +644,18 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Account selection is the sole authority. Never choose another membership
+    // independently while loading entity data or submitting writes.
+    const selectedSequence = ++loadSequence.current
+    if (accessLoading) {
+      if (workspaceIdRef.current !== selectedWorkspaceId || userIdRef.current !== selectedUserId) {
+        workspaceIdRef.current = null
+        setLoading(true)
+      }
+      return
+    }
+    const scope = selectedUserId && selectedWorkspaceId ? `${selectedUserId}:${selectedWorkspaceId}` : null
+    if (scope && loadedWorkspace.current === scope && workspaceIdRef.current === selectedWorkspaceId) return
     if (!supabase) {
       setLoading(false)
       setSyncStatus("local")
@@ -640,9 +663,10 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       return
     }
     const hydrate = async (userId: string | null) => {
-      const sequence = ++loadSequence.current
+      const sequence = selectedSequence
       userIdRef.current = userId
-      if (!userId) {
+      if (!userId || !selectedWorkspaceId) {
+        loadedWorkspace.current = null
         workspaceIdRef.current = null
         commit(emptyState())
         setStorageKey(null)
@@ -652,6 +676,8 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         return
       }
       setLoading(true)
+      workspaceIdRef.current = null
+      setStorageKey(null)
       setSyncStatus("loading")
       setSyncError(null)
       const userCacheKey = `breezyaccounts-mvp-data:${userId}`
@@ -659,18 +685,19 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const legacyData = localStorage.getItem(legacyStorageKey)
       const cachedState = hasOwnData ? readState(userCacheKey) : legacyData ? readState(legacyStorageKey) : emptyState()
       try {
-        const preferredWorkspaceId = window.localStorage.getItem(`chanax-active-workspace:${userId}`)
-        const remoteState = await loadWorkspace(userId, preferredWorkspaceId)
+        const remoteState = await loadWorkspace(userId, selectedWorkspaceId)
         if (sequence !== loadSequence.current) return
         if (remoteState) {
           const { workspaceId, hasData, ...workspaceData } = remoteState
+          if (workspaceId !== selectedWorkspaceId) throw new Error("Your workspace selection changed. Refresh the page and try again.")
           workspaceIdRef.current = workspaceId
           const workspaceCacheKey = `breezyinvoice-workspace:${workspaceId}`
-          const workspaceCache = localStorage.getItem(workspaceCacheKey) ? readState(workspaceCacheKey) : cachedState
+          const workspaceCache = localStorage.getItem(workspaceCacheKey) ? readState(workspaceCacheKey) : canImportLegacyCache ? cachedState : emptyState()
           if (hasData) commit(normalizeState(workspaceData))
           else {
             commit(workspaceCache)
             await saveFullWorkspace(userId, workspaceId, workspaceCache)
+            if (sequence !== loadSequence.current) return
           }
           setStorageKey(workspaceCacheKey)
         } else {
@@ -678,10 +705,12 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
           throw new Error("No active ChanaX workspace was found for this account.")
         }
         if (!hasOwnData && legacyData) localStorage.removeItem(legacyStorageKey)
+        loadedWorkspace.current = scope
         setSyncStatus("synced")
       } catch (error) {
         if (sequence !== loadSequence.current) return
-        commit(cachedState)
+        commit(emptyState())
+        workspaceIdRef.current = null
         setSyncStatus("error")
         setSyncError(customerErrorMessage(error, "We couldn’t load your workspace. Please try again."))
       } finally {
@@ -690,12 +719,9 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    void supabase.auth.getSession().then(({ data }) => hydrate(data.session?.user.id ?? null))
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      queueMicrotask(() => void hydrate(session?.user.id ?? null))
-    })
-    return () => data.subscription.unsubscribe()
-  }, [])
+    void hydrate(selectedUserId)
+    return () => { loadSequence.current += 1 }
+  }, [selectedWorkspaceId, selectedUserId, accessLoading, canImportLegacyCache])
   useEffect(() => { if (storageKey && !loading) localStorage.setItem(storageKey, JSON.stringify(state)) }, [state, storageKey, loading])
   const value = useMemo<MvpStore>(() => ({
     ...state,

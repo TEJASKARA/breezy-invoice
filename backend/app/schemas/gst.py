@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class GstVerificationResponse(BaseModel):
+    workspace_id: str
     gstin: str
     pan: str
     provider: str = "whitebooks"
