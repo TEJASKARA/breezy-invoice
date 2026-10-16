@@ -16,7 +16,7 @@ const renderer = (await readFile(new URL("../src/lib/invoice-pdf.ts", import.met
   .replace('import("jspdf")', `import(${JSON.stringify(pathToFileURL(require.resolve("jspdf")).href)})`)
 const { createInvoicePdf } = await import(moduleUrl(renderer))
 const elements = Object.fromEntries(["logo", "issuer", "invoiceTitle", "customer", "invoiceDetails", "lineItems", "totals", "terms", "signature"].map(id => [id, { visible: true, offsetX: 0, offsetY: 0, label: id === "invoiceTitle" ? "TAX INVOICE" : id }]))
-const template = { preset: "minimal", accentColor: "#2563EB", pageColor: "#FFFFFF", logoDataUrl: null, logoSize: 64, watermarkEnabled: false, watermarkText: "", watermarkOpacity: .1, showChanaxBranding: true, signatureDataUrl: null, signatureMode: "system", showTerms: true, termsText: "Payment due as agreed.", customTexts: [], fontStyle: "serif", compact: false, elements }
+const template = { preset: "minimal", accentColor: "#2563EB", pageColor: "#FFFFFF", logoDataUrl: null, logoSize: 64, watermarkEnabled: false, watermarkText: "", watermarkImageDataUrl: null, watermarkOpacity: .1, showChanaxBranding: true, signatureDataUrl: null, signatureMode: "system", showTerms: true, termsText: "Payment due as agreed.", showQuotationPaymentDetails: false, quotationPaymentDetails: "", quotationPaymentQrDataUrl: null, customTexts: [], fontStyle: "serif", compact: false, elements }
 const entity = { companyName: "AXIWATT GREENTECHNO PRIVATE LIMITED", billingAddress: "Sri Krishna Vihar, Temple Lane, Mythri Nagar, Hyderabad, Telangana 500049", hasGstin: true, gstin: "36ABCCA6762H1ZK", pan: "ABCCA6762H" }
 const customer = { companyName: "AXIGEAR AUTOVENTURE LLP", billingAddress: "Hafeezpet, Hyderabad, Telangana 500049", gstin: "36ACJFA4386L1ZW", pan: "ACJFA4386L" }
 const lineItems = [69600, 45935.6, 31336.44, 22619.5].map((amount, index) => ({ id: String(index), description: "Lithium-Ion Battery 60V,40Ah, Battery 2400w", hsnSac: "8507", quantity: index === 0 ? 2 : 1, unitPrice: amount / (index === 0 ? 2 : 1), taxableAmount: amount, cgstAmount: Math.round(amount * 9) / 100, sgstAmount: Math.round(amount * 9) / 100, igstAmount: 0 }))
@@ -41,4 +41,34 @@ test("non-GST invoices omit GST columns and quotation keeps mandatory notice", a
   assert(text(doc).includes("(INVOICE)"))
   const quotation = await createInvoicePdf({ ...input, documentType: "quotation" })
   assert(text(quotation).includes("NOT A SALES OR TAX INVOICE"))
+})
+
+test("GST amounts remain visible when the issuing entity has not supplied a GSTIN", async () => {
+  const doc = await createInvoicePdf({ ...input, entity: { ...entity, hasGstin: false, gstin: "" }, invoice: { ...invoice, includesGst: true } })
+  assert(text(doc).includes("(CGST)"))
+  assert(!text(doc).includes(entity.gstin))
+})
+
+test("quotation payment details do not appear on the converted invoice", async () => {
+  const paymentTemplate = { ...template, showQuotationPaymentDetails: true, quotationPaymentDetails: "Bank: Example Bank\nUPI: business@upi" }
+  const quotation = await createInvoicePdf({ ...input, template: paymentTemplate, documentType: "quotation" })
+  const finalInvoice = await createInvoicePdf({ ...input, template: paymentTemplate })
+  assert(text(quotation).includes("PAYMENT DETAILS"))
+  assert(text(quotation).includes("business@upi"))
+  assert(!text(finalInvoice).includes("PAYMENT DETAILS"))
+  assert(!text(finalInvoice).includes("business@upi"))
+})
+
+test("the largest supported logo size keeps the PDF renderable", async () => {
+  const logoDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8sgAAAABJRU5ErkJggg=="
+  const doc = await createInvoicePdf({ ...input, template: { ...template, logoDataUrl, logoSize: 200 } })
+  assert.equal(doc.getNumberOfPages(), 1)
+  assert(text(doc).includes(entity.companyName))
+})
+
+test("an uploaded image watermark renders without affecting document content", async () => {
+  const watermarkImageDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8sgAAAABJRU5ErkJggg=="
+  const doc = await createInvoicePdf({ ...input, template: { ...template, watermarkEnabled: true, watermarkImageDataUrl, watermarkOpacity: .2 } })
+  assert.equal(doc.getNumberOfPages(), 1)
+  assert(text(doc).includes(entity.companyName))
 })

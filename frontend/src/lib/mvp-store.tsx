@@ -66,6 +66,8 @@ export type InvoiceCorrection = {
   replacementInvoiceNumber?: string
 }
 export type Invoice = {
+  /** Whether the document should show GST amounts even when the issuer has no GSTIN on file. */
+  includesGst?: boolean
   gstTaxMode?: GstTaxMode
   id: string
   entityId?: string
@@ -235,12 +237,17 @@ export type TemplateSettings = {
   logoSize: number
   watermarkEnabled: boolean
   watermarkText: string
+  watermarkImageDataUrl: string | null
   watermarkOpacity: number
   showChanaxBranding: boolean
   signatureDataUrl: string | null
   signatureMode: "uploaded" | "system" | "none"
   showTerms: boolean
   termsText: string
+  /** Payment details shown on quotations only; never rendered on final invoices. */
+  showQuotationPaymentDetails: boolean
+  quotationPaymentDetails: string
+  quotationPaymentQrDataUrl: string | null
   customTexts: TemplateTextBlock[]
   fontStyle: "sans" | "serif" | "mono"
   compact: boolean
@@ -339,12 +346,16 @@ const defaultTemplate = (): TemplateSettings => ({
   logoSize: 64,
   watermarkEnabled: false,
   watermarkText: "DRAFT",
+  watermarkImageDataUrl: null,
   watermarkOpacity: 0.1,
   showChanaxBranding: true,
   signatureDataUrl: null,
   signatureMode: "system",
   showTerms: true,
   termsText: "Payment is due as agreed with the issuing entity. Thank you for your business.",
+  showQuotationPaymentDetails: false,
+  quotationPaymentDetails: "",
+  quotationPaymentQrDataUrl: null,
   customTexts: [],
   fontStyle: "sans",
   compact: false,

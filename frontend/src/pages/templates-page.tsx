@@ -117,6 +117,8 @@ export function TemplatesPage() {
   }
   const logoInputRef = useRef<HTMLInputElement>(null)
   const signatureInputRef = useRef<HTMLInputElement>(null)
+  const quotationPaymentQrInputRef = useRef<HTMLInputElement>(null)
+  const watermarkImageInputRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
   const [colorDraft, setColorDraft] = useState(template.accentColor)
   const [pageColorDraft, setPageColorDraft] = useState(template.pageColor)
@@ -182,23 +184,25 @@ export function TemplatesPage() {
     window.setTimeout(() => setMessage(null), 4000)
   }
 
-  const uploadImage = (kind: "logo" | "signature", event: ChangeEvent<HTMLInputElement>) => {
+  const uploadImage = (kind: "logo" | "signature" | "quotationPaymentQr" | "watermark", event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ""
     if (!file) return
     if (!["image/png", "image/jpeg"].includes(file.type)) {
-      showMessage(`Please upload the ${kind} as a PNG or JPG image.`, "error")
+      showMessage(`Please upload the ${kind === "quotationPaymentQr" ? "UPI QR code" : kind === "watermark" ? "watermark" : kind} as a PNG or JPG image.`, "error")
       return
     }
     if (file.size > 1.5 * 1024 * 1024) {
-      showMessage(`${kind === "logo" ? "Logo" : "Signature"} must be smaller than 1.5 MB.`, "error")
+      showMessage(`${kind === "logo" ? "Logo" : kind === "signature" ? "Signature" : kind === "quotationPaymentQr" ? "UPI QR code" : "Watermark"} must be smaller than 1.5 MB.`, "error")
       return
     }
     const reader = new FileReader()
     reader.onload = () => {
       if (kind === "logo") updateTemplate({ logoDataUrl: String(reader.result) })
-      else updateTemplate({ signatureDataUrl: String(reader.result), signatureMode: "uploaded" })
-      showMessage(`${kind === "logo" ? "Logo" : "Signature"} added. Click Save to apply it to ${scopeName}.`)
+      else if (kind === "signature") updateTemplate({ signatureDataUrl: String(reader.result), signatureMode: "uploaded" })
+      else if (kind === "quotationPaymentQr") updateTemplate({ quotationPaymentQrDataUrl: String(reader.result), showQuotationPaymentDetails: true })
+      else updateTemplate({ watermarkImageDataUrl: String(reader.result), watermarkEnabled: true })
+      showMessage(`${kind === "logo" ? "Logo" : kind === "signature" ? "Signature" : kind === "quotationPaymentQr" ? "UPI QR code" : "Watermark"} added. Click Save to apply it to ${scopeName}.`)
     }
     reader.onerror = () => showMessage(`The ${kind} image could not be read.`, "error")
     reader.readAsDataURL(file)
@@ -236,12 +240,16 @@ export function TemplatesPage() {
       logoSize: 64,
       watermarkEnabled: false,
       watermarkText: "DRAFT",
+      watermarkImageDataUrl: null,
       watermarkOpacity: 0.1,
       showChanaxBranding: true,
       signatureDataUrl: null,
       signatureMode: "system",
       showTerms: true,
       termsText: "Payment is due as agreed with the issuing entity. Thank you for your business.",
+      showQuotationPaymentDetails: false,
+      quotationPaymentDetails: "",
+      quotationPaymentQrDataUrl: null,
       customTexts: [],
       fontStyle: "sans",
       compact: false,
@@ -384,6 +392,20 @@ export function TemplatesPage() {
             <Separator />
 
             <section className="space-y-3">
+              <label className="flex cursor-pointer items-center justify-between gap-4">
+                <span><span className="block text-sm font-medium">Quotation payment details</span><span className="block text-xs text-muted-foreground">Shown only on quotations; removed automatically when converted to an invoice.</span></span>
+                <input type="checkbox" checked={template.showQuotationPaymentDetails} onChange={(event) => updateTemplate({ showQuotationPaymentDetails: event.target.checked })} className="size-4 accent-foreground" />
+              </label>
+              {template.showQuotationPaymentDetails ? <>
+                <textarea value={template.quotationPaymentDetails} onChange={(event) => updateTemplate({ quotationPaymentDetails: event.target.value })} rows={4} className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" placeholder={"Bank: Example Bank\nA/C: 1234567890\nIFSC: EXMP0000123\nUPI: business@upi"} />
+                <input ref={quotationPaymentQrInputRef} id="quotation-payment-qr-upload" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" className="sr-only" onChange={(event) => uploadImage("quotationPaymentQr", event)} />
+                {template.quotationPaymentQrDataUrl ? <div className="flex items-center gap-3 rounded-lg border p-3"><img src={template.quotationPaymentQrDataUrl} alt="Uploaded UPI QR code" className="size-20 rounded object-contain" /><Button variant="outline" size="sm" onClick={() => quotationPaymentQrInputRef.current?.click()}>Replace QR</Button><Button variant="ghost" size="icon" aria-label="Remove UPI QR code" onClick={() => updateTemplate({ quotationPaymentQrDataUrl: null })}><Trash2 /></Button></div> : <Button type="button" variant="outline" className="w-full justify-start border-dashed" onClick={() => quotationPaymentQrInputRef.current?.click()}><ImagePlus />Upload UPI QR code</Button>}
+              </> : null}
+            </section>
+
+            <Separator />
+
+            <section className="space-y-3">
               <div><Label>Invoice elements</Label><p className="mt-1 text-xs text-muted-foreground">Select an existing item, drag it in the preview, rename its heading, or remove it.</p></div>
               <div className="grid grid-cols-2 gap-2">
                 {editableElements.map((item) => {
@@ -437,8 +459,8 @@ export function TemplatesPage() {
               {template.logoDataUrl && <Button variant="outline" className="w-full" onClick={() => logoInputRef.current?.click()}><Upload />Replace logo</Button>}
               <div className="space-y-2 rounded-lg border p-3">
                 <div className="flex items-center justify-between gap-3"><Label htmlFor="template-logo-size" className="text-xs">Logo size</Label><span className="text-xs tabular-nums text-muted-foreground">{template.logoSize}px</span></div>
-                <Input id="template-logo-size" type="range" min="40" max="120" step="4" value={template.logoSize} onChange={(event) => updateTemplate({ logoSize: Number(event.target.value) })} className="h-5 cursor-pointer p-0" />
-                <p className="text-xs text-muted-foreground">Enlarge or reduce the logo in previews and downloaded documents.</p>
+                <Input id="template-logo-size" type="range" min="40" max="200" step="4" value={template.logoSize} onChange={(event) => updateTemplate({ logoSize: Number(event.target.value) })} className="h-5 cursor-pointer p-0" />
+                <p className="text-xs text-muted-foreground">Choose 40–200px. This safe range is used consistently in previews and downloaded A4 PDFs.</p>
               </div>
             </section>
 
@@ -527,12 +549,13 @@ export function TemplatesPage() {
 
             <section className="space-y-3">
               <label className="flex cursor-pointer items-center justify-between gap-4">
-                <span><span className="block text-sm font-medium">Document watermark</span><span className="block text-xs text-muted-foreground">Place light text behind the document content</span></span>
+                <span><span className="block text-sm font-medium">Document watermark</span><span className="block text-xs text-muted-foreground">Place a light image behind the document content</span></span>
                 <input type="checkbox" checked={template.watermarkEnabled} onChange={(event) => updateTemplate({ watermarkEnabled: event.target.checked })} className="size-4 accent-foreground" />
               </label>
               {template.watermarkEnabled ? (
                 <div className="space-y-3 rounded-lg border p-3">
-                  <div><Label htmlFor="template-watermark-text" className="text-xs">Watermark text</Label><Input id="template-watermark-text" maxLength={48} value={template.watermarkText} onChange={(event) => updateTemplate({ watermarkText: event.target.value })} placeholder="DRAFT, PAID or CONFIDENTIAL" /></div>
+                  <input ref={watermarkImageInputRef} id="template-watermark-image-upload" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" className="sr-only" onChange={(event) => uploadImage("watermark", event)} />
+                  {template.watermarkImageDataUrl ? <div className="flex items-center gap-3 rounded-lg border p-3"><img src={template.watermarkImageDataUrl} alt="Uploaded watermark" className="size-20 rounded object-contain" /><Button variant="outline" size="sm" onClick={() => watermarkImageInputRef.current?.click()}>Replace image</Button><Button variant="ghost" size="icon" aria-label="Remove watermark image" onClick={() => updateTemplate({ watermarkImageDataUrl: null })}><Trash2 /></Button></div> : <Button type="button" variant="outline" className="w-full justify-start border-dashed" onClick={() => watermarkImageInputRef.current?.click()}><ImagePlus />Upload watermark image</Button>}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3"><Label htmlFor="template-watermark-opacity" className="text-xs">Visibility</Label><span className="text-xs tabular-nums text-muted-foreground">{Math.round(template.watermarkOpacity * 100)}%</span></div>
                     <Input id="template-watermark-opacity" type="range" min="0.05" max="0.3" step="0.01" value={template.watermarkOpacity} onChange={(event) => updateTemplate({ watermarkOpacity: Number(event.target.value) })} className="h-5 cursor-pointer p-0" />

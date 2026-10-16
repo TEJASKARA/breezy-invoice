@@ -49,6 +49,7 @@ type InvoiceDraft = {
   date: string
   status: "Draft" | "Generated"
   lineItems: DraftLineItem[]
+  includesGst: boolean
   taxMode: GstTaxMode
   tdsAmount: string
   otherDeduction: string
@@ -155,6 +156,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [status, setStatus] = useState<"Draft" | "Generated">("Draft")
   const [lineItems, setLineItems] = useState<DraftLineItem[]>([{ ...newDraftLine(), hsnSac: entityHsnCodes(workingEntity)[0] || "" }])
+  const [includesGst, setIncludesGst] = useState(workingEntity?.hasGstin ?? Boolean(workingEntity?.gstin))
   const [taxMode, setTaxMode] = useState<GstTaxMode>("split")
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
@@ -206,7 +208,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const bulkCustomers = customers.filter((customer) => customer.entityId === selectedBulkEntity?.id)
   const visibleCustomers = customers.filter((customer) => customer.entityId === customerEntityId).sort(favouriteFirst)
   const customerMasterEntity = companies.find((company) => company.id === customerEntityId)
-  const isGstInvoice = selectedEntity?.hasGstin ?? Boolean(selectedEntity?.gstin)
+  const isGstInvoice = includesGst
   const normalizedInvoiceSearch = invoiceSearch.trim().toLowerCase()
   const minimumInvoiceAmount = invoiceAmountMin === "" ? null : Number(invoiceAmountMin)
   const maximumInvoiceAmount = invoiceAmountMax === "" ? null : Number(invoiceAmountMax)
@@ -295,6 +297,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         setLineItems(draft.lineItems.map(restoreDraftLine))
         setTaxMode(draft.taxMode === "igst" || draft.taxMode === "split" ? draft.taxMode : inferInvoiceTaxMode(draft.lineItems))
       }
+      setIncludesGst(typeof draft.includesGst === "boolean" ? draft.includesGst : workingEntity?.hasGstin ?? Boolean(workingEntity?.gstin))
       setTdsAmount(String(draft.tdsAmount || ""))
       setOtherDeduction(String(draft.otherDeduction || ""))
       setSourceProforma(draft.sourceProforma || null)
@@ -315,6 +318,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       date,
       status,
       lineItems,
+      includesGst,
       taxMode,
       tdsAmount,
       otherDeduction,
@@ -322,7 +326,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       editingInvoiceId,
       correctionSource,
     } satisfies InvoiceDraft))
-  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, lineItems, taxMode, otherDeduction, showForm, sourceProforma, status, tdsAmount])
+  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, includesGst, lineItems, taxMode, otherDeduction, showForm, sourceProforma, status, tdsAmount])
 
   useEffect(() => {
     if (!preview.length || bulkImportPending || bulkImportHasError) return
@@ -362,6 +366,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setCompanyName(recordCustomer.companyName)
     setDate(new Date().toISOString().slice(0, 10))
     setStatus("Generated")
+    setIncludesGst(record.includesGst ?? (sourceItems.some((item) => (item.cgstAmount || 0) > 0 || (item.sgstAmount || 0) > 0 || (item.igstAmount || 0) > 0) || (recordEntity.hasGstin ?? Boolean(recordEntity.gstin))))
     setTaxMode(inferInvoiceTaxMode(sourceItems))
     setLineItems(sourceItems.map((item) => ({
       ...item,
@@ -401,6 +406,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setCompanyName(invoice.companyName)
     setDate(replacement ? new Date().toISOString().slice(0, 10) : invoice.date)
     setStatus(replacement ? "Generated" : invoice.status === "Generated" ? "Generated" : "Draft")
+    setIncludesGst(invoice.includesGst ?? (sourceItems.some((item) => (item.cgstAmount || 0) > 0 || (item.sgstAmount || 0) > 0 || (item.igstAmount || 0) > 0) || (selectedEntity?.hasGstin ?? Boolean(selectedEntity?.gstin))))
     setTaxMode(inferInvoiceTaxMode(sourceItems))
     setLineItems(sourceItems.map((item) => ({
       ...item,
@@ -520,6 +526,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     otherDeduction: Number(otherDeduction) || 0,
     netReceivable: draftTotals.amount - (Number(tdsAmount) || 0) - (Number(otherDeduction) || 0),
     lineItems: parsedLineItems,
+    includesGst,
     gstTaxMode: taxMode,
     sourceProformaId: sourceProforma?.id,
     sourceProformaNumber: sourceProforma?.number,
@@ -531,6 +538,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setEntityName(workingEntity?.companyName || "")
     setCompanyName("")
     setLineItems([{ ...newDraftLine(), hsnSac: entityHsnCodes(workingEntity)[0] || "" }])
+    setIncludesGst(workingEntity?.hasGstin ?? Boolean(workingEntity?.gstin))
     setTaxMode("split")
     setTdsAmount("")
     setOtherDeduction("")
@@ -648,6 +656,11 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setTaxMode(mode)
     setDraftFormError("")
     setLineItems((items) => items.map((item) => applyInvoiceTaxMode(item, mode)))
+  }
+
+  const changeIncludesGst = (enabled: boolean) => {
+    setIncludesGst(enabled)
+    if (!enabled) setLineItems((items) => items.map((item) => applyInvoiceTaxMode(item, taxMode, 0)))
   }
 
   const moveToNextInvoiceField = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -1184,14 +1197,20 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
               <div className="space-y-2"><Label htmlFor="invoice-date">Invoice date</Label><Input id="invoice-date" type="date" value={date} onChange={(event) => { setDate(event.target.value); setDraftFormError("") }} /></div>
             </div>
 
-            {isGstInvoice ? <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={includesGst} onChange={(event) => changeIncludesGst(event.target.checked)} />
+                <span><span className="font-medium">Include GST amounts</span><span className="mt-1 block text-xs text-muted-foreground">Use CGST/SGST or IGST calculations even if this entity has not provided a GSTIN. The GSTIN will remain blank on the invoice.</span></span>
+              </label>
+              {isGstInvoice ? <div className="space-y-2">
               <Label htmlFor="invoice-tax-mode">Tax type for the entire invoice</Label>
               <select id="invoice-tax-mode" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm md:max-w-sm" value={taxMode} onChange={(event) => changeInvoiceTaxMode(event.target.value as GstTaxMode)}>
                 <option value="split">CGST + SGST</option><option value="igst">IGST</option>
               </select>
               <p className="text-xs text-muted-foreground">All lines use this tax type. Each line can have its own GST percentage. Switching recalculates all lines and keeps the taxable amount or inclusive total you entered.</p>
               {invoiceTaxError({ gstTaxMode: taxMode, lineItems: parsedLineItems }) ? <div className="space-y-2"><p role="alert" className="text-sm text-destructive">This draft contains a different or mixed tax type. Review your choice and apply it to every line.</p><Button type="button" variant="outline" size="sm" onClick={() => changeInvoiceTaxMode(taxMode)}>Apply selected tax type to all lines</Button></div> : null}
-            </div> : null}
+              </div> : null}
+            </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">

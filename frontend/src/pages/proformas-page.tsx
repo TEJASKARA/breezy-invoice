@@ -141,7 +141,7 @@ export function ProformasPage() {
     const allowanceError = freeAllowanceError(quotationAllowance, 1)
     if (allowanceError) return setError(allowanceError)
     try {
-      await addProforma({ entityId, entityName: entity.companyName, customerId, companyName: customer.companyName, date, validUntil, amount: totals.amount, taxableAmount: totals.taxableAmount, cgstAmount: totals.cgstAmount, sgstAmount: totals.sgstAmount, igstAmount: totals.igstAmount, lineItems: invoiceItems, status: "Generated" })
+      await addProforma({ entityId, entityName: entity.companyName, customerId, companyName: customer.companyName, date, validUntil, amount: totals.amount, taxableAmount: totals.taxableAmount, cgstAmount: totals.cgstAmount, sgstAmount: totals.sgstAmount, igstAmount: totals.igstAmount, lineItems: invoiceItems, includesGst: true, status: "Generated" })
       await refresh()
       if (draftStorageKey) localStorage.removeItem(draftStorageKey)
       setItems([line(entityHsnCodes[0])])
