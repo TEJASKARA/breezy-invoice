@@ -170,8 +170,8 @@ export function PricingPage() {
           <CardDescription>Need more credits, a larger team or help choosing a plan? Tell us what your business needs.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <a href="mailto:contact@azorix.com" className="break-all text-sm font-medium text-primary underline underline-offset-4">contact@azorix.com</a>
-          <Button asChild className="w-full sm:w-auto"><a href="mailto:contact@azorix.com?subject=ChanaX%20plan%20enquiry"><Mail />Contact Us</a></Button>
+          <a href="mailto:contact@chanax.in" className="break-all text-sm font-medium text-primary underline underline-offset-4">contact@chanax.in</a>
+          <Button asChild className="w-full sm:w-auto"><a href="mailto:contact@chanax.in?subject=ChanaX%20plan%20enquiry"><Mail />Contact Us</a></Button>
         </CardContent>
       </Card>
 
