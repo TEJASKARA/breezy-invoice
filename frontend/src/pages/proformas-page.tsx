@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
+import { gstRateOptions } from "@/lib/invoice-gst"
 import { sendDocumentEmail, sendDocumentWhatsApp } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { cleanInvoiceFileName, createInvoicePdf } from "@/lib/invoice-pdf"
@@ -127,6 +128,13 @@ export function ProformasPage() {
       return { ...item, [field]: rate, [field === "cgstRate" ? "cgstAmount" : "sgstAmount"]: roundMoney(item.taxableAmount * rate / 100), ...(rate > 0 ? { igstRate: 0, igstAmount: 0 } : {}) }
     }))
   }
+  const applyGstRateOption = (id: string, suppliedRate: number) => setItems((current) => current.map((item) => {
+    if (item.id !== id) return item
+    const rate = Math.min(100, Math.max(0, suppliedRate))
+    if (item.igstRate > 0) return { ...item, igstRate: rate, igstAmount: roundMoney(item.taxableAmount * rate / 100) }
+    const splitRate = rate / 2
+    return { ...item, cgstRate: splitRate, sgstRate: splitRate, cgstAmount: roundMoney(item.taxableAmount * splitRate / 100), sgstAmount: roundMoney(item.taxableAmount * splitRate / 100) }
+  }))
   const visibleProformas = proformas.filter((record) => record.entityId === entityId)
   const proformaTemplate = (entityIdForTemplate?: string) => {
     const template = templateFor(entityIdForTemplate)
@@ -221,14 +229,15 @@ export function ProformasPage() {
         <div className="space-y-2"><Label htmlFor="proforma-date">Issue date</Label><Input id="proforma-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div>
         <div className="space-y-2"><Label htmlFor="proforma-valid-until">Valid until</Label><Input id="proforma-valid-until" type="date" min={date} value={validUntil} onChange={(event) => setValidUntil(event.target.value)} /></div>
       </div>
-      <div className="space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[2fr_1fr_repeat(4,1fr)_auto]">
+      <div className="space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[2fr_1fr_repeat(5,1fr)_auto]">
         <Input aria-label={`Description ${index + 1}`} placeholder="Description" value={item.description} onChange={(event) => updateLine(item.id, { description: event.target.value })} />
         {entityHsnCodes.length ? <select aria-label={`HSN or SAC ${index + 1}`} className={selectClass} value={item.hsnSac} onChange={(event) => updateLine(item.id, { hsnSac: event.target.value })}><option value="">Select HSN/SAC</option>{entityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN or SAC ${index + 1}`} placeholder="HSN/SAC (optional)" value={item.hsnSac} onChange={(event) => updateLine(item.id, { hsnSac: event.target.value })} />}
         <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" placeholder="TAXABLE" value={item.taxableAmount || ""} onChange={(event) => updateTaxableAmount(item.id, Math.max(0, Number(event.target.value) || 0))} />
         {(["cgstRate", "sgstRate", "igstRate"] as const).map((field) => <Input key={field} aria-label={`${field.replace("Rate", "").toUpperCase()} percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" placeholder={`${field.replace("Rate", "").toUpperCase()} %`} value={item[field] || ""} onChange={(event) => updateTaxRate(item.id, field, Number(event.target.value) || 0)} />)}
+        <select aria-label={`GST rate ${index + 1}`} className={selectClass} value={roundMoney(item.igstRate || item.cgstRate + item.sgstRate)} onChange={(event) => applyGstRateOption(item.id, Number(event.target.value))}>{gstRateOptions.map((rate) => <option key={rate} value={rate}>{rate}% GST</option>)}{!gstRateOptions.some((rate) => rate === roundMoney(item.igstRate || item.cgstRate + item.sgstRate)) ? <option value={roundMoney(item.igstRate || item.cgstRate + item.sgstRate)}>Custom: {roundMoney(item.igstRate || item.cgstRate + item.sgstRate)}%</option> : null}</select>
         <Button size="icon" variant="ghost" aria-label="Remove line" disabled={items.length === 1} onClick={() => setItems((current) => current.filter((candidate) => candidate.id !== item.id))}><Trash2 /></Button>
       </div>)}</div>
-      <p className="text-xs text-muted-foreground">Enter GST percentages. Adding IGST clears CGST/SGST, and adding CGST or SGST clears IGST. Your unfinished proforma is saved on this device.</p>
+      <p className="text-xs text-muted-foreground">Choose 0%, 5%, 12%, 18%, or 28% GST from the quick selector, or enter a custom rate. Adding IGST clears CGST/SGST, and adding CGST or SGST clears IGST. Your unfinished proforma is saved on this device.</p>
       <div className="flex flex-wrap items-center justify-between gap-3"><Button variant="outline" onClick={() => setItems((current) => [...current, line(entityHsnCodes[0])])}><FilePlus2 />Add description</Button><div className="text-right"><p className="text-sm text-muted-foreground">Taxable ₹{totals.taxableAmount.toLocaleString("en-IN")}</p><p className="text-lg font-semibold">Total ₹{totals.amount.toLocaleString("en-IN")}</p></div></div>
       <div className="flex justify-end"><Button disabled={!canManage || !companies.length || !availableCustomers.length || quotationAllowance?.remaining === 0} onClick={() => void save()}><ReceiptText />Generate quotation</Button></div>
     </CardContent></Card>

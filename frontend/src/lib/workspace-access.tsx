@@ -105,7 +105,10 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!supabase) { setLoading(false); setError("Your account connection is temporarily unavailable. Please try again later."); return }
     void supabase.auth.getUser().then(({ data }) => hydrate(data.user))
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      // Token refreshes commonly occur when the browser regains focus. They do
+      // not change workspace access, and rehydrating here unmounts the page.
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return
       queueMicrotask(() => void hydrate(session?.user ?? null))
     })
     return () => { loadGuard.current.invalidate(); data.subscription.unsubscribe() }

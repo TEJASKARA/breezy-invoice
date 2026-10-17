@@ -124,7 +124,7 @@ function EditableInvoicePreview({
   const isClassic = template.preset === "classic"
   const isMinimal = template.preset === "minimal"
   const element = (id: TemplateElementId) => template.elements[id]
-  const isGstInvoice = entity?.hasGstin ?? Boolean(entity?.gstin)
+  const isGstInvoice = invoice.includesGst ?? entity?.hasGstin ?? Boolean(entity?.gstin)
   const isQuotation = documentType === "quotation"
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
