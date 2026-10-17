@@ -129,6 +129,7 @@ function EditableInvoicePreview({
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
   const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
+  const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
   const logoSize = Math.min(200, Math.max(40, template.logoSize))
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
 
@@ -330,7 +331,12 @@ function EditableInvoicePreview({
 
       <footer className="mt-14 grid grid-cols-2 gap-10 border-t pt-5 text-xs text-zinc-500">
         <EditableInvoiceElement id="terms" setting={element("terms")} editor={editor} onPointerDown={startElementDrag}>
-          {template.showTerms && element("terms").visible && (
+          {showQuotationPaymentDetails ? (
+            <div className="flex max-w-md items-start gap-4">
+              <div className="min-w-0 flex-1"><p className="font-semibold text-zinc-800">Payment details</p><p className="mt-2 whitespace-pre-wrap leading-5">{template.quotationPaymentDetails}</p></div>
+              {template.quotationPaymentQrDataUrl ? <div className="shrink-0 text-center"><img src={template.quotationPaymentQrDataUrl} alt="UPI payment QR code" className="size-20 rounded border object-contain" /><p className="mt-1 text-[10px]">Scan to pay</p></div> : null}
+            </div>
+          ) : template.showTerms && element("terms").visible && (
             <>
               <p className="font-semibold text-zinc-800">{element("terms").label}</p>
               <p className="mt-2 whitespace-pre-wrap leading-5">{template.termsText}</p>
