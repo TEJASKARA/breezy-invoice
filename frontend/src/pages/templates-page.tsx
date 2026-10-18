@@ -252,6 +252,7 @@ export function TemplatesPage() {
       quotationPaymentQrDataUrl: null,
       customTexts: [],
       fontStyle: "sans",
+      documentTextScale: 100,
       compact: false,
       elements: resetElements(),
     })
@@ -533,6 +534,12 @@ export function TemplatesPage() {
                 <Input type="color" value={template.accentColor} onChange={(event) => { const value = event.target.value.toUpperCase(); setColorDraft(value); updateTemplate({ accentColor: value }) }} className="size-9 p-1" aria-label="Choose a custom brand color" />
                 <Input value={colorDraft} onChange={(event) => { const value = event.target.value.toUpperCase(); if (/^#[0-9A-F]{0,6}$/.test(value)) setColorDraft(value) }} onBlur={() => /^#[0-9A-F]{6}$/.test(colorDraft) ? updateTemplate({ accentColor: colorDraft }) : setColorDraft(template.accentColor)} className="h-9 w-28 font-mono text-xs" aria-label="Brand color hex value" />
               </div>
+            </section>
+
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-3"><Label htmlFor="template-text-scale">Document text size</Label><span className="text-xs tabular-nums text-muted-foreground">{template.documentTextScale}%</span></div>
+              <Input id="template-text-scale" type="range" min="85" max="110" step="1" value={template.documentTextScale} onChange={(event) => updateTemplate({ documentTextScale: Number(event.target.value) })} className="h-5 cursor-pointer p-0" />
+              <p className="text-xs text-muted-foreground">Adjusts the standard document text in the preview and downloaded PDF. Custom text blocks can still use their own font size.</p>
             </section>
 
             <section className="space-y-3">

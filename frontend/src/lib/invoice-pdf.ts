@@ -85,6 +85,9 @@ export async function createInvoicePdf({
 }: InvoicePdfInput) {
   const { jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true })
+  const textScale = Math.min(1.1, Math.max(0.85, (template.documentTextScale ?? 100) / 100))
+  const setFontSize = doc.setFontSize.bind(doc)
+  doc.setFontSize = ((size: number) => setFontSize(size * textScale)) as typeof doc.setFontSize
   const accent = colour(template.accentColor)
   const ink: [number, number, number] = [24, 24, 27]
   const muted: [number, number, number] = [100, 116, 139]

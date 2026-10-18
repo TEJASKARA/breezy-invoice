@@ -132,6 +132,7 @@ function EditableInvoicePreview({
   const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
   const logoSize = Math.min(200, Math.max(40, template.logoSize))
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
+  const textScale = Math.min(1.1, Math.max(0.85, (template.documentTextScale ?? 100) / 100))
 
   const startTextDrag = (event: ReactPointerEvent<HTMLDivElement>, id: string) => {
     if (!editor || !pageRef.current) return
@@ -208,7 +209,7 @@ function EditableInvoicePreview({
     <article
       ref={pageRef}
       className={`${fontClass} relative mx-auto aspect-[210/297] min-h-[920px] w-full max-w-[760px] overflow-hidden p-8 text-zinc-900 shadow-sm md:p-12 ${isClassic ? "border-4 border-double" : "border"}`}
-      style={{ backgroundColor: template.pageColor, borderColor: isClassic ? template.accentColor : undefined, containerType: "inline-size" }}
+      style={{ backgroundColor: template.pageColor, borderColor: isClassic ? template.accentColor : undefined, containerType: "inline-size", zoom: textScale }}
     >
       {editor && activeVerticalGuide !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-50 border-l-2 border-blue-500" style={{ left: `${activeVerticalGuide}%` }} /> : null}
       {template.watermarkEnabled && (template.watermarkImageDataUrl || template.watermarkText.trim()) ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden">{template.watermarkImageDataUrl ? <img src={template.watermarkImageDataUrl} alt="" className="max-h-[46%] max-w-[58%] -rotate-[32deg] object-contain" style={{ opacity: watermarkOpacity }} /> : <span className="max-w-[85%] -rotate-[32deg] break-words text-center text-6xl font-bold uppercase tracking-[0.2em] text-zinc-700" style={{ opacity: watermarkOpacity }}>{template.watermarkText}</span>}</div> : null}

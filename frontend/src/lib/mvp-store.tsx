@@ -250,6 +250,7 @@ export type TemplateSettings = {
   quotationPaymentQrDataUrl: string | null
   customTexts: TemplateTextBlock[]
   fontStyle: "sans" | "serif" | "mono"
+  documentTextScale: number
   compact: boolean
   elements: Record<TemplateElementId, TemplateElementSetting>
   /** Per-entity overrides keyed by entity (company) id. Entities without an entry use the workspace default. */
@@ -358,6 +359,7 @@ const defaultTemplate = (): TemplateSettings => ({
   quotationPaymentQrDataUrl: null,
   customTexts: [],
   fontStyle: "sans",
+  documentTextScale: 100,
   compact: false,
   elements: defaultTemplateElements(),
 })
