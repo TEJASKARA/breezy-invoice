@@ -392,7 +392,7 @@ function WorkspaceShell() {
         </main>
       </div>
       <Sheet open={managerMode !== null} onOpenChange={(open) => { if (!open) closeEntityManager() }}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
+        <SheetContent side="right" className="!inset-y-auto !right-auto !left-1/2 !top-1/2 !h-[min(88vh,760px)] !w-[min(94vw,920px)] !max-w-none !-translate-x-1/2 !-translate-y-1/2 overflow-y-auto rounded-2xl border">
           <SheetHeader><SheetTitle>{managerMode === "add" ? "Add entity" : "Manage entities"}</SheetTitle></SheetHeader>
           <div className="p-4"><Suspense fallback={<p className="p-4 text-sm">Loading entity settings…</p>}>{managerMode ? <EntityManager key={`${workspace?.id}:${managerMode}`} initialAdd={managerMode === "add"} onCreated={entityCreated} /> : null}</Suspense></div>
         </SheetContent>
