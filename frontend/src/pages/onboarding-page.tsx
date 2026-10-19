@@ -1,6 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
-import { Building2, CalendarDays, CheckCircle2, Hash } from "lucide-react"
+import { Building2, CalendarDays, CheckCircle2, Hash, Sparkles } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
@@ -292,14 +292,23 @@ export function OnboardingPage() {
                 </div>
               </fieldset>
               {hasGstin ? (
-                <div className="space-y-3">
-                  <Label htmlFor="gstin">GSTIN</Label>
+                <section className="space-y-4 rounded-xl border-2 border-primary bg-primary/5 p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
+                    <div>
+                      <h2 className="font-semibold text-primary">Save time — auto-fill your business details</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">Enter and verify your GSTIN to automatically fill your registered business name, PAN and address.</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                  <Label htmlFor="gstin">Enter GSTIN to auto-fill your details</Label>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setGstDetails(null); setGstDetailsConfirmed(false); setPan(""); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" />
-                    <Button type="button" variant="outline" disabled={verifyingGstin || gstin.length !== 15} onClick={() => void fetchGstDetails().catch(() => undefined)}>{verifyingGstin ? "Checking GSTIN…" : "Fetch GST details"}</Button>
+                    <Button type="button" disabled={verifyingGstin || gstin.length !== 15} onClick={() => void fetchGstDetails().catch(() => undefined)}>{verifyingGstin ? "Checking GSTIN…" : "Verify & auto-fill details"}</Button>
                   </div>
                   <p className="text-xs text-muted-foreground">{gstin.length}/15 characters. ChanaX reuses saved verification data when this GSTIN was checked before.</p>
-                </div>
+                  </div>
+                </section>
               ) : null}
 
               {hasGstin && gstDetails ? (
