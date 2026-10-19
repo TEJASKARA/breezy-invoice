@@ -519,6 +519,27 @@ function normalizeWorkspaceTemplate(saved: Partial<TemplateSettings> | undefined
 }
 
 const emptyState = (): MvpState => ({ setup: null, companies: [], customers: [], invoices: [], proformas: [], employees: [], employeeLetters: [], payslips: [], expenses: [], template: defaultTemplate() })
+
+/** The business supplied during signup is also the workspace's first issuing entity. */
+function primaryCompanyFromSetup(setup: Setup): Company {
+  const invoiceNumbering = setup.invoiceNumbering?.mode === "continue"
+    ? { ...setup.invoiceNumbering, resetPolicy: "never" as const }
+    : undefined
+
+  return {
+    id: id(),
+    companyName: setup.firmName,
+    billingAddress: setup.mailingAddress,
+    hasGstin: setup.hasGstin ?? Boolean(setup.gstin),
+    gstin: setup.gstin,
+    pan: setup.pan || "",
+    premisesAddress: setup.premisesAddress || setup.mailingAddress,
+    hsnSac: "",
+    hsnSacCodes: [],
+    invoiceNumbering,
+  }
+}
+
 function normalizeState(saved: Partial<MvpState>): MvpState {
   const restored = {
     ...emptyState(),
@@ -743,10 +764,23 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     syncStatus,
     syncError,
     completeSetup: async (setup) => {
-      const next = { ...stateRef.current, setup }
+      const current = stateRef.current
+      // A workspace can only have one initial entity. This also makes a retry
+      // after a failed setup save safe: once an entity exists, we only update
+      // the workspace settings.
+      const primaryCompany = current.companies.some((company) => !company.transferredAt) ? null : primaryCompanyFromSetup(setup)
+      const next = {
+        ...current,
+        setup,
+        companies: primaryCompany ? [...current.companies, primaryCompany] : current.companies,
+      }
       let savedSetup: Setup | null = setup
-      await persistAndWait(async (userId, workspaceId) => { savedSetup = await saveWorkspaceSettings(userId, workspaceId, setup, next.template) })
+      await persistAndWait(async (userId, workspaceId) => {
+        savedSetup = await saveWorkspaceSettings(userId, workspaceId, setup, next.template)
+        if (primaryCompany) await upsertCompanies(userId, workspaceId, [primaryCompany])
+      })
       commit({ ...next, setup: savedSetup })
+      if (primaryCompany) trackAction("entity_created", { count: 1, source: "signup" })
     },
     saveAttendanceDraft: async (draft) => {
       const current = stateRef.current
