@@ -18,6 +18,7 @@ type QueuedEvent = {
 const FLUSH_DELAY_MS = 5000
 const MAX_BATCH = 25
 const context: { userId: string | null; workspaceId: string | null } = { userId: null, workspaceId: null }
+let currentPage = "/"
 let queue: QueuedEvent[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
 let disabled = false
@@ -31,11 +32,12 @@ export function setUsageContext(userId: string | null, workspaceId: string | nul
 }
 
 export function trackPageView(path: string) {
-  enqueue("page_view", normalizePath(path), {})
+  currentPage = normalizePath(path)
+  enqueue("page_view", currentPage, {})
 }
 
 export function trackAction(name: string, metadata: QueuedEvent["metadata"] = {}) {
-  enqueue("action", name, metadata)
+  enqueue("action", name, { ...metadata, page: currentPage })
 }
 
 function normalizePath(path: string) {

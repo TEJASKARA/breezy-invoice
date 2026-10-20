@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     account_deletion_cron_secret: str = ""
     platform_admin_user_ids: str = ""
+    # The separate approver for irreversible platform data purges. Keep this in
+    # deployment configuration so it is never exposed to the browser bundle.
+    purge_approver_email: str = "Rushi@Chanax.in"
 
     smtp_host: str = ""
     smtp_port: int = 587
@@ -92,6 +95,9 @@ class Settings(BaseSettings):
 
     def is_platform_admin(self, user_id: str) -> bool:
         return user_id.strip().lower() in self.platform_admin_ids
+
+    def is_purge_approver(self, email: str) -> bool:
+        return bool(email.strip()) and email.strip().lower() == self.purge_approver_email.strip().lower()
 
     @property
     def razorpay_is_configured(self) -> bool:

@@ -67,6 +67,8 @@ export function grantPlatformCredits(subscriptionCode: string, creditAmount: num
     }),
   })
 }
+export function requestPlatformPurge(subscriptionCode: string, reason: string) { return adminRequest<{ request_id: string; message: string }>("/api/v1/admin/data-lifecycle/purge-requests", { method: "POST", body: JSON.stringify({ subscription_code: subscriptionCode, reason }) }) }
+export function approvePlatformPurge(requestId: string, code: string) { return adminRequest<{ message: string }>("/api/v1/admin/data-lifecycle/purge-approvals", { method: "POST", body: JSON.stringify({ request_id: requestId, code }) }) }
 
 export type UsageScope =
   | { type: "platform" }
@@ -95,6 +97,7 @@ export type UsageReport = {
   /** Platform view only: subscriber workspaces with no activity in the period. */
   inactive_workspaces: { workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string; last_activity_at: string | null }[]
   recent: { occurred_at: string; event_type: "page_view" | "action"; event_name: string; email: string | null; subscription_code: string | null }[]
+  extras?: { anonymous_site_views: number; new_users: { day: string; email: string }[]; daily_signups: { day: string; users: number }[]; page_features: { page: string; name: string; uses: number; users: number }[] }
 }
 
 /** Developer-only usage report: whole platform, one subscription code, or one user email. */

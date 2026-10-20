@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -55,6 +56,27 @@ class SupabaseGateway:
         if not payload.get("id"):
             raise SupabaseGatewayError("Supabase did not return an authenticated user.")
         return payload
+
+    async def record_anonymous_visit(self, visitor_hash: str) -> None:
+        await self._request(
+            "POST", "breezy_anonymous_site_visits", json=[{"visitor_hash": visitor_hash}],
+            headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
+        )
+
+    async def create_purge_approval(self, row: dict[str, Any]) -> None:
+        await self._request("POST", "breezy_platform_purge_approvals", json=[row], headers={"Prefer": "return=minimal"})
+
+    async def purge_approval(self, request_id: str) -> dict[str, Any] | None:
+        rows = await self._get("breezy_platform_purge_approvals", {"select":"*","id":f"eq.{request_id}","limit":"1"})
+        return rows[0] if rows else None
+
+    async def approve_purge(self, request_id: str, approver_id: str) -> None:
+        await self._request("PATCH", "breezy_platform_purge_approvals", params={"id":f"eq.{request_id}","status":"eq.pending"}, json={"status":"approved","approved_by":approver_id,"approved_at":datetime.now(timezone.utc).isoformat()}, headers={"Prefer":"return=minimal"})
+
+    async def deletion_request_owner(self, workspace_id: str) -> str:
+        rows = await self._get("breezy_account_deletion_requests", {"select":"requested_by","workspace_id":f"eq.{workspace_id}","status":"eq.pending","limit":"1"})
+        if not rows: raise SupabaseGatewayError("This workspace is not in a pending deletion recovery period.")
+        return str(rows[0]["requested_by"])
 
     async def assert_workspace_member(self, workspace_id: str, user_id: str) -> None:
         rows = await self._get(
@@ -507,6 +529,10 @@ class SupabaseGateway:
         excluded_user_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         normalized_identifier = (identifier or "").strip() or None
+        extras: dict[str, Any] | None = None
+        if normalized_identifier is None:
+            extra_result = await self.service_rpc("breezy_admin_usage_extras", {"since_days": since_days})
+            if isinstance(extra_result, dict): extras = extra_result
         result = await self.service_rpc(
             "breezy_admin_usage_report",
             {
@@ -517,6 +543,8 @@ class SupabaseGateway:
         )
         if not isinstance(result, dict):
             raise SupabaseGatewayError("Supabase returned an invalid usage report.")
+        # Extra platform-wide metrics intentionally exclude a searched workspace/user.
+        if extras is not None: result["extras"] = extras
         return result
 
     async def apply_razorpay_payment(

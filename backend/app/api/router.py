@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     account,
+    analytics,
     admin,
     billing,
     ca_partners,
@@ -13,6 +14,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(account.router, prefix="/account", tags=["Account"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(gst.router, prefix="/gst", tags=["GST"])
 api_router.include_router(team.router, prefix="/team", tags=["Team"])
 api_router.include_router(

@@ -47,3 +47,11 @@ class PlatformUsageReportResponse(BaseModel):
     workspaces: list[dict[str, Any]] = []
     inactive_workspaces: list[dict[str, Any]] = []
     recent: list[dict[str, Any]] = []
+
+class PurgeRequestCreate(BaseModel):
+    subscription_code: str = Field(min_length=3, max_length=80)
+    reason: str = Field(min_length=3, max_length=500)
+
+class PurgeApproval(BaseModel):
+    request_id: str
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")

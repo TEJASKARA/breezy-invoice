@@ -215,6 +215,25 @@ async def send_ca_client_invitation_email(
     )
 
 
+async def send_purge_approval_code_email(
+    settings: Settings, *, to_email: str, workspace_name: str, subscription_code: str, code: str
+) -> None:
+    """Deliver the one-time code for a platform data-purge approval."""
+    if not settings.smtp_is_configured:
+        raise EmailConfigurationError("Purge approval email is not configured on the ChanaX server.")
+    await _deliver(
+        settings,
+        to_email=to_email,
+        subject="ChanaX data purge approval code",
+        message=(
+            f"A permanent data purge was requested for {workspace_name} ({subscription_code}).\n\n"
+            f"Your one-time approval code is: {code}\n\n"
+            "It expires in 10 minutes and can be used once. Do not share it. "
+            "If you did not expect this request, ignore this email and contact ChanaX support."
+        ),
+    )
+
+
 async def send_employee_letter_email(
     settings: Settings,
     *,

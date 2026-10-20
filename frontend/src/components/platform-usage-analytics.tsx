@@ -58,7 +58,15 @@ const FEATURE_LABELS: Record<string, string> = {
   gstin_verified: "GSTIN verified",
 }
 
-const PERIODS = [7, 30, 90, 365] as const
+/** A two-level breakdown is clearer than a dense sunburst on smaller screens. */
+function PageFeatureDrilldown({ pages, features }: { pages: UsageReport["pages"]; features: { page: string; name: string; uses: number; users: number }[] }) {
+  const [selectedPage, setSelectedPage] = useState<string>(pages[0]?.name || "")
+  useEffect(() => { if (!pages.some((page) => page.name === selectedPage)) setSelectedPage(pages[0]?.name || "") }, [pages, selectedPage])
+  const rows = features.filter((feature) => feature.page === selectedPage)
+  return <Card><CardHeader><CardTitle>Page and feature usage</CardTitle><CardDescription>Select a page to see the features used from it. This drill-down is more readable than a sunburst when there are many small actions.</CardDescription></CardHeader><CardContent className="grid gap-4 md:grid-cols-[220px_1fr]"><div className="space-y-1">{pages.map((page) => <Button key={page.name} variant={selectedPage === page.name ? "default" : "ghost"} className="w-full justify-between" onClick={() => setSelectedPage(page.name)}>{pageLabel(page.name)} <span>{number(page.views)}</span></Button>)}</div><RankedBars empty="No tracked features for this page yet." rows={rows.map((feature) => ({ key: feature.name, label: featureLabel(feature.name), value: feature.uses, detail: `${number(feature.users)} users` }))} /></CardContent></Card>
+}
+
+const PERIODS = [5, 7, 30, 90, 365] as const
 const pageLabel = (path: string) => PAGE_LABELS[path] ?? path
 const featureLabel = (name: string) => FEATURE_LABELS[name] ?? name.replaceAll("_", " ")
 const number = (value: number | null | undefined) => Number(value || 0).toLocaleString("en-IN")
@@ -142,7 +150,8 @@ function DailyActivity({ daily, days }: { daily: UsageReport["daily"]; days: num
 }
 
 export function PlatformUsageAnalytics() {
-  const [days, setDays] = useState<number>(30)
+  const [days, setDays] = useState<number>(5)
+  const [customDays, setCustomDays] = useState("")
   const [queryInput, setQueryInput] = useState("")
   const [activeQuery, setActiveQuery] = useState("")
   const [report, setReport] = useState<UsageReport | null>(null)
@@ -192,6 +201,11 @@ export function PlatformUsageAnalytics() {
                 {period === 365 ? "12 months" : `${period} days`}
               </Button>
             ))}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="usage-custom-days" className="sr-only">Custom reporting days</Label>
+              <Input id="usage-custom-days" type="number" min="1" max="365" value={customDays} onChange={(event) => setCustomDays(event.target.value)} placeholder="Custom days" className="h-8 w-28" />
+              <Button size="sm" variant="outline" disabled={!Number.isInteger(Number(customDays)) || Number(customDays) < 1 || Number(customDays) > 365} onClick={() => setDays(Number(customDays))}>Apply</Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -248,6 +262,8 @@ export function PlatformUsageAnalytics() {
             <CardHeader><CardTitle>Daily activity</CardTitle><CardDescription>Page views plus feature actions per day (IST). Hover a bar for the day.</CardDescription></CardHeader>
             <CardContent><DailyActivity daily={report.daily} days={report.since_days} /></CardContent>
           </Card>
+
+          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><Card><CardHeader><CardTitle>New users</CardTitle><CardDescription>Daily sign-ups in the selected period.</CardDescription></CardHeader><CardContent><RankedBars empty="No new users in this period." rows={report.extras.daily_signups.map((item) => ({ key: item.day, label: item.day, value: item.users, detail: report.extras!.new_users.filter((user) => user.day === item.day).map((user) => user.email).join(", ") }))} /></CardContent></Card><PageFeatureDrilldown pages={report.pages} features={report.extras.page_features} /></> : null}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>

@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js"
 
 import { AppShell } from "@/components/app-shell"
 import { UsageTracker } from "@/components/usage-tracker"
+import { AnonymousVisitorTracker } from "@/components/anonymous-visitor-tracker"
 import { LandingPage } from "@/pages/landing-page"
 import { LoginPage } from "@/pages/login-page"
 import { MvpStoreProvider, useMvpStore } from "@/lib/mvp-store"
@@ -80,7 +81,7 @@ function WorkspaceProviders() {
 
 function App() {
   return (
-    <Suspense fallback={<PageFallback />}><Routes>
+    <Suspense fallback={<PageFallback />}><AnonymousVisitorTracker /><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/terms" element={<TermsPage />} />
