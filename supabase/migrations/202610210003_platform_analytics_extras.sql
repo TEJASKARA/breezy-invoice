@@ -49,7 +49,21 @@ begin
       select jsonb_agg(to_jsonb(features))
       from (
         select
-          coalesce(metadata->>'page', '/workspace') as page,
+          case
+            when event_name like 'invoice_%' then '/invoices'
+            when event_name like 'quotation_%' then '/proformas'
+            when event_name like 'expense_%' then '/expenses'
+            when event_name like 'attendance_%' then '/attendance'
+            when event_name like 'template_%' then '/settings/templates'
+            when event_name like 'tally_%'
+              or event_name in ('complete_data_export', 'zip_downloaded') then '/tally-export'
+            when event_name like 'employee_letter_%' then '/employees/letters'
+            when event_name like 'employee_%'
+              or event_name like 'payslip_%' then '/employees'
+            when event_name like 'customer_%'
+              or event_name like 'entity_%' then '/customers'
+            else coalesce(nullif(metadata->>'page', ''), '/workspace')
+          end as page,
           event_name as name,
           count(*) as uses,
           count(distinct user_id) as users

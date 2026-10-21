@@ -67,91 +67,6 @@ const FEATURE_LABELS: Record<string, string> = {
   gstin_verified: "GSTIN verified",
 }
 
-const SUNBURST_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626"]
-
-function polarPoint(radius: number, angle: number) {
-  const radians = (angle * Math.PI) / 180
-  return {
-    x: 180 + radius * Math.cos(radians),
-    y: 180 + radius * Math.sin(radians),
-  }
-}
-
-function ringArcPath(innerRadius: number, outerRadius: number, startAngle: number, endAngle: number) {
-  const startOuter = polarPoint(outerRadius, startAngle)
-  const endOuter = polarPoint(outerRadius, endAngle)
-  const startInner = polarPoint(innerRadius, startAngle)
-  const endInner = polarPoint(innerRadius, endAngle)
-  const largeArc = endAngle - startAngle > 180 ? 1 : 0
-  return [
-    `M ${startOuter.x} ${startOuter.y}`,
-    `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${endOuter.x} ${endOuter.y}`,
-    `L ${endInner.x} ${endInner.y}`,
-    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${startInner.x} ${startInner.y}`,
-    "Z",
-  ].join(" ")
-}
-
-function UsageSunburst({ pages, features }: { pages: UsageReport["pages"]; features: UsageExtras["page_features"] }) {
-  const pageNodes = pages.flatMap((page, index) => {
-    const pageFeatures = features
-      .filter((feature) => feature.page === page.name)
-      .map((feature) => ({
-        name: featureLabel(feature.name),
-        value: feature.uses,
-        fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
-      }))
-    if (!pageFeatures.length) return []
-    return [{
-      name: pageLabel(page.name),
-      fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
-      value: pageFeatures.reduce((total, feature) => total + feature.value, 0),
-      children: pageFeatures,
-    }]
-  })
-  const total = pageNodes.reduce((totalValue, page) => totalValue + page.value, 0)
-
-  if (!pageNodes.length || total === 0) return null
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Page and feature usage map</CardTitle>
-        <CardDescription>Inner sections are pages; outer sections are the features used on each page. Hover any section for its count.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid items-center gap-5 lg:grid-cols-[minmax(0,360px)_1fr]" role="img" aria-label="Sunburst chart of page and feature usage">
-          <svg className="mx-auto aspect-square w-full max-w-80" viewBox="0 0 360 360" aria-hidden="true">
-            <circle cx="180" cy="180" r="52" fill="hsl(var(--muted))" />
-            <text x="180" y="174" textAnchor="middle" className="fill-foreground text-[13px] font-semibold">Feature usage</text>
-            <text x="180" y="194" textAnchor="middle" className="fill-muted-foreground text-[12px]">{number(total)} actions</text>
-            {(() => {
-              let pageStart = -90
-              return pageNodes.flatMap((page) => {
-                const pageSweep = (page.value / total) * 360
-                const pageEnd = pageStart + pageSweep
-                const pagePath = <path key={`page-${page.name}`} d={ringArcPath(56, 112, pageStart, pageEnd)} fill={page.fill}><title>{`${page.name}: ${number(page.value)} feature uses`}</title></path>
-                let featureStart = pageStart
-                const featurePaths = page.children.map((feature, featureIndex) => {
-                  const featureSweep = (feature.value / page.value) * pageSweep
-                  const featureEnd = featureStart + featureSweep
-                  const path = <path key={`feature-${page.name}-${feature.name}`} d={ringArcPath(118, 172, featureStart, featureEnd)} fill={page.fill} fillOpacity={0.48 + ((featureIndex % 3) * 0.18)}><title>{`${feature.name} on ${page.name}: ${number(feature.value)} uses`}</title></path>
-                  featureStart = featureEnd
-                  return path
-                })
-                pageStart = pageEnd
-                return [pagePath, ...featurePaths]
-              })
-            })()}
-          </svg>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {pageNodes.map((page) => <div key={page.name} className="flex min-w-0 items-center gap-2 text-sm"><span className="size-3 shrink-0 rounded-sm" style={{ backgroundColor: page.fill }} /><span className="truncate">{page.name}</span><span className="ml-auto tabular-nums text-muted-foreground">{number(page.value)}</span></div>)}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 function NewUserSignups({ extras }: { extras: UsageExtras }) {
   const emailsByDay = new Map<string, string[]>()
   for (const user of extras.new_users) {
@@ -396,7 +311,7 @@ export function PlatformUsageAnalytics() {
             <CardContent><DailyActivity daily={report.daily} days={report.since_days} /></CardContent>
           </Card>
 
-          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} /><UsageSunburst pages={report.pages} features={report.extras.page_features} /><PageFeatureDrilldown pages={report.pages} features={report.extras.page_features} /></> : null}
+          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} /><PageFeatureDrilldown pages={report.pages} features={report.extras.page_features} /></> : null}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>

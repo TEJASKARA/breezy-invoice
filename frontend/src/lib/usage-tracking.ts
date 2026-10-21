@@ -37,7 +37,10 @@ export function trackPageView(path: string) {
 }
 
 export function trackAction(name: string, metadata: QueuedEvent["metadata"] = {}) {
-  enqueue("action", name, { ...metadata, page: currentPage })
+  const livePage = typeof window === "undefined"
+    ? currentPage
+    : normalizePath(window.location.pathname)
+  enqueue("action", name, { page: livePage, ...metadata })
 }
 
 function normalizePath(path: string) {
