@@ -75,6 +75,13 @@ export type UsageScope =
   | { type: "workspace"; workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string }
   | { type: "user"; user_id: string; email: string; signed_up_at: string; last_sign_in_at: string | null; workspaces: { workspace_id: string; name: string; subscription_code: string; role: string }[] }
 
+export type UsageExtras = {
+  anonymous_site_views: number
+  new_users: { day: string; email: string }[]
+  daily_signups: { day: string; users: number }[]
+  page_features: { page: string; name: string; uses: number; users: number }[]
+}
+
 export type UsageReport = {
   since_days: number
   generated_at: string
@@ -97,7 +104,7 @@ export type UsageReport = {
   /** Platform view only: subscriber workspaces with no activity in the period. */
   inactive_workspaces: { workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string; last_activity_at: string | null }[]
   recent: { occurred_at: string; event_type: "page_view" | "action"; event_name: string; email: string | null; subscription_code: string | null }[]
-  extras?: { anonymous_site_views: number; new_users: { day: string; email: string }[]; daily_signups: { day: string; users: number }[]; page_features: { page: string; name: string; uses: number; users: number }[] }
+  extras?: UsageExtras
 }
 
 /** Developer-only usage report: whole platform, one subscription code, or one user email. */

@@ -1,6 +1,16 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
 import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, RefreshCw, Search, Users, X } from "lucide-react"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  SunburstChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,7 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { loadUsageReport, type UsageReport } from "@/lib/platform-admin-api"
+import { loadUsageReport, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
 import { cn } from "@/lib/utils"
 
 const PAGE_LABELS: Record<string, string> = {
@@ -58,7 +68,89 @@ const FEATURE_LABELS: Record<string, string> = {
   gstin_verified: "GSTIN verified",
 }
 
-/** A two-level breakdown is clearer than a dense sunburst on smaller screens. */
+const SUNBURST_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626"]
+
+function UsageSunburst({ pages, features }: { pages: UsageReport["pages"]; features: UsageExtras["page_features"] }) {
+  const data = {
+    name: "All tracked usage",
+    children: pages.map((page, index) => ({
+      name: pageLabel(page.name),
+      fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
+      value: page.views,
+      children: features
+        .filter((feature) => feature.page === page.name)
+        .map((feature) => ({
+          name: featureLabel(feature.name),
+          value: feature.uses,
+          fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
+        })),
+    })),
+  }
+
+  if (!pages.length) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Page and feature usage map</CardTitle>
+        <CardDescription>Inner sections are pages; outer sections are the features used on each page. Hover any section for its count.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-80" role="img" aria-label="Sunburst chart of page and feature usage">
+          <SunburstChart
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            responsive
+            stroke="hsl(var(--background))"
+          >
+            <Tooltip formatter={(value) => [number(Number(value ?? 0)), "Uses"]} />
+          </SunburstChart>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function NewUserSignups({ extras }: { extras: UsageExtras }) {
+  const emailsByDay = new Map<string, string[]>()
+  for (const user of extras.new_users) {
+    emailsByDay.set(user.day, [...(emailsByDay.get(user.day) || []), user.email])
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>New users</CardTitle>
+        <CardDescription>Sign-ups by day. Hover a bar to see the date; the registered email addresses are listed below.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={extras.daily_signups} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="day" tickLine={false} axisLine={false} />
+              <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+              <Tooltip formatter={(value) => [number(Number(value ?? 0)), "New users"]} />
+              <Bar dataKey="users" fill="#2563eb" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        {extras.new_users.length ? (
+          <div className="max-h-40 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm">
+            {extras.daily_signups.map((signup) => (
+              <div key={signup.day} className="flex flex-col gap-1 border-b pb-2 last:border-0 last:pb-0 sm:flex-row sm:gap-3">
+                <span className="font-medium sm:w-28">{signup.day}</span>
+                <span className="text-muted-foreground">{(emailsByDay.get(signup.day) || []).join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-sm text-muted-foreground">No new users in this period.</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** A selectable table complements the visual sunburst on smaller screens. */
 function PageFeatureDrilldown({ pages, features }: { pages: UsageReport["pages"]; features: { page: string; name: string; uses: number; users: number }[] }) {
   const [selectedPage, setSelectedPage] = useState<string>(pages[0]?.name || "")
   useEffect(() => { if (!pages.some((page) => page.name === selectedPage)) setSelectedPage(pages[0]?.name || "") }, [pages, selectedPage])
@@ -263,7 +355,7 @@ export function PlatformUsageAnalytics() {
             <CardContent><DailyActivity daily={report.daily} days={report.since_days} /></CardContent>
           </Card>
 
-          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><Card><CardHeader><CardTitle>New users</CardTitle><CardDescription>Daily sign-ups in the selected period.</CardDescription></CardHeader><CardContent><RankedBars empty="No new users in this period." rows={report.extras.daily_signups.map((item) => ({ key: item.day, label: item.day, value: item.users, detail: report.extras!.new_users.filter((user) => user.day === item.day).map((user) => user.email).join(", ") }))} /></CardContent></Card><PageFeatureDrilldown pages={report.pages} features={report.extras.page_features} /></> : null}
+          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} /><UsageSunburst pages={report.pages} features={report.extras.page_features} /><PageFeatureDrilldown pages={report.pages} features={report.extras.page_features} /></> : null}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>

@@ -47,6 +47,7 @@ class PlatformUsageReportResponse(BaseModel):
     workspaces: list[dict[str, Any]] = []
     inactive_workspaces: list[dict[str, Any]] = []
     recent: list[dict[str, Any]] = []
+    extras: dict[str, Any] | None = None
 
 class PurgeRequestCreate(BaseModel):
     subscription_code: str = Field(min_length=3, max_length=80)
