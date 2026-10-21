@@ -42,6 +42,39 @@ const operationLanes = [
   },
 ]
 
+const featureHighlights = [
+  {
+    title: "Invoices and GST",
+    description: "Create polished invoices with GST calculations, item details and ready-to-download PDFs.",
+    icon: ReceiptText,
+  },
+  {
+    title: "Quotations and proformas",
+    description: "Send clear proposals, include payment details, and convert approved quotations into invoices.",
+    icon: FileText,
+  },
+  {
+    title: "Customers and entities",
+    description: "Keep customer, GST and business-entity details organised in one place.",
+    icon: Building2,
+  },
+  {
+    title: "Employees and payslips",
+    description: "Manage employee records, generate payslips and create professional employee letters.",
+    icon: Users,
+  },
+  {
+    title: "Attendance and expenses",
+    description: "Track attendance and business spending without juggling separate spreadsheets.",
+    icon: CalendarCheck2,
+  },
+  {
+    title: "Templates and exports",
+    description: "Use branded document templates and export your business data whenever you need it.",
+    icon: Database,
+  },
+]
+
 export function LandingPage() {
   const { user } = useAuthUser()
   const navigate = useNavigate()
@@ -62,6 +95,7 @@ export function LandingPage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
           <BrandMark tone="brand" />
           <nav className="hidden items-center gap-7 text-sm text-[#0b3f77]/65 sm:flex" aria-label="Landing page navigation">
+            <a href="#features" className="transition-colors hover:text-[#0b3f77]">Features</a>
             <a href="#workflow" className="transition-colors hover:text-[#0b3f77]">What we do</a>
             <a href="#operations" className="transition-colors hover:text-[#0b3f77]">How it works</a>
             <a href="#built-for" className="transition-colors hover:text-[#0b3f77]">Who it’s for</a>
@@ -125,6 +159,25 @@ export function LandingPage() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section id="features" className="mx-auto max-w-7xl scroll-mt-20 px-5 py-20 sm:px-8 sm:py-24">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0b3f77]/50">Everything your business needs</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Simple tools for the work you do every day.</h2>
+          <p className="mt-4 text-[#0b3f77]/60">ChanaX brings your sales, people and operational records together in one easy-to-use workspace.</p>
+        </div>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {featureHighlights.map(({ title, description, icon: Icon }) => (
+            <article key={title} className="rounded-2xl border border-[#0b3f77]/15 bg-white p-6 shadow-[0_8px_24px_rgba(11,63,119,.05)] transition-transform hover:-translate-y-0.5">
+              <div className="grid size-11 place-items-center rounded-xl bg-[#13aeda]/10 text-[#0b83ae]">
+                <Icon className="size-5" />
+              </div>
+              <h3 className="mt-5 text-lg font-semibold">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-[#0b3f77]/60">{description}</p>
+            </article>
+          ))}
         </div>
       </section>
 
