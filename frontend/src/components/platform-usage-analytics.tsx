@@ -6,7 +6,6 @@ import {
   BarChart,
   CartesianGrid,
   ResponsiveContainer,
-  SunburstChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -70,6 +69,29 @@ const FEATURE_LABELS: Record<string, string> = {
 
 const SUNBURST_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626"]
 
+function polarPoint(radius: number, angle: number) {
+  const radians = (angle * Math.PI) / 180
+  return {
+    x: 180 + radius * Math.cos(radians),
+    y: 180 + radius * Math.sin(radians),
+  }
+}
+
+function ringArcPath(innerRadius: number, outerRadius: number, startAngle: number, endAngle: number) {
+  const startOuter = polarPoint(outerRadius, startAngle)
+  const endOuter = polarPoint(outerRadius, endAngle)
+  const startInner = polarPoint(innerRadius, startAngle)
+  const endInner = polarPoint(innerRadius, endAngle)
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0
+  return [
+    `M ${startOuter.x} ${startOuter.y}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${endOuter.x} ${endOuter.y}`,
+    `L ${endInner.x} ${endInner.y}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${startInner.x} ${startInner.y}`,
+    "Z",
+  ].join(" ")
+}
+
 function UsageSunburst({ pages, features }: { pages: UsageReport["pages"]; features: UsageExtras["page_features"] }) {
   const pageNodes = pages.flatMap((page, index) => {
     const pageFeatures = features
@@ -87,13 +109,9 @@ function UsageSunburst({ pages, features }: { pages: UsageReport["pages"]; featu
       children: pageFeatures,
     }]
   })
-  const data = {
-    name: "All tracked usage",
-    value: pageNodes.reduce((total, page) => total + page.value, 0),
-    children: pageNodes,
-  }
+  const total = pageNodes.reduce((totalValue, page) => totalValue + page.value, 0)
 
-  if (!pageNodes.length) return null
+  if (!pageNodes.length || total === 0) return null
   return (
     <Card>
       <CardHeader>
@@ -101,16 +119,33 @@ function UsageSunburst({ pages, features }: { pages: UsageReport["pages"]; featu
         <CardDescription>Inner sections are pages; outer sections are the features used on each page. Hover any section for its count.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-80" role="img" aria-label="Sunburst chart of page and feature usage">
-          <SunburstChart
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            responsive
-            stroke="hsl(var(--background))"
-          >
-            <Tooltip formatter={(value) => [number(Number(value ?? 0)), "Uses"]} />
-          </SunburstChart>
+        <div className="grid items-center gap-5 lg:grid-cols-[minmax(0,360px)_1fr]" role="img" aria-label="Sunburst chart of page and feature usage">
+          <svg className="mx-auto aspect-square w-full max-w-80" viewBox="0 0 360 360" aria-hidden="true">
+            <circle cx="180" cy="180" r="52" fill="hsl(var(--muted))" />
+            <text x="180" y="174" textAnchor="middle" className="fill-foreground text-[13px] font-semibold">Feature usage</text>
+            <text x="180" y="194" textAnchor="middle" className="fill-muted-foreground text-[12px]">{number(total)} actions</text>
+            {(() => {
+              let pageStart = -90
+              return pageNodes.flatMap((page) => {
+                const pageSweep = (page.value / total) * 360
+                const pageEnd = pageStart + pageSweep
+                const pagePath = <path key={`page-${page.name}`} d={ringArcPath(56, 112, pageStart, pageEnd)} fill={page.fill}><title>{`${page.name}: ${number(page.value)} feature uses`}</title></path>
+                let featureStart = pageStart
+                const featurePaths = page.children.map((feature, featureIndex) => {
+                  const featureSweep = (feature.value / page.value) * pageSweep
+                  const featureEnd = featureStart + featureSweep
+                  const path = <path key={`feature-${page.name}-${feature.name}`} d={ringArcPath(118, 172, featureStart, featureEnd)} fill={page.fill} fillOpacity={0.48 + ((featureIndex % 3) * 0.18)}><title>{`${feature.name} on ${page.name}: ${number(feature.value)} uses`}</title></path>
+                  featureStart = featureEnd
+                  return path
+                })
+                pageStart = pageEnd
+                return [pagePath, ...featurePaths]
+              })
+            })()}
+          </svg>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {pageNodes.map((page) => <div key={page.name} className="flex min-w-0 items-center gap-2 text-sm"><span className="size-3 shrink-0 rounded-sm" style={{ backgroundColor: page.fill }} /><span className="truncate">{page.name}</span><span className="ml-auto tabular-nums text-muted-foreground">{number(page.value)}</span></div>)}
+          </div>
         </div>
       </CardContent>
     </Card>
