@@ -36,6 +36,17 @@ def test_platform_admin_ids_are_normalized_and_exact() -> None:
     assert settings.is_platform_admin("user") is False
 
 
+def test_platform_admin_emails_are_normalized_and_exact() -> None:
+    settings = Settings(
+        _env_file=None,
+        platform_admin_emails=" Dhanush@chanax.in ,LASYA@chanax.in ",
+    )
+
+    assert settings.is_platform_admin_email("dhanush@chanax.in") is True
+    assert settings.is_platform_admin_email("lasya@CHANAX.IN") is True
+    assert settings.is_platform_admin_email("other@chanax.in") is False
+
+
 def test_whitebooks_uses_public_taxpayer_search_contract() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/public/search"

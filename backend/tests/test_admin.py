@@ -19,6 +19,20 @@ def test_platform_admin_access_uses_authenticated_user_id() -> None:
     )
 
 
+def test_platform_admin_access_can_use_exact_authenticated_email() -> None:
+    settings = Settings(
+        _env_file=None,
+        platform_admin_emails="Dhanush@chanax.in,lasya@chanax.in",
+    )
+
+    assert _is_platform_admin_user(
+        {"id": "other", "email": "dhanush@chanax.in"}, settings
+    )
+    assert not _is_platform_admin_user(
+        {"id": "other", "email": "someone@chanax.in"}, settings
+    )
+
+
 def test_non_platform_admin_is_rejected() -> None:
     settings = Settings(
         _env_file=None,

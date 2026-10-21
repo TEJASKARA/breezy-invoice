@@ -25,7 +25,9 @@ router = APIRouter()
 
 
 def _is_platform_admin_user(user: dict[str, Any], settings: Settings) -> bool:
-    return settings.is_platform_admin(str(user.get("id") or ""))
+    return settings.is_platform_admin(str(user.get("id") or "")) or (
+        settings.is_platform_admin_email(str(user.get("email") or ""))
+    )
 
 
 def _require_platform_admin(user: dict[str, Any], settings: Settings) -> None:

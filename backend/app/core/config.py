@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     account_deletion_cron_secret: str = ""
     platform_admin_user_ids: str = ""
+    # Exact, verified Supabase account email addresses permitted to use the
+    # private platform-administration area. User IDs remain supported too.
+    platform_admin_emails: str = (
+        "Rushi@Chanax.in,Dhanush@chanax.in,lasya@chanax.in"
+    )
     # The separate approver for irreversible platform data purges. Keep this in
     # deployment configuration so it is never exposed to the browser bundle.
     purge_approver_email: str = "Rushi@Chanax.in"
@@ -95,6 +100,17 @@ class Settings(BaseSettings):
 
     def is_platform_admin(self, user_id: str) -> bool:
         return user_id.strip().lower() in self.platform_admin_ids
+
+    @property
+    def platform_admin_email_set(self) -> set[str]:
+        return {
+            email.strip().lower()
+            for email in self.platform_admin_emails.split(",")
+            if email.strip()
+        }
+
+    def is_platform_admin_email(self, email: str) -> bool:
+        return email.strip().lower() in self.platform_admin_email_set
 
     def is_purge_approver(self, email: str) -> bool:
         return bool(email.strip()) and (
