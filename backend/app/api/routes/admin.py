@@ -1,6 +1,8 @@
+import hashlib
+import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
-from datetime import datetime, timedelta, timezone
-import hashlib, secrets, uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
@@ -11,12 +13,13 @@ from app.schemas.admin import (
     PlatformUsageReportResponse,
     PlatformWorkspaceResponse,
     PlatformWorkspaceSearchResponse,
+    PurgeApproval,
+    PurgeRequestCreate,
     SpecialCreditGrantRequest,
     SpecialCreditGrantResponse,
-    PurgeRequestCreate, PurgeApproval,
 )
-from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
 from app.services.email_sender import send_purge_approval_code_email
+from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
 
 router = APIRouter()
 
@@ -147,28 +150,108 @@ async def platform_usage_report(
     return PlatformUsageReportResponse(**report)
 
 @router.post("/data-lifecycle/purge-requests")
-async def create_purge_request(request: PurgeRequestCreate, authorization: Annotated[str, Header()], settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
+async def create_purge_request(
+    request: PurgeRequestCreate,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, str]:
     gateway = SupabaseGateway(settings)
     try:
-        user = await gateway.authenticated_user(_bearer_token(authorization)); _require_platform_admin(user, settings)
-        workspace = await gateway.admin_workspace_by_subscription_code(request.subscription_code)
-        if workspace.get("status") != "suspended": raise SupabaseGatewayError("Only a suspended workspace in its recovery period can be permanently purged.")
-        request_id = str(uuid.uuid4()); code = f"{secrets.randbelow(1_000_000):06d}"
-        owner_user_id = await gateway.deletion_request_owner(str(workspace["workspace_id"]))
-        await gateway.create_purge_approval({"id":request_id,"workspace_id":workspace["workspace_id"],"workspace_name":workspace["name"],"subscription_code":workspace["subscription_code"],"requested_by":user["id"],"owner_user_id":owner_user_id,"reason":request.reason,"code_hash":hashlib.sha256(f"{request_id}:{code}".encode()).hexdigest(),"expires_at":(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat()})
-        await send_purge_approval_code_email(settings, to_email=settings.purge_approver_email, workspace_name=workspace["name"], subscription_code=workspace["subscription_code"], code=code)
-        return {"request_id":request_id,"message":"Approval code sent to the primary approver."}
-    except SupabaseGatewayError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        workspace = await gateway.admin_workspace_by_subscription_code(
+            request.subscription_code
+        )
+        if workspace.get("status") != "suspended":
+            raise SupabaseGatewayError(
+                "Only a suspended workspace in its recovery period can be permanently "
+                "purged."
+            )
+
+        request_id = str(uuid.uuid4())
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        owner_user_id = await gateway.deletion_request_owner(
+            str(workspace["workspace_id"])
+        )
+        await gateway.create_purge_approval(
+            {
+                "id": request_id,
+                "workspace_id": workspace["workspace_id"],
+                "workspace_name": workspace["name"],
+                "subscription_code": workspace["subscription_code"],
+                "requested_by": user["id"],
+                "owner_user_id": owner_user_id,
+                "reason": request.reason,
+                "code_hash": hashlib.sha256(
+                    f"{request_id}:{code}".encode()
+                ).hexdigest(),
+                "expires_at": (
+                    datetime.now(UTC) + timedelta(minutes=10)
+                ).isoformat(),
+            }
+        )
+        await send_purge_approval_code_email(
+            settings,
+            to_email=settings.purge_approver_email,
+            workspace_name=workspace["name"],
+            subscription_code=workspace["subscription_code"],
+            code=code,
+        )
+        return {
+            "request_id": request_id,
+            "message": "Approval code sent to the primary approver.",
+        }
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 @router.post("/data-lifecycle/purge-approvals")
-async def approve_purge(request: PurgeApproval, authorization: Annotated[str, Header()], settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
+async def approve_purge(
+    request: PurgeApproval,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, str]:
     gateway = SupabaseGateway(settings)
     try:
-        user = await gateway.authenticated_user(_bearer_token(authorization)); _require_platform_admin(user, settings)
-        if not settings.is_purge_approver(str(user.get("email") or "")): raise HTTPException(status_code=403, detail="Only the primary purge approver can approve this request.")
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        if not settings.is_purge_approver(str(user.get("email") or "")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the primary purge approver can approve this request.",
+            )
         row = await gateway.purge_approval(request.request_id)
-        if not row or row.get("status") != "pending" or str(row.get("requested_by")) == str(user["id"]): raise HTTPException(status_code=400, detail="This purge request cannot be approved by this account.")
-        if datetime.fromisoformat(str(row["expires_at"]).replace("Z","+00:00")) < datetime.now(timezone.utc) or not secrets.compare_digest(str(row["code_hash"]), hashlib.sha256(f"{request.request_id}:{request.code}".encode()).hexdigest()): raise HTTPException(status_code=400, detail="The approval code is invalid or expired.")
-        await gateway.permanently_delete_workspace(str(row["workspace_id"]), str(row["owner_user_id"])); await gateway.approve_purge(request.request_id, str(user["id"]))
-        return {"message":"Workspace permanently purged and GSTIN released."}
-    except SupabaseGatewayError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if (
+            not row
+            or row.get("status") != "pending"
+            or str(row.get("requested_by")) == str(user["id"])
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This purge request cannot be approved by this account.",
+            )
+
+        expires_at = datetime.fromisoformat(
+            str(row["expires_at"]).replace("Z", "+00:00")
+        )
+        submitted_hash = hashlib.sha256(
+            f"{request.request_id}:{request.code}".encode()
+        ).hexdigest()
+        if expires_at < datetime.now(UTC) or not secrets.compare_digest(
+            str(row["code_hash"]), submitted_hash
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The approval code is invalid or expired.",
+            )
+
+        await gateway.permanently_delete_workspace(
+            str(row["workspace_id"]), str(row["owner_user_id"])
+        )
+        await gateway.approve_purge(request.request_id, str(user["id"]))
+        return {"message": "Workspace permanently purged and GSTIN released."}
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc

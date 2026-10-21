@@ -97,7 +97,9 @@ class Settings(BaseSettings):
         return user_id.strip().lower() in self.platform_admin_ids
 
     def is_purge_approver(self, email: str) -> bool:
-        return bool(email.strip()) and email.strip().lower() == self.purge_approver_email.strip().lower()
+        return bool(email.strip()) and (
+            email.strip().lower() == self.purge_approver_email.strip().lower()
+        )
 
     @property
     def razorpay_is_configured(self) -> bool:

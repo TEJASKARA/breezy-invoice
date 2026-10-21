@@ -2,8 +2,8 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     account,
-    analytics,
     admin,
+    analytics,
     billing,
     ca_partners,
     documents,
