@@ -106,14 +106,6 @@ function NewUserSignups({ extras }: { extras: UsageExtras }) {
   )
 }
 
-/** A selectable table complements the visual sunburst on smaller screens. */
-function PageFeatureDrilldown({ pages, features }: { pages: UsageReport["pages"]; features: { page: string; name: string; uses: number; users: number }[] }) {
-  const [selectedPage, setSelectedPage] = useState<string>(pages[0]?.name || "")
-  useEffect(() => { if (!pages.some((page) => page.name === selectedPage)) setSelectedPage(pages[0]?.name || "") }, [pages, selectedPage])
-  const rows = features.filter((feature) => feature.page === selectedPage)
-  return <Card><CardHeader><CardTitle>Page and feature usage</CardTitle><CardDescription>Select a page to see the features used from it. This drill-down is more readable than a sunburst when there are many small actions.</CardDescription></CardHeader><CardContent className="grid gap-4 md:grid-cols-[220px_1fr]"><div className="space-y-1">{pages.map((page) => <Button key={page.name} variant={selectedPage === page.name ? "default" : "ghost"} className="w-full justify-between" onClick={() => setSelectedPage(page.name)}>{pageLabel(page.name)} <span>{number(page.views)}</span></Button>)}</div><RankedBars empty="No tracked features for this page yet." rows={rows.map((feature) => ({ key: feature.name, label: featureLabel(feature.name), value: feature.uses, detail: `${number(feature.users)} users` }))} /></CardContent></Card>
-}
-
 const PERIODS = [5, 7, 30, 90, 365] as const
 const pageLabel = (path: string) => PAGE_LABELS[path] ?? path
 const featureLabel = (name: string) => FEATURE_LABELS[name] ?? name.replaceAll("_", " ")
@@ -311,7 +303,7 @@ export function PlatformUsageAnalytics() {
             <CardContent><DailyActivity daily={report.daily} days={report.since_days} /></CardContent>
           </Card>
 
-          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} /><PageFeatureDrilldown pages={report.pages} features={report.extras.page_features} /></> : null}
+          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} /></> : null}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
