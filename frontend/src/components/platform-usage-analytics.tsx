@@ -71,23 +71,29 @@ const FEATURE_LABELS: Record<string, string> = {
 const SUNBURST_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626"]
 
 function UsageSunburst({ pages, features }: { pages: UsageReport["pages"]; features: UsageExtras["page_features"] }) {
-  const data = {
-    name: "All tracked usage",
-    children: pages.map((page, index) => ({
+  const pageNodes = pages.flatMap((page, index) => {
+    const pageFeatures = features
+      .filter((feature) => feature.page === page.name)
+      .map((feature) => ({
+        name: featureLabel(feature.name),
+        value: feature.uses,
+        fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
+      }))
+    if (!pageFeatures.length) return []
+    return [{
       name: pageLabel(page.name),
       fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
-      value: page.views,
-      children: features
-        .filter((feature) => feature.page === page.name)
-        .map((feature) => ({
-          name: featureLabel(feature.name),
-          value: feature.uses,
-          fill: SUNBURST_COLORS[index % SUNBURST_COLORS.length],
-        })),
-    })),
+      value: pageFeatures.reduce((total, feature) => total + feature.value, 0),
+      children: pageFeatures,
+    }]
+  })
+  const data = {
+    name: "All tracked usage",
+    value: pageNodes.reduce((total, page) => total + page.value, 0),
+    children: pageNodes,
   }
 
-  if (!pages.length) return null
+  if (!pageNodes.length) return null
   return (
     <Card>
       <CardHeader>
