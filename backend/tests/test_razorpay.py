@@ -14,14 +14,16 @@ from app.services.razorpay import (
 
 
 def test_billing_plan_prices_are_server_controlled() -> None:
-    assert billing_plan("monthly").base_amount_paise == 10_000
-    assert billing_plan("monthly").gst_amount_paise == 1_800
-    assert billing_plan("monthly").amount_paise == 11_800
+    assert billing_plan("monthly").base_amount_paise == 19_900
+    assert billing_plan("monthly").gst_amount_paise == 3_582
+    assert billing_plan("monthly").amount_paise == 23_482
     assert billing_plan("monthly").credits == 200
-    assert billing_plan("quarterly").amount_paise == 35_400
+    assert billing_plan("quarterly").amount_paise == 58_882
     assert billing_plan("quarterly").credits == 625
-    assert billing_plan("annual").amount_paise == 141_600
+    assert billing_plan("annual").amount_paise == 176_882
     assert billing_plan("annual").credits == 2_600
+    assert billing_plan("three_year").amount_paise == 389_282
+    assert billing_plan("three_year").credits == 7_800
 
 
 def test_custom_plan_adds_twenty_percent_at_sixty_paise_rate() -> None:
@@ -80,9 +82,9 @@ def test_creates_razorpay_order_with_backend_amount() -> None:
         assert request.url.path == "/v1/orders"
         assert request.headers["authorization"].startswith("Basic ")
         body = request.read().decode()
-        assert '"amount":35400' in body
-        assert '"base_amount_paise":"30000"' in body
-        assert '"gst_amount_paise":"5400"' in body
+        assert '"amount":58882' in body
+        assert '"base_amount_paise":"49900"' in body
+        assert '"gst_amount_paise":"8982"' in body
         return httpx.Response(200, json={"id": "order_created", "status": "created"})
 
     settings = Settings(

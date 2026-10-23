@@ -20,9 +20,10 @@ import { downloadBillingInvoice } from "@/lib/billing-invoice-pdf"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const fixedPlans = [
-  { key: "monthly" as const, name: "Monthly", price: 100, term: "1 month", credits: 200, bonus: 20, seats: "Owner + 2", description: "₹18 GST is added at checkout. Total payable: ₹118." },
-  { key: "quarterly" as const, name: "Quarterly", price: 300, term: "3 months", credits: 625, bonus: 25, seats: "Owner + 2", description: "₹54 GST is added at checkout. Total payable: ₹354." },
-  { key: "annual" as const, name: "Annual", price: 1200, term: "12 months", credits: 2600, bonus: 30, seats: "Owner + 2", description: "₹216 GST is added at checkout. Total payable: ₹1,416." },
+  { key: "monthly" as const, name: "Monthly", price: 199, term: "1 month", credits: 200, bonus: 20, seats: "Owner + 2", description: "₹35.82 GST is added at checkout. Total payable: ₹234.82." },
+  { key: "quarterly" as const, name: "Quarterly", price: 499, term: "3 months", credits: 625, bonus: 25, seats: "Owner + 2", description: "₹89.82 GST is added at checkout. Total payable: ₹588.82." },
+  { key: "annual" as const, name: "Annual", price: 1499, term: "12 months", credits: 2600, bonus: 30, seats: "Owner + 2", description: "₹269.82 GST is added at checkout. Total payable: ₹1,768.82." },
+  { key: "three_year" as const, name: "3 Years", price: 3299, term: "36 months", credits: 7800, bonus: 30, seats: "Owner + 2", description: "₹593.82 GST is added at checkout. Total payable: ₹3,892.82." },
 ]
 
 function currency(value: number) {
@@ -135,7 +136,7 @@ export function PricingPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4" />Fixed plans</CardTitle><CardDescription>Choose the prepaid plan that fits your usage and billing period.</CardDescription></CardHeader>
         <CardContent>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {fixedPlans.map((plan) => (
               <div key={plan.name} className="flex h-full flex-col rounded-xl border p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">

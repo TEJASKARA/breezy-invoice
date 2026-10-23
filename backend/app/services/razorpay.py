@@ -50,9 +50,10 @@ def _plan_with_gst(
 
 
 BILLING_PLANS = {
-    "monthly": _plan_with_gst("monthly", "Monthly", 10_000, 200, 1),
-    "quarterly": _plan_with_gst("quarterly", "Quarterly", 30_000, 625, 3),
-    "annual": _plan_with_gst("annual", "Annual", 120_000, 2_600, 12),
+    "monthly": _plan_with_gst("monthly", "Monthly", 19_900, 200, 1),
+    "quarterly": _plan_with_gst("quarterly", "Quarterly", 49_900, 625, 3),
+    "annual": _plan_with_gst("annual", "Annual", 149_900, 2_600, 12),
+    "three_year": _plan_with_gst("three_year", "Three year", 329_900, 7_800, 36),
 }
 
 CUSTOM_PLAN_OPTIONS = {

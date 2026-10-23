@@ -7,6 +7,7 @@ export type BillingPlanKey =
   | "monthly"
   | "quarterly"
   | "annual"
+  | "three_year"
   | "custom_monthly"
   | "custom_quarterly"
   | "custom_annual"
