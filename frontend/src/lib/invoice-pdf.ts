@@ -425,9 +425,12 @@ export async function createInvoicePdf({
       }
   }
 
-  const footerY = Math.max(225, Math.min(250, totalsY + 22))
   const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
   const showTerms = template.showTerms && element("terms").visible
+  // Keep the footer clear of the permanent ChanaX mark at the bottom of the
+  // page. Payment details and terms share the footer horizontally, so a
+  // shallower, fixed reservation is more reliable than stacking them.
+  const footerY = Math.max(218, Math.min(showChanaxBranding ? 238 : 248, totalsY + 16))
   doc.setDrawColor(220, 224, 230)
   doc.line(margin, footerY, pageWidth - margin, footerY)
   if (showQuotationPaymentDetails) {

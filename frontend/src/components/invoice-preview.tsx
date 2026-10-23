@@ -331,18 +331,18 @@ function EditableInvoicePreview({
           </section>
       </EditableInvoiceElement>
 
-      <footer className="mt-14 grid grid-cols-2 gap-10 border-t pt-5 text-xs text-zinc-500">
-        <EditableInvoiceElement id="terms" setting={element("terms")} editor={editor} onPointerDown={startElementDrag}>
-          {showTerms && (
-            <div>
-              <p className="font-semibold text-zinc-800">{element("terms").label}</p>
-              <p className="mt-2 whitespace-pre-wrap leading-5">{template.termsText}</p>
+      <footer className="mt-14 grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 border-t pt-5 text-xs text-zinc-500">
+        <EditableInvoiceElement id="terms" setting={element("terms")} editor={editor} onPointerDown={startElementDrag} className={cn(showTerms && showQuotationPaymentDetails && "grid grid-cols-2 gap-5")}>
+          {showQuotationPaymentDetails && (
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="min-w-0 flex-1"><p className="font-semibold text-zinc-800">Payment details</p><p className="mt-2 max-h-16 overflow-hidden whitespace-pre-wrap leading-4">{template.quotationPaymentDetails}</p></div>
+              {template.quotationPaymentQrDataUrl ? <div className="shrink-0 text-center"><img src={template.quotationPaymentQrDataUrl} alt="UPI payment QR code" className="size-14 rounded border object-contain" /><p className="mt-1 text-[10px]">Scan to pay</p></div> : null}
             </div>
           )}
-          {showQuotationPaymentDetails && (
-            <div className={cn("flex max-w-md items-start gap-4", showTerms && "mt-5 border-t border-zinc-200 pt-4")}>
-              <div className="min-w-0 flex-1"><p className="font-semibold text-zinc-800">Payment details</p><p className="mt-2 whitespace-pre-wrap leading-5">{template.quotationPaymentDetails}</p></div>
-              {template.quotationPaymentQrDataUrl ? <div className="shrink-0 text-center"><img src={template.quotationPaymentQrDataUrl} alt="UPI payment QR code" className="size-20 rounded border object-contain" /><p className="mt-1 text-[10px]">Scan to pay</p></div> : null}
+          {showTerms && (
+            <div className="min-w-0">
+              <p className="font-semibold text-zinc-800">{element("terms").label}</p>
+              <p className="mt-2 max-h-16 overflow-hidden whitespace-pre-wrap leading-4">{template.termsText}</p>
             </div>
           )}
         </EditableInvoiceElement>

@@ -53,6 +53,7 @@ test("quotation shows terms and payment details without adding payment details t
   const paymentTemplate = { ...template, showQuotationPaymentDetails: true, quotationPaymentDetails: "Bank: Example Bank\nUPI: business@upi" }
   const quotation = await createInvoicePdf({ ...input, template: paymentTemplate, documentType: "quotation" })
   const finalInvoice = await createInvoicePdf({ ...input, template: paymentTemplate })
+  assert.equal(quotation.getNumberOfPages(), 1)
   assert(text(quotation).includes("PAYMENT DETAILS"))
   assert(text(quotation).includes("business@upi"))
   assert(text(quotation).includes(template.termsText))
