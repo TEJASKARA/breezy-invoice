@@ -427,6 +427,7 @@ export async function createInvoicePdf({
 
   const footerY = Math.max(225, Math.min(250, totalsY + 22))
   const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
+  const showTerms = template.showTerms && element("terms").visible
   doc.setDrawColor(220, 224, 230)
   doc.line(margin, footerY, pageWidth - margin, footerY)
   if (showQuotationPaymentDetails) {
@@ -439,27 +440,30 @@ export async function createInvoicePdf({
     doc.setFont(baseFont, "normal")
     doc.setFontSize(7.5)
     doc.setTextColor(...muted)
-    const paymentLines = (doc.splitTextToSize(template.quotationPaymentDetails.trim(), 86) as string[]).slice(0, 5)
+    const paymentLines = (doc.splitTextToSize(template.quotationPaymentDetails.trim(), 52) as string[]).slice(0, 5)
     if (paymentLines.length) doc.text(paymentLines, paymentX, paymentY + 6)
     if (template.quotationPaymentQrDataUrl) {
       const qrSize = 22
-      const qrX = margin + 98
+      const qrX = margin + 56
       if (addLogo(doc, template.quotationPaymentQrDataUrl, qrX, footerY + 4, qrSize, qrSize)) {
         doc.setFontSize(6.2)
         doc.text("Scan to pay", qrX + qrSize / 2, footerY + 29, { align: "center" })
       }
     }
-  } else if (template.showTerms && element("terms").visible) {
+  }
+  if (showTerms) {
     const termsShift = shift("terms")
+    const termsX = showQuotationPaymentDetails ? margin + 92 : margin
+    const termsWidth = showQuotationPaymentDetails ? 60 : 102
     doc.setTextColor(...ink)
     doc.setFont(baseFont, "bold")
     doc.setFontSize(8.5)
-    doc.text(element("terms").label, margin + termsShift.x, footerY + 8 + termsShift.y)
+    doc.text(element("terms").label, termsX + termsShift.x, footerY + 8 + termsShift.y)
     doc.setFont(baseFont, "normal")
     doc.setTextColor(...muted)
     doc.setFontSize(7.5)
-    const terms = (doc.splitTextToSize(template.termsText || "", 102) as string[]).slice(0, 4)
-    doc.text(terms, margin + termsShift.x, footerY + 14 + termsShift.y)
+    const terms = (doc.splitTextToSize(template.termsText || "", termsWidth) as string[]).slice(0, 4)
+    doc.text(terms, termsX + termsShift.x, footerY + 14 + termsShift.y)
   }
   if (element("signature").visible) {
     const signatureShift = shift("signature")

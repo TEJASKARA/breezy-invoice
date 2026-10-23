@@ -49,12 +49,13 @@ test("GST amounts remain visible when the issuing entity has not supplied a GSTI
   assert(!text(doc).includes(entity.gstin))
 })
 
-test("quotation payment details do not appear on the converted invoice", async () => {
+test("quotation shows terms and payment details without adding payment details to the converted invoice", async () => {
   const paymentTemplate = { ...template, showQuotationPaymentDetails: true, quotationPaymentDetails: "Bank: Example Bank\nUPI: business@upi" }
   const quotation = await createInvoicePdf({ ...input, template: paymentTemplate, documentType: "quotation" })
   const finalInvoice = await createInvoicePdf({ ...input, template: paymentTemplate })
   assert(text(quotation).includes("PAYMENT DETAILS"))
   assert(text(quotation).includes("business@upi"))
+  assert(text(quotation).includes(template.termsText))
   assert(!text(finalInvoice).includes("PAYMENT DETAILS"))
   assert(!text(finalInvoice).includes("business@upi"))
 })

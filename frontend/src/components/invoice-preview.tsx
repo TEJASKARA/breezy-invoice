@@ -130,6 +130,7 @@ function EditableInvoicePreview({
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
   const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
   const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
+  const showTerms = template.showTerms && element("terms").visible
   const logoSize = Math.min(200, Math.max(40, template.logoSize))
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
   const textScale = Math.min(1.1, Math.max(0.85, (template.documentTextScale ?? 100) / 100))
@@ -332,16 +333,17 @@ function EditableInvoicePreview({
 
       <footer className="mt-14 grid grid-cols-2 gap-10 border-t pt-5 text-xs text-zinc-500">
         <EditableInvoiceElement id="terms" setting={element("terms")} editor={editor} onPointerDown={startElementDrag}>
-          {showQuotationPaymentDetails ? (
-            <div className="flex max-w-md items-start gap-4">
+          {showTerms && (
+            <div>
+              <p className="font-semibold text-zinc-800">{element("terms").label}</p>
+              <p className="mt-2 whitespace-pre-wrap leading-5">{template.termsText}</p>
+            </div>
+          )}
+          {showQuotationPaymentDetails && (
+            <div className={cn("flex max-w-md items-start gap-4", showTerms && "mt-5 border-t border-zinc-200 pt-4")}>
               <div className="min-w-0 flex-1"><p className="font-semibold text-zinc-800">Payment details</p><p className="mt-2 whitespace-pre-wrap leading-5">{template.quotationPaymentDetails}</p></div>
               {template.quotationPaymentQrDataUrl ? <div className="shrink-0 text-center"><img src={template.quotationPaymentQrDataUrl} alt="UPI payment QR code" className="size-20 rounded border object-contain" /><p className="mt-1 text-[10px]">Scan to pay</p></div> : null}
             </div>
-          ) : template.showTerms && element("terms").visible && (
-            <>
-              <p className="font-semibold text-zinc-800">{element("terms").label}</p>
-              <p className="mt-2 whitespace-pre-wrap leading-5">{template.termsText}</p>
-            </>
           )}
         </EditableInvoiceElement>
         <EditableInvoiceElement id="signature" setting={element("signature")} editor={editor} onPointerDown={startElementDrag} className="text-right">
