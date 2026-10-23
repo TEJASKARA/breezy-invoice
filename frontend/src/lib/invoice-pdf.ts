@@ -456,8 +456,10 @@ export async function createInvoicePdf({
   }
   if (showTerms) {
     const termsShift = shift("terms")
-    const termsX = showQuotationPaymentDetails ? margin + 92 : margin
-    const termsWidth = showQuotationPaymentDetails ? 60 : 102
+    // With payment details present, reserve three non-overlapping lanes:
+    // payment/QR on the left, terms in the middle and signature on the right.
+    const termsX = showQuotationPaymentDetails ? margin + 88 : margin
+    const termsWidth = showQuotationPaymentDetails ? 44 : 102
     doc.setTextColor(...ink)
     doc.setFont(baseFont, "bold")
     doc.setFontSize(8.5)
@@ -482,7 +484,7 @@ export async function createInvoicePdf({
       doc.setFont(baseFont, "normal")
       doc.setTextColor(...muted)
       doc.setFontSize(7.2)
-      const declaration = doc.splitTextToSize(`This is a system-generated ${isQuotation ? "quotation" : "invoice"}. A signature is not required.`, 58) as string[]
+      const declaration = (doc.splitTextToSize(`This is a system-generated ${isQuotation ? "quotation" : "invoice"}. A signature is not required.`, showQuotationPaymentDetails ? 38 : 58) as string[]).slice(0, 3)
       doc.text(declaration, pageWidth - margin + signatureShift.x, footerY + 15 + signatureShift.y, { align: "right" })
     }
   }
