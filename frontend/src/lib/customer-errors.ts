@@ -21,7 +21,7 @@ function formatCustomerError(error: unknown, fallback = defaultMessage): string 
   }
   // Translate common conditions; retain useful application validation messages.
   if (/gst(?:in| number).*(?:already|registered|existing)/i.test(message) && !technicalDetails.test(message)) {
-    return "This GST number is already registered in ChanaX. Use the existing account or request access from its owner."
+    return "This GST number is already registered in ChanaX. Please contact the workspace owner for access."
   }
   if (code === "23503" || /foreign key constraint/i.test(message)) {
     return "This record is linked to other records and can't be removed on its own. Review those links first."

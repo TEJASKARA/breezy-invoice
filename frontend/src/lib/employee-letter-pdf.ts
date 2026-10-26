@@ -2,6 +2,35 @@ import type { Company, Employee, EmployeeLetter, TemplateSettings } from "@/lib/
 
 function safe(value: string) { return value.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || "employee" }
 
+function plainLetterLine(value: string) {
+  return value
+    .replace(/^\s{0,3}#{1,6}\s+/, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .trim()
+}
+
+/** The PDF already renders the date, recipient and subject. Remove copies pasted
+ * into the editable body, and print simple Markdown as clean document text. */
+function printableLetterBody(body: string, letter: EmployeeLetter, employee: Employee) {
+  const title = letter.title.replace(/[^a-z0-9]+/gi, "").toLowerCase()
+  const employeeName = employee.employeeName.replace(/\s+/g, " ").trim().toLowerCase()
+  const kept: string[] = []
+  for (const rawLine of body.replace(/\r/g, "").split("\n")) {
+    const line = plainLetterLine(rawLine)
+    if (!line) {
+      if (kept.length && kept.at(-1) !== "") kept.push("")
+      continue
+    }
+    const compact = line.replace(/[^a-z0-9]+/gi, "").toLowerCase()
+    const isRepeatedHeader = compact === title || /^date\s*:/i.test(line) || /^to\s*[:,]?$/i.test(line) || /^subject\s*:/i.test(line)
+    if (isRepeatedHeader || line.replace(/\s+/g, " ").toLowerCase() === employeeName) continue
+    kept.push(line)
+  }
+  return kept.join("\n").trim()
+}
+
 export async function createEmployeeLetterPdf({ letter, employee, entity, template, canRemoveBranding = false }: { letter: EmployeeLetter; employee: Employee; entity?: Company; template: TemplateSettings; canRemoveBranding?: boolean }) {
   const { jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true })
@@ -45,12 +74,30 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
   doc.setFont("helvetica", "normal"); doc.text(`${employee.designation}${employee.department ? `, ${employee.department}` : ""}`, margin, y); y += 11
   doc.setFont("helvetica", "bold"); doc.text(`Subject: ${letter.subject}`, margin, y); y += 10
   doc.setFont("helvetica", "normal")
-  const paragraphs = letter.body.split(/\n+/).filter(Boolean)
+  const startContinuationPage = () => {
+    doc.addPage(); paintPage()
+    doc.setTextColor(90); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
+    doc.text(`${letter.title} - continued`, margin, 22)
+    doc.setDrawColor(190); doc.line(margin, 26, 190, 26)
+    doc.setTextColor(20); doc.setFont("helvetica", "normal"); doc.setFontSize(10)
+    return 36
+  }
+  const paragraphs = printableLetterBody(letter.body, letter, employee).split(/\n{2,}/).filter(Boolean)
   for (const paragraph of paragraphs) {
     const lines = doc.splitTextToSize(paragraph, 170) as string[]
-    if (y + lines.length * 5 > 270) { doc.addPage(); paintPage(); y = 22 }
-    doc.text(lines, margin, y); y += lines.length * 5 + 4
+    let remaining = [...lines]
+    while (remaining.length) {
+      const availableLines = Math.floor((264 - y) / 5)
+      if (availableLines < 1) y = startContinuationPage()
+      const chunk = remaining.splice(0, Math.max(1, Math.floor((264 - y) / 5)))
+      doc.text(chunk, margin, y)
+      y += chunk.length * 5
+      if (remaining.length) y = startContinuationPage()
+    }
+    y += 4
   }
+  const signatureHeight = template.signatureMode === "uploaded" && template.signatureDataUrl ? 25 : 12
+  if (Math.max(y + 12, 238) + signatureHeight > (showChanaxBranding ? 282 : 290)) y = startContinuationPage()
   y = Math.max(y + 12, 238)
   if (template.signatureMode === "uploaded" && template.signatureDataUrl) {
     try { doc.addImage(template.signatureDataUrl, template.signatureDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", margin, y, 35, 15); y += 18 } catch { /* fallback to typed signatory */ }

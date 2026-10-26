@@ -22,7 +22,7 @@ class GstVerificationUnavailable(SupabaseGatewayError):
 logger = logging.getLogger(__name__)
 
 
-GSTIN_ALREADY_REGISTERED_MESSAGE = "This GST number is already registered in ChanaX."
+GSTIN_ALREADY_REGISTERED_MESSAGE = "This GST number is already registered in ChanaX. Please contact the workspace owner for access."
 
 
 class SupabaseGateway:

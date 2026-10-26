@@ -11,6 +11,7 @@
     "test:gst": "node --test tests/invoice-gst.test.mjs",
     "test:pdf": "node --test tests/invoice-pdf.test.mjs",
     "test:payslip": "node --test tests/payslip-page-breaks.test.mjs",
+    "test:letters": "node --test tests/employee-letter-pdf.test.mjs",
     "test:attendance": "node --test tests/attendance-view.test.mjs",
     "test:welcome": "node --test tests/welcome-email.test.mjs",
     "test:workspace": "node --test tests/workspace-context.test.mjs",

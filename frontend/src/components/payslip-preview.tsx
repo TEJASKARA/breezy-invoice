@@ -22,9 +22,10 @@ export function PayslipPreview({
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
 
   return (
-    <article data-payslip-document className={`${fontClass} relative mx-auto flex min-h-[1160px] w-[820px] shrink-0 flex-col border p-12 text-zinc-900`} style={{ backgroundColor: template.pageColor }}>
+    <article data-payslip-document className={`${fontClass} relative mx-auto flex min-h-[1160px] w-[820px] shrink-0 overflow-hidden border border-zinc-200 p-12 text-zinc-900 shadow-sm`} style={{ backgroundColor: template.pageColor }}>
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-2" style={{ backgroundColor: template.accentColor }} />
       {template.watermarkEnabled && template.watermarkText.trim() ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden"><span className="max-w-[85%] -rotate-[32deg] break-words text-center text-6xl font-bold uppercase tracking-[0.2em] text-zinc-700" style={{ opacity: watermarkOpacity }}>{template.watermarkText}</span></div> : null}
-      <header data-pdf-keep-together className="flex items-start justify-between gap-6 border-b pb-8">
+      <header data-pdf-keep-together className="flex items-start justify-between gap-6 border-b-2 pb-8 pt-3" style={{ borderColor: template.accentColor }}>
         <div className="flex min-w-0 items-start gap-4">
           {template.logoDataUrl ? (
             <img src={template.logoDataUrl} alt="Company logo" className="shrink-0 rounded-lg object-contain" style={{ width: logoSize, height: logoSize }} />
@@ -46,11 +47,14 @@ export function PayslipPreview({
         </div>
       </header>
 
-      <section data-pdf-keep-together className="my-8 grid grid-cols-4 gap-5 rounded-xl bg-zinc-50 p-5 text-sm">
+      <section data-pdf-keep-together className="my-8 rounded-xl border bg-zinc-50 p-5 text-sm">
+        <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: template.accentColor }}>Employee and payment information</p>
+        <div className="grid grid-cols-4 gap-5">
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Employee name</p><p className="mt-1 font-bold">{payslip.employeeName}</p><p className="text-xs text-zinc-500">ID: {payslip.employeeCode || "—"}</p></div>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Job designation</p><p className="mt-1 font-bold">{payslip.designation || "—"}</p><p className="text-xs text-zinc-500">{payslip.department || "Department not provided"}</p></div>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Tax & employment</p><p className="mt-1 font-bold">PAN: {payslip.pan || "—"}</p><p className="text-xs text-zinc-500">{payslip.employmentStatus || "Regular"}</p></div>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Disbursal bank</p><p className="mt-1 font-bold">{payslip.bankName || "—"}</p><p className="text-xs text-zinc-500">A/C: {maskBankAccount(payslip.bankAccount)}</p></div>
+        </div>
       </section>
 
       {payslip.attendance ? <section data-pdf-keep-together className="mb-8 rounded-xl border p-4">
@@ -71,7 +75,7 @@ export function PayslipPreview({
         <PayrollTable title="Deductions & tax withholdings" items={payslip.deductions} totalLabel="Total Deductions (B)" total={payslip.totalDeductions} accent="#e11d48" deductions />
       </section>
 
-      <section data-pdf-keep-together className="mt-10 flex flex-row items-end justify-between gap-4 rounded-xl border-2 p-5" style={{ borderColor: template.accentColor }}>
+      <section data-pdf-keep-together className="mt-10 flex flex-row items-end justify-between gap-4 rounded-xl border-2 bg-zinc-50 p-5" style={{ borderColor: template.accentColor }}>
         <div><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Net take-home salary (A − B)</p><p className="mt-1 text-3xl font-bold" style={{ color: template.accentColor }}>{money(payslip.netPay)}</p></div>
         <div className="max-w-[50%] text-right"><p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Net salary in words</p><p className="mt-1 text-sm font-semibold italic">{amountInWords(payslip.netPay)}</p></div>
       </section>
@@ -105,12 +109,12 @@ function PayrollTable({
   deductions?: boolean
 }) {
   return (
-    <div>
-      <div data-pdf-keep-together className="flex items-start justify-between gap-3 border-b pb-3">
+    <div className="overflow-hidden rounded-xl border">
+      <div data-pdf-keep-together className="flex items-start justify-between gap-3 px-4 py-3" style={{ backgroundColor: `${accent}14`, borderBottom: `2px solid ${accent}` }}>
         <h3 className="text-sm font-bold uppercase tracking-wider">{title}</h3>
         <span className="shrink-0 whitespace-nowrap text-xs font-bold" style={{ color: accent }}>IN INR (₹)</span>
       </div>
-      <div className="divide-y">
+      <div className="divide-y px-4">
         {items.filter((item) => item.label || item.amount).map((item) => (
           <div data-pdf-keep-together key={item.id} className="flex justify-between gap-4 py-3 text-sm">
             <span className="text-zinc-600">{item.label || "Other"}</span>
