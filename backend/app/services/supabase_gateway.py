@@ -22,7 +22,10 @@ class GstVerificationUnavailable(SupabaseGatewayError):
 logger = logging.getLogger(__name__)
 
 
-GSTIN_ALREADY_REGISTERED_MESSAGE = "This GST number is already registered. Please contact the workspace owner for access."
+GSTIN_ALREADY_REGISTERED_MESSAGE = (
+    "This GST number is already registered. "
+    "Please contact the workspace owner for access."
+)
 
 
 class SupabaseGateway:
