@@ -58,7 +58,7 @@ async def test_other_users_gst_conflict_does_not_expose_private_workspace_names(
     gateway = SupabaseGateway(Settings())
     gateway.user_rpc = AsyncMock(return_value=False)
     gateway._get = AsyncMock(return_value=[])
-    with pytest.raises(GstRegistrationConflict, match="already registered in ChanaX"):
+    with pytest.raises(GstRegistrationConflict, match="contact the workspace owner"):
         await gateway.assert_gstin_available(
             "token", "client-workspace", "36ACJFA4386L1ZW", user_id="other-user"
         )
