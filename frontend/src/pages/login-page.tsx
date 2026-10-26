@@ -49,7 +49,15 @@ export function LoginPage() {
     }
     setBusy(true); setMessage("")
     const destination = pendingCaInvitation() ? '/ca-invite' : '/'
-    const result = isSignUp ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${destination}` } }) : await supabase.auth.signInWithPassword({ email, password })
+    const result = isSignUp
+      ? await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}${destination}`,
+        },
+      })
+      : await supabase.auth.signInWithPassword({ email, password })
     setBusy(false)
     setMessageIsError(Boolean(result.error))
     if (result.error) setMessage(customerErrorMessage(result.error))

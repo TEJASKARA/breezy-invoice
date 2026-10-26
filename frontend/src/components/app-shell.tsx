@@ -32,6 +32,7 @@ import { BrandMark } from "@/components/brand-mark"
 import { SubscriptionCode } from "@/components/subscription-code"
 import { FirstLoginTour } from "@/components/first-login-tour"
 import { ProductFeedbackDialog } from "@/components/product-feedback-dialog"
+import { SignupSurveyDialog } from "@/components/signup-survey-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -133,6 +134,7 @@ function WorkspaceShell() {
   const { user } = useAuthUser()
   const { workspace, membership, creditAccount, workspaceOptions, userProfile, can, refresh, switchWorkspace } = useWorkspaceAccess()
   const [tourOpen, setTourOpen] = useState(false)
+  const [signupSurveyPending, setSignupSurveyPending] = useState(true)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const { setup, companies, invoices, proformas, payslips, syncError } = useMvpStore()
@@ -182,8 +184,9 @@ function WorkspaceShell() {
   if (workspace?.status === "suspended") return <SuspendedWorkspaceScreen workspaceId={workspace.id} workspaceName={workspace.name} onRestored={() => void refresh()} />
   return (
     <div className="min-h-svh bg-muted/30">
+      <SignupSurveyDialog user={user} onPendingChange={setSignupSurveyPending} />
       <FirstLoginTour
-        open={tourOpen}
+        open={tourOpen && !signupSurveyPending}
         fullName={fullName}
         can={can}
         onComplete={completeProductTour}
