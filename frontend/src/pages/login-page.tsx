@@ -15,7 +15,6 @@ import { pendingCaInvitation } from "@/lib/ca-invitation-session"
 export function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState("")
-  const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isSignUp, setIsSignUp] = useState(false)
@@ -48,12 +47,6 @@ export function LoginPage() {
       else { setMessage("Password updated. You can now use your new password."); setIsPasswordRecovery(false); setConfirmPassword("") }
       return
     }
-    const normalisedPhone = phone.trim().replace(/[()\s-]/g, "")
-    if (isSignUp && !/^\+?[1-9]\d{7,14}$/.test(normalisedPhone)) {
-      setMessageIsError(true)
-      setMessage("Enter a valid phone number with country code, for example +919876543210.")
-      return
-    }
     setBusy(true); setMessage("")
     const destination = pendingCaInvitation() ? '/ca-invite' : '/'
     const result = isSignUp
@@ -62,7 +55,6 @@ export function LoginPage() {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}${destination}`,
-          data: { phone: normalisedPhone },
         },
       })
       : await supabase.auth.signInWithPassword({ email, password })
@@ -116,11 +108,11 @@ export function LoginPage() {
               <CardDescription>Sign in to your ChanaX workspace.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {!isSignUp && !isPasswordRecovery ? <Button type="button" variant="outline" className="w-full" onClick={google} disabled={busy}>
+              {!isPasswordRecovery ? <Button type="button" variant="outline" className="w-full" onClick={google} disabled={busy}>
                 <span className="text-base font-semibold text-blue-600">G</span>
                 Continue with Google
               </Button> : null}
-              {!isSignUp && !isPasswordRecovery ? <div className="flex items-center gap-3">
+              {!isPasswordRecovery ? <div className="flex items-center gap-3">
                 <Separator className="flex-1" />
                 <span className="text-xs text-muted-foreground">or continue with email</span>
                 <Separator className="flex-1" />
@@ -142,11 +134,6 @@ export function LoginPage() {
                 </div>
                 <Input id="password" required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={isSignUp || isPasswordRecovery ? "new-password" : "current-password"} />
               </div>
-              {isSignUp ? <div className="space-y-2">
-                <Label htmlFor="phone">Phone number</Label>
-                <Input id="phone" required value={phone} onChange={(event) => setPhone(event.target.value)} type="tel" autoComplete="tel" placeholder="+91 98765 43210" />
-                <p className="text-xs text-muted-foreground">Include your country code. We use this only for account support and platform administration.</p>
-              </div> : null}
               {isPasswordRecovery ? <div className="space-y-2"><Label htmlFor="confirm-password">Confirm new password</Label><Input id="confirm-password" required minLength={6} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" /></div> : null}
               <Button className="w-full" disabled={busy}>
                 {busy ? "Please wait…" : isPasswordRecovery ? "Update password" : isSignUp ? "Create account" : "Sign in"}

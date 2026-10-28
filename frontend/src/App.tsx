@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom"
 import type { Session } from "@supabase/supabase-js"
 
 import { AppShell } from "@/components/app-shell"
+import { PostSignupPhoneGate } from "@/components/post-signup-phone-gate"
 import { UsageTracker } from "@/components/usage-tracker"
 import { AnonymousVisitorTracker } from "@/components/anonymous-visitor-tracker"
 import { LandingPage } from "@/pages/landing-page"
@@ -90,9 +91,9 @@ function App() {
       <Route path="/cancellation-refunds" element={<CancellationRefundsPage />} />
       <Route element={<WorkspaceProviders />}>
         <Route path="/ca-invite" element={<CaInvitationPage />} />
-        <Route path="/setup" element={<Protected><OnboardingPage /></Protected>} />
+        <Route path="/setup" element={<Protected><PostSignupPhoneGate><OnboardingPage /></PostSignupPhoneGate></Protected>} />
         <Route path="/ca" element={<Protected><CaPortalPage /></Protected>} />
-        <Route element={<Protected><SetupGate><AppShell /></SetupGate></Protected>}>
+        <Route element={<Protected><SetupGate><PostSignupPhoneGate><AppShell /></PostSignupPhoneGate></SetupGate></Protected>}>
           <Route path="/workspace" element={<DashboardPage />} />
           <Route path="/entities" element={<Navigate to="/customers" replace />} />
           <Route path="/customers" element={<PermissionGate permission="invoices.read"><CustomersPage /></PermissionGate>} />
