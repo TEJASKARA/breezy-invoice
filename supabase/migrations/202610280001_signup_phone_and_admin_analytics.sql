@@ -85,6 +85,7 @@ alter table public.chanax_signup_survey_responses
   drop column if exists phone;
 
 drop function if exists public.chanax_submit_signup_survey(text, text, text[], text, text);
+drop function if exists public.chanax_submit_signup_survey(text, text[], text, text);
 create function public.chanax_submit_signup_survey(
   p_discovery_source text,
   p_intended_uses text[],
