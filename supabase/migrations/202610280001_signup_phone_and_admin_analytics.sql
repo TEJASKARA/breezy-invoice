@@ -12,13 +12,28 @@ where users.id = profile.id
   and profile.phone is null
   and nullif(users.raw_user_meta_data ->> 'phone', '') is not null;
 
--- Preserve phone numbers collected by the initial version of the survey.
-update public.profiles as profile
-set phone = survey.phone
-from public.chanax_signup_survey_responses as survey
-where survey.user_id = profile.id
-  and profile.phone is null
-  and survey.phone is not null;
+-- Preserve phone numbers collected by the initial version of the survey when
+-- that version's optional phone column still exists.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'chanax_signup_survey_responses'
+      and column_name = 'phone'
+  ) then
+    execute $backfill$
+      update public.profiles as profile
+      set phone = survey.phone
+      from public.chanax_signup_survey_responses as survey
+      where survey.user_id = profile.id
+        and profile.phone is null
+        and survey.phone is not null
+    $backfill$;
+  end if;
+end;
+$$;
 
 create or replace function public.handle_new_auth_user()
 returns trigger
