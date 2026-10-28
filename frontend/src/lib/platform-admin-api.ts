@@ -77,7 +77,7 @@ export type UsageScope =
 
 export type UsageExtras = {
   anonymous_site_views: number
-  new_users: { day: string; email: string }[]
+  new_users: { day: string; email: string; phone: string | null }[]
   daily_signups: { day: string; users: number }[]
   page_features: { page: string; name: string; uses: number; users: number }[]
 }

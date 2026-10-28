@@ -68,16 +68,18 @@ const FEATURE_LABELS: Record<string, string> = {
 }
 
 function NewUserSignups({ extras }: { extras: UsageExtras }) {
-  const emailsByDay = new Map<string, string[]>()
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null)
+  const usersByDay = new Map<string, UsageExtras["new_users"]>()
   for (const user of extras.new_users) {
-    emailsByDay.set(user.day, [...(emailsByDay.get(user.day) || []), user.email])
+    usersByDay.set(user.day, [...(usersByDay.get(user.day) || []), user])
   }
+  const selectedUser = extras.new_users.find((user) => user.email === selectedEmail) ?? null
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>New users</CardTitle>
-        <CardDescription>Sign-ups by day. Hover a bar to see the date; the registered email addresses are listed below.</CardDescription>
+        <CardDescription>Sign-ups by day. Select a user below to view their registered phone number.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="h-56">
@@ -92,13 +94,38 @@ function NewUserSignups({ extras }: { extras: UsageExtras }) {
           </ResponsiveContainer>
         </div>
         {extras.new_users.length ? (
-          <div className="max-h-40 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm">
-            {extras.daily_signups.map((signup) => (
-              <div key={signup.day} className="flex flex-col gap-1 border-b pb-2 last:border-0 last:pb-0 sm:flex-row sm:gap-3">
-                <span className="font-medium sm:w-28">{signup.day}</span>
-                <span className="text-muted-foreground">{(emailsByDay.get(signup.day) || []).join(", ")}</span>
-              </div>
-            ))}
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm">
+              {extras.daily_signups.map((signup) => (
+                <div key={signup.day} className="flex flex-col gap-2 border-b pb-2 last:border-0 last:pb-0 sm:flex-row sm:items-start sm:gap-3">
+                  <span className="font-medium sm:w-28">{signup.day}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(usersByDay.get(signup.day) || []).map((user) => (
+                      <button
+                        key={`${user.day}-${user.email}`}
+                        type="button"
+                        onClick={() => setSelectedEmail(user.email)}
+                        className={cn(
+                          "rounded-md border px-2 py-1 text-left text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          selectedUser?.email === user.email && "border-primary bg-primary/5 text-foreground",
+                        )}
+                      >
+                        {user.email}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <aside className="rounded-lg border bg-muted/30 p-4" aria-live="polite">
+              {selectedUser ? <>
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{selectedUser.email.slice(0, 1).toUpperCase()}</span>
+                  <div className="min-w-0"><p className="truncate font-medium">{selectedUser.email}</p><p className="text-xs text-muted-foreground">Signed up {selectedUser.day}</p></div>
+                </div>
+                <div className="mt-4 border-t pt-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone number</p><p className="mt-1 font-medium">{selectedUser.phone || "Not provided"}</p></div>
+              </> : <p className="text-sm text-muted-foreground">Select a new user to view their contact number.</p>}
+            </aside>
           </div>
         ) : <p className="text-sm text-muted-foreground">No new users in this period.</p>}
       </CardContent>

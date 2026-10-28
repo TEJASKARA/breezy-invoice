@@ -4,7 +4,6 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import type { User } from "@supabase/supabase-js"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { supabase } from "@/lib/supabase"
@@ -42,10 +41,6 @@ const teamSizes = [
   ["more_than_50", "More than 50 people"],
 ] as const
 
-function normalisePhone(phone: string) {
-  return phone.trim().replace(/[()\s-]/g, "")
-}
-
 type SignupSurveyDialogProps = {
   user: User | null
   onPendingChange: (pending: boolean) => void
@@ -57,7 +52,6 @@ export function SignupSurveyDialog({ user, onPendingChange }: SignupSurveyDialog
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [discoverySource, setDiscoverySource] = useState("")
-  const [phone, setPhone] = useState("")
   const [intendedUses, setIntendedUses] = useState<string[]>([])
   const [businessType, setBusinessType] = useState("")
   const [teamSize, setTeamSize] = useState("")
@@ -123,13 +117,8 @@ export function SignupSurveyDialog({ user, onPendingChange }: SignupSurveyDialog
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    const cleanedPhone = normalisePhone(phone)
     if (!discoverySource || !businessType || intendedUses.length === 0) {
       setError("Please answer the required questions to continue.")
-      return
-    }
-    if (cleanedPhone && !/^\+?[1-9]\d{7,14}$/.test(cleanedPhone)) {
-      setError("Enter a valid phone number with country code, for example +919876543210.")
       return
     }
     if (!supabase) {
@@ -141,7 +130,6 @@ export function SignupSurveyDialog({ user, onPendingChange }: SignupSurveyDialog
     setError("")
     const { error: submitError } = await supabase.rpc("chanax_submit_signup_survey", {
       p_discovery_source: discoverySource,
-      p_phone: cleanedPhone || null,
       p_intended_uses: intendedUses,
       p_business_type: businessType,
       p_team_size: teamSize || null,
@@ -186,11 +174,6 @@ export function SignupSurveyDialog({ user, onPendingChange }: SignupSurveyDialog
                 <option value="" disabled>Select an option</option>
                 {discoverySources.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="signup-survey-phone">Phone number <span className="font-normal text-muted-foreground">(optional)</span></Label>
-              <Input id="signup-survey-phone" type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" />
             </div>
 
             <fieldset className="space-y-2">
