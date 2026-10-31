@@ -315,3 +315,32 @@ async def send_payslip_email(
             (filename, _decoded_pdf(pdf_base64)) for filename, pdf_base64 in attachments
         ],
     )
+
+
+async def send_account_ready_email(
+    settings: Settings,
+    *,
+    to_email: str,
+    recipient_name: str,
+    firm_name: str,
+    login_url: str,
+) -> None:
+    """Tell a user that ChanaX completed their workspace setup with them."""
+    if not settings.smtp_is_configured:
+        raise EmailConfigurationError("Account email is not configured.")
+    greeting = f"Hi {recipient_name}," if recipient_name.strip() else "Hi,"
+    await _deliver(
+        settings,
+        to_email=to_email,
+        subject="Your ChanaX account is ready",
+        message=(
+            f"{greeting}\n\n"
+            f"As discussed with our team, we have completed the setup of your "
+            f"ChanaX workspace for {firm_name}.\n\n"
+            f"Sign in to start creating invoices, quotations and payslips: "
+            f"{login_url}\n\n"
+            "Please review your business details under Workspace settings. "
+            "If anything looks wrong, reply to this email and we will fix it.\n\n"
+            "Regards,\nTeam ChanaX"
+        ),
+    )

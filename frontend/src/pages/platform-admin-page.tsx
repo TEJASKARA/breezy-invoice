@@ -1,9 +1,10 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
-import { BarChart3, Coins, Mail, Search, ShieldCheck, Trash2 } from "lucide-react"
+import { BarChart3, Coins, Mail, Search, ShieldCheck, Trash2, UserCog } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
+import { AdminUserSetup } from "@/components/admin-user-setup"
 import { PlatformUsageAnalytics } from "@/components/platform-usage-analytics"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,7 +21,8 @@ import {
 
 export function PlatformAdminPage() {
   const [access, setAccess] = useState<"loading" | "allowed" | "denied">("loading")
-  const [tab, setTab] = useState<"usage" | "credits" | "lifecycle">("usage")
+  const [tab, setTab] = useState<"usage" | "credits" | "lifecycle" | "users">("usage")
+  const [setupQuery, setSetupQuery] = useState("")
   const [purgeCode, setPurgeCode] = useState("")
   const [purgeRequestId, setPurgeRequestId] = useState("")
   const [subscriberQuery, setSubscriberQuery] = useState("")
@@ -106,13 +108,14 @@ export function PlatformAdminPage() {
       description="Track how subscribers use ChanaX and make audited special-credit allocations. This area is restricted to approved platform administrators."
     />
 
-    <div className="flex rounded-lg border bg-background p-1 sm:w-fit" role="tablist" aria-label="Administration sections">
+    <div className="flex flex-wrap rounded-lg border bg-background p-1 sm:w-fit" role="tablist" aria-label="Administration sections">
       <Button role="tab" aria-selected={tab === "usage"} size="sm" className="flex-1 sm:flex-none" variant={tab === "usage" ? "default" : "ghost"} onClick={() => setTab("usage")}><BarChart3 />Usage analytics</Button>
       <Button role="tab" aria-selected={tab === "credits"} size="sm" className="flex-1 sm:flex-none" variant={tab === "credits" ? "default" : "ghost"} onClick={() => setTab("credits")}><Coins />Credits</Button>
       <Button role="tab" aria-selected={tab === "lifecycle"} size="sm" className="flex-1 sm:flex-none" variant={tab === "lifecycle" ? "default" : "ghost"} onClick={() => setTab("lifecycle")}><Trash2 />Data Lifecycle</Button>
+      <Button role="tab" aria-selected={tab === "users"} size="sm" className="flex-1 sm:flex-none" variant={tab === "users" ? "default" : "ghost"} onClick={() => setTab("users")}><UserCog />User Management</Button>
     </div>
 
-    {tab === "usage" ? <PlatformUsageAnalytics /> : tab === "lifecycle" ? <Card><CardHeader><CardTitle>Permanent data purge</CardTitle><CardDescription>For suspended workspaces in the 30-day recovery period. This permanently removes the workspace and releases its GSTIN.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="purge-code">Approval code</Label><Input id="purge-code" value={purgeCode} maxLength={6} onChange={(event) => setPurgeCode(event.target.value.replace(/\D/g, ""))} placeholder="6-digit code" /></div><Button variant="destructive" disabled={!workspace || reason.trim().length < 3 || saving} onClick={() => void (async () => { try { setSaving(true); if (!purgeRequestId) { const result = await requestPlatformPurge(workspace!.subscription_code, reason); setPurgeRequestId(result.request_id); setSuccess(result.message) } else { const result = await approvePlatformPurge(purgeRequestId, purgeCode); setSuccess(result.message); setPurgeRequestId(""); setPurgeCode("") } } catch (e) { setError(customerErrorMessage(e, "Purge request failed.")) } finally { setSaving(false) } })()}>{!purgeRequestId ? "Request approval code" : "Approve and permanently purge"}</Button><p className="text-xs text-muted-foreground">Find a suspended workspace in Credits first, enter a reason there, then request approval. The requester cannot approve their own request.</p></CardContent></Card> : <>
+    {tab === "usage" ? <PlatformUsageAnalytics onSetUpUser={(identifier) => { setSetupQuery(identifier); setTab("users") }} /> : tab === "users" ? <AdminUserSetup initialQuery={setupQuery} /> : tab === "lifecycle" ? <Card><CardHeader><CardTitle>Permanent data purge</CardTitle><CardDescription>For suspended workspaces in the 30-day recovery period. This permanently removes the workspace and releases its GSTIN.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="purge-code">Approval code</Label><Input id="purge-code" value={purgeCode} maxLength={6} onChange={(event) => setPurgeCode(event.target.value.replace(/\D/g, ""))} placeholder="6-digit code" /></div><Button variant="destructive" disabled={!workspace || reason.trim().length < 3 || saving} onClick={() => void (async () => { try { setSaving(true); if (!purgeRequestId) { const result = await requestPlatformPurge(workspace!.subscription_code, reason); setPurgeRequestId(result.request_id); setSuccess(result.message) } else { const result = await approvePlatformPurge(purgeRequestId, purgeCode); setSuccess(result.message); setPurgeRequestId(""); setPurgeCode("") } } catch (e) { setError(customerErrorMessage(e, "Purge request failed.")) } finally { setSaving(false) } })()}>{!purgeRequestId ? "Request approval code" : "Approve and permanently purge"}</Button><p className="text-xs text-muted-foreground">Find a suspended workspace in Credits first, enter a reason there, then request approval. The requester cannot approve their own request.</p></CardContent></Card> : <>
 
     {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
     {success ? <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">{success}</div> : null}

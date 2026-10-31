@@ -1,0 +1,312 @@
+import { useState } from "react"
+import { CalendarDays, CheckCircle2, Hash, Sparkles } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { customerErrorMessage } from "@/lib/customer-errors"
+import type { GstVerification } from "@/lib/gst-api"
+import { defaultSequenceGroupIndex, formatInvoiceNumber, invoiceNumberDigitGroups, parseExistingInvoiceNumber, type Setup } from "@/lib/mvp-store"
+import { cn } from "@/lib/utils"
+
+const industries = [
+  "Accounting / CA firm",
+  "Information technology / Software",
+  "Professional services",
+  "Manufacturing",
+  "Retail / E-commerce",
+  "Real estate / Construction",
+  "Healthcare",
+  "Education",
+  "Hospitality",
+  "Logistics / Transportation",
+  "Other",
+]
+const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+
+/** Business details collected at signup. Shared by onboarding and platform-admin setup. */
+export function BusinessSetupForm({
+  accountType,
+  initialFirmName = "",
+  verifyGst,
+  onSubmit,
+  title = "Your business details",
+  description = "Verify your GSTIN to securely fill the registered business details. Non-GST businesses can continue without it.",
+  submitLabel = "Save and add client companies",
+  savingLabel = "Saving your workspace…",
+}: {
+  accountType: "ca" | "founder" | "employee"
+  initialFirmName?: string
+  /** Looks up the GSTIN's registered details (WhiteBooks, cached). */
+  verifyGst: (gstin: string) => Promise<GstVerification>
+  onSubmit: (setup: Setup) => Promise<void>
+  title?: string
+  description?: string
+  submitLabel?: string
+  savingLabel?: string
+}) {
+  const [firmName, setFirmName] = useState(initialFirmName)
+  const [industry, setIndustry] = useState("")
+  const [otherIndustry, setOtherIndustry] = useState("")
+  const [hasGstin, setHasGstin] = useState<boolean | null>(null)
+  const [gstin, setGstin] = useState("")
+  const [pan, setPan] = useState("")
+  const [mailingAddress, setMailingAddress] = useState("")
+  const [continueExistingNumbers, setContinueExistingNumbers] = useState(false)
+  const [latestInvoiceNumber, setLatestInvoiceNumber] = useState("")
+  const [sequenceGroupIndex, setSequenceGroupIndex] = useState<number | null>(null)
+  const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">("monthly")
+  const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(1)
+  const [numberingError, setNumberingError] = useState("")
+  const [saveError, setSaveError] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [verifyingGstin, setVerifyingGstin] = useState(false)
+  const [gstDetails, setGstDetails] = useState<GstVerification | null>(null)
+  const [gstDetailsConfirmed, setGstDetailsConfirmed] = useState(false)
+
+  const existingNumbering = continueExistingNumbers ? parseExistingInvoiceNumber(latestInvoiceNumber, sequenceGroupIndex) : null
+  const nextNumberPreview = existingNumbering ? formatInvoiceNumber(existingNumbering, existingNumbering.nextNumber) : ""
+  const digitGroups = invoiceNumberDigitGroups(latestInvoiceNumber)
+  const activeGroupIndex = sequenceGroupIndex ?? defaultSequenceGroupIndex(latestInvoiceNumber)
+  const trimmedLatestNumber = latestInvoiceNumber.trim()
+
+  async function fetchGstDetails() {
+    const normalizedGstin = gstin.trim().toUpperCase()
+    if (!gstinPattern.test(normalizedGstin)) throw new Error("Enter a valid 15-character GSTIN first.")
+    setVerifyingGstin(true)
+    setSaveError("")
+    try {
+      const details = await verifyGst(normalizedGstin)
+      setGstDetails(details)
+      const fetchedName = details.trade_name || details.legal_name
+      if (fetchedName) setFirmName(fetchedName)
+      setPan(details.pan)
+      if (details.billing_address) setMailingAddress(details.billing_address)
+      setGstDetailsConfirmed(false)
+      return details
+    } catch (error) {
+      const message = customerErrorMessage(error, "GSTIN verification failed.")
+      setSaveError(message)
+      throw error
+    } finally {
+      setVerifyingGstin(false)
+    }
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    const normalizedGstin = gstin.trim().toUpperCase()
+    if (!industry || (industry === "Other" && !otherIndustry.trim())) {
+      setSaveError("Select your industry or enter it under Other.")
+      return
+    }
+    if (hasGstin === null) {
+      setSaveError("Tell us whether your business has a GSTIN.")
+      return
+    }
+    if (hasGstin && !gstinPattern.test(normalizedGstin)) {
+      setSaveError("Enter a valid 15-character GSTIN, for example 27AAAAA0000A1Z5.")
+      return
+    }
+    if (hasGstin && (!gstDetails || gstDetails.gstin !== normalizedGstin)) {
+      setSaveError("Verify the GSTIN before continuing.")
+      return
+    }
+    if (hasGstin && !gstDetailsConfirmed) {
+      setSaveError("Review the fetched GST details and confirm that they are correct.")
+      return
+    }
+    if (!hasGstin && pan.trim() && !panPattern.test(pan.trim().toUpperCase())) {
+      setSaveError("Enter a valid 10-character PAN or leave it blank.")
+      return
+    }
+    if (!firmName.trim() || !mailingAddress.trim()) {
+      setSaveError("Enter the business name and mailing address.")
+      return
+    }
+    if (continueExistingNumbers && !existingNumbering) {
+      setNumberingError("Enter your complete latest invoice number. It must contain a running number, for example ABC/2025-26/0047 or INV-25-A.")
+      return
+    }
+    setSaving(true)
+    setSaveError("")
+    try {
+      const verified = hasGstin ? gstDetails : null
+      await onSubmit({
+        firmName: firmName.trim() || verified?.trade_name || verified?.legal_name || "",
+        accountType,
+        industry: industry === "Other" ? otherIndustry.trim() : industry,
+        hasGstin,
+        gstin: hasGstin ? normalizedGstin : "",
+        pan: hasGstin ? verified?.pan || normalizedGstin.slice(2, 12) : pan.trim().toUpperCase(),
+        legalName: verified?.legal_name || "",
+        tradeName: verified?.trade_name || "",
+        gstRegistrationStatus: verified?.registration_status || "",
+        mailingAddress: mailingAddress.trim() || verified?.billing_address || "",
+        premisesAddress: verified?.premises_address || mailingAddress.trim(),
+        invoiceNumbering: existingNumbering ?? { mode: "default", prefix: "", nextNumber: 1, padding: 4 },
+        leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) },
+      })
+    } catch (error) {
+      setSaveError(customerErrorMessage(error, "We could not save this setup. Please try again."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+      <CardContent>
+        <form onSubmit={submit} noValidate className="space-y-6">
+          {saveError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{saveError}</p>}
+          <div className="space-y-2">
+            <Label htmlFor="industry">Industry</Label>
+            <select id="industry" required value={industry} onChange={(event) => { setIndustry(event.target.value); if (event.target.value !== "Other") setOtherIndustry("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Select your industry</option>
+              {industries.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            {industry === "Other" && <Input required value={otherIndustry} onChange={(event) => setOtherIndustry(event.target.value)} placeholder="Enter your industry" aria-label="Other industry" />}
+            <p className="text-xs text-muted-foreground">This helps ChanaX tailor templates and reports to your business.</p>
+          </div>
+          <fieldset className="space-y-3">
+            <legend className="text-sm font-medium">Does your business have a GSTIN?</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === true ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
+                <input type="radio" name="hasGstin" required checked={hasGstin === true} onChange={() => { setHasGstin(true); setGstDetails(null); setGstDetailsConfirmed(false); setPan(""); setSaveError("") }} className="sr-only" />
+                <span className="block font-medium">Yes, I have a GSTIN</span>
+                <span className="mt-1 block text-xs text-muted-foreground">You receive provisional document credits plus an equal, separate quotation allowance. GST verification unlocks the full free allowance in both balances.</span>
+              </label>
+              <label className={`cursor-pointer rounded-xl border p-4 transition-colors ${hasGstin === false ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:bg-muted/30"}`}>
+                <input type="radio" name="hasGstin" required checked={hasGstin === false} onChange={() => { setHasGstin(false); setGstin(""); setGstDetails(null); setGstDetailsConfirmed(false); setPan(""); setSaveError("") }} className="sr-only" />
+                <span className="block font-medium">No, I do not have a GSTIN</span>
+                <span className="mt-1 block text-xs text-muted-foreground">You receive document credits for invoices or payslips, plus the same number of separate quotation credits.</span>
+              </label>
+            </div>
+          </fieldset>
+          {hasGstin ? (
+            <section className="space-y-4 rounded-xl border-2 border-primary bg-primary/5 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
+                <div>
+                  <h2 className="font-semibold text-primary">Save time — auto-fill your business details</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Enter and verify your GSTIN to automatically fill your registered business name, PAN and address.</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+              <Label htmlFor="gstin">Enter GSTIN to auto-fill your details</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input id="gstin" required minLength={15} maxLength={15} value={gstin} onChange={(event) => { setGstin(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15)); setGstDetails(null); setGstDetailsConfirmed(false); setPan(""); setSaveError("") }} placeholder="27AAAAA0000A1Z5" className="font-mono uppercase" />
+                <Button type="button" disabled={verifyingGstin || gstin.length !== 15} onClick={() => void fetchGstDetails().catch(() => undefined)}>{verifyingGstin ? "Checking GSTIN…" : "Verify & auto-fill details"}</Button>
+              </div>
+              <p className="text-xs text-muted-foreground">{gstin.length}/15 characters. ChanaX reuses saved verification data when this GSTIN was checked before.</p>
+              </div>
+            </section>
+          ) : null}
+
+          {hasGstin && gstDetails ? (
+            <section className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+                <div>
+                  <h2 className="font-medium text-emerald-900 dark:text-emerald-100">GSTIN verified with WhiteBooks</h2>
+                  <p className="text-sm text-emerald-800/80 dark:text-emerald-200/80">Review the registered details below. You can edit the business display name and mailing address before saving.</p>
+                </div>
+              </div>
+              <dl className="grid gap-3 rounded-lg border bg-background p-3 text-sm sm:grid-cols-2">
+                <div><dt className="text-xs text-muted-foreground">Legal name</dt><dd className="mt-1 font-medium">{gstDetails.legal_name || "—"}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Trade name</dt><dd className="mt-1 font-medium">{gstDetails.trade_name || "—"}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">PAN</dt><dd className="mt-1 font-mono font-medium">{gstDetails.pan}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Registration status</dt><dd className="mt-1 font-medium">{gstDetails.registration_status}</dd></div>
+              </dl>
+              <div className="space-y-2"><Label htmlFor="firmName">Business display name</Label><Input id="firmName" required value={firmName} onChange={(event) => { setFirmName(event.target.value); setGstDetailsConfirmed(false) }} placeholder="Business name" /><p className="text-xs text-muted-foreground">This is the name ChanaX will show in your workspace and documents.</p></div>
+              <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => { setMailingAddress(event.target.value); setGstDetailsConfirmed(false) }} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3">
+                <input type="checkbox" checked={gstDetailsConfirmed} onChange={(event) => { setGstDetailsConfirmed(event.target.checked); setSaveError("") }} className="mt-0.5 size-4 accent-foreground" />
+                <span><span className="block text-sm font-medium">I have reviewed these business details</span><span className="block text-xs text-muted-foreground">The legal name, PAN and GST status remain linked to the verified GSTIN.</span></span>
+              </label>
+            </section>
+          ) : null}
+
+          {hasGstin === false ? (
+            <section className="space-y-4 rounded-xl border bg-muted/20 p-4">
+              <div><h2 className="font-medium">Enter your business details</h2><p className="text-sm text-muted-foreground">GST information will be omitted from your invoices. PAN is optional.</p></div>
+              <div className="space-y-2"><Label htmlFor="firmName">Firm or business name</Label><Input id="firmName" required value={firmName} onChange={(event) => setFirmName(event.target.value)} placeholder="Rushi & Co." /></div>
+              <div className="space-y-2"><Label htmlFor="pan">PAN (optional)</Label><Input id="pan" minLength={10} maxLength={10} value={pan} onChange={(event) => { setPan(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10)); setSaveError("") }} placeholder="ABCDE1234F" className="font-mono uppercase" /></div>
+              <div className="space-y-2"><Label htmlFor="address">Mailing address</Label><textarea id="address" required value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} placeholder="Full business mailing address" className="flex min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" /></div>
+            </section>
+          ) : null}
+          <section className="space-y-4 rounded-xl border bg-muted/20 p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-background"><CalendarDays className="size-4" /></span>
+              <div><h2 className="font-medium">Employee leave policy</h2><p className="text-sm text-muted-foreground">Choose how many paid leave days each employee receives and when that allowance resets.</p></div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label htmlFor="leave-period">Calculate paid leave</Label><select id="leave-period" value={leavePeriod} onChange={(event) => setLeavePeriod(event.target.value as "monthly" | "yearly")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="monthly">Monthly allowance</option><option value="yearly">Yearly allowance</option></select></div>
+              <div className="space-y-2"><Label htmlFor="leave-allowance">Paid leave allowance</Label><Input id="leave-allowance" required type="number" min="0" step="0.5" value={leaveAllowanceDays} onChange={(event) => setLeaveAllowanceDays(Math.max(0, Number(event.target.value) || 0))} /><p className="text-xs text-muted-foreground">{leavePeriod === "monthly" ? "Days available to each employee every month." : "Days available to each employee per calendar year."}</p></div>
+            </div>
+            <p className="text-xs text-muted-foreground">Leave above this allowance becomes loss of pay. The deduction is calculated as monthly gross salary ÷ calendar days × loss-of-pay days.</p>
+          </section>
+
+          <section className="space-y-4 rounded-xl border bg-muted/20 p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-background"><Hash className="size-4" /></span>
+              <div><h2 className="font-medium">Invoice numbering</h2><p className="text-sm text-muted-foreground">Do you already use an invoice number format that you want to continue?</p></div>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3">
+              <input
+                type="checkbox"
+                checked={continueExistingNumbers}
+                onChange={(event) => {
+                  setContinueExistingNumbers(event.target.checked)
+                  setNumberingError("")
+                }}
+                className="mt-0.5 size-4 accent-foreground"
+              />
+              <span><span className="block text-sm font-medium">Continue my existing invoice sequence</span><span className="block text-xs text-muted-foreground">Turn this off to use the ChanaX format, such as INV-{new Date().getFullYear()}-0001.</span></span>
+            </label>
+
+            {continueExistingNumbers && (
+              <div className="space-y-2">
+                <Label htmlFor="latestInvoiceNumber">Your latest invoice number</Label>
+                <Input
+                  id="latestInvoiceNumber"
+                  required
+                  value={latestInvoiceNumber}
+                  onChange={(event) => { setLatestInvoiceNumber(event.target.value); setSequenceGroupIndex(null); setNumberingError("") }}
+                  placeholder="ABC/2025-26/0047"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">The running number can be anywhere, for example rxy_rus25, INV-25-A or RT/001/2025-26. ChanaX keeps the text before and after it and the number of leading zeroes.</p>
+                {digitGroups.length > 1 && (
+                  <div className="space-y-2 rounded-md border bg-background p-3">
+                    <p className="text-xs font-medium">Which number increases with each invoice?</p>
+                    <div className="flex flex-wrap gap-2">
+                      {digitGroups.map((group) => (
+                        <button
+                          key={group.index}
+                          type="button"
+                          onClick={() => setSequenceGroupIndex(group.index)}
+                          aria-pressed={activeGroupIndex === group.index}
+                          className={cn("rounded-md border px-2 py-1 font-mono text-sm", activeGroupIndex === group.index ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+                        >
+                          {trimmedLatestNumber.slice(0, group.start)}<span className="underline decoration-2 underline-offset-2">{group.digits}</span>{trimmedLatestNumber.slice(group.end)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {nextNumberPreview && <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Your next invoice will be {nextNumberPreview}</p>}
+                {numberingError && <p role="alert" className="text-sm font-medium text-destructive">{numberingError}</p>}
+              </div>
+            )}
+          </section>
+
+          <Button className="w-full" type="submit" disabled={saving || hasGstin === null || (hasGstin && (!gstDetails || !gstDetailsConfirmed))}>{saving ? savingLabel : submitLabel} {!saving && <CheckCircle2 />}</Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}

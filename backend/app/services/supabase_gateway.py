@@ -570,6 +570,9 @@ class SupabaseGateway:
             )
             if isinstance(extra_result, dict):
                 extras = extra_result
+                extras["setup_pending"] = await self._setup_pending_or_empty(
+                    excluded_user_ids or []
+                )
         result = await self.service_rpc(
             "breezy_admin_usage_report",
             {
@@ -583,6 +586,72 @@ class SupabaseGateway:
         # Extra platform-wide metrics intentionally exclude a searched workspace/user.
         if extras is not None:
             result["extras"] = extras
+        return result
+
+    async def admin_setup_pending(
+        self, excluded_user_ids: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """Users who signed up but never saved their workspace setup."""
+        result = await self.service_rpc(
+            "breezy_admin_setup_pending",
+            {"excluded_user_ids": sorted(excluded_user_ids or [])},
+        )
+        if not isinstance(result, list):
+            raise SupabaseGatewayError(
+                "Supabase returned an invalid pending-setup list."
+            )
+        return [item for item in result if isinstance(item, dict)]
+
+    async def _setup_pending_or_empty(
+        self, excluded_user_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        # Analytics must still load if this optional list is unavailable.
+        try:
+            return await self.admin_setup_pending(excluded_user_ids)
+        except (SupabaseGatewayError, httpx.HTTPError):
+            logger.warning("Pending-setup list unavailable for usage analytics")
+            return []
+
+    async def admin_setup_target(self, identifier: str) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_admin_setup_target", {"search_identifier": identifier.strip()}
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("Supabase returned an invalid user lookup.")
+        return result
+
+    async def admin_gstin_available(self, workspace_id: str, gstin: str) -> bool:
+        result = await self.service_rpc(
+            "breezy_admin_gstin_available",
+            {"target_workspace_id": workspace_id, "target_gstin": gstin},
+        )
+        if not isinstance(result, bool):
+            raise GstVerificationUnavailable(
+                "GSTIN availability could not be checked. Please try again."
+            )
+        return result
+
+    async def admin_complete_setup(
+        self,
+        *,
+        workspace_id: str,
+        setup: dict[str, Any],
+        entity_id: str,
+        entity: dict[str, Any],
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_admin_complete_setup",
+            {
+                "target_workspace_id": workspace_id,
+                "setup_payload": setup,
+                "entity_id": entity_id,
+                "entity_payload": entity,
+                "target_actor_user_id": actor_user_id,
+            },
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("Supabase returned an invalid setup result.")
         return result
 
     async def apply_razorpay_payment(

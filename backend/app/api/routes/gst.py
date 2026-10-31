@@ -123,6 +123,54 @@ def _invalid_payload_message(payload: dict[str, Any]) -> str:
     return ""
 
 
+
+async def lookup_active_taxpayer(
+    gateway: SupabaseGateway, normalized_gstin: str
+) -> tuple[dict[str, Any], bool, str, str, str]:
+    """Cached-first WhiteBooks lookup. Raises unless the GSTIN is active."""
+    data = await gateway.cached_gstin(normalized_gstin)
+    cached = data is not None
+    if data is not None:
+        legal_name, trade_name, registration_status = _taxpayer_details(data)
+        if not (legal_name or trade_name) or not registration_status:
+            # Never let a stale error response in the cache permanently block a
+            # real taxpayer lookup. Older versions cached before validating.
+            data = None
+            cached = False
+    if data is None:
+        data = await get_whitebooks_client().verify_gstin(normalized_gstin)
+        legal_name, trade_name, registration_status = _taxpayer_details(data)
+        provider_error = _invalid_payload_message(data)
+        if provider_error or not (legal_name or trade_name):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    "This GSTIN could not be found. Check the number and try again."
+                ),
+            )
+        if not registration_status:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "WhiteBooks returned incomplete GST registration details. "
+                    "Please try again."
+                ),
+            )
+        await gateway.cache_gstin(normalized_gstin, data)
+    else:
+        legal_name, trade_name, registration_status = _taxpayer_details(data)
+
+    if not _is_active_registration(registration_status):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"This GSTIN has registration status “{registration_status}”. "
+                "Enter an active GSTIN or choose the non-GST option."
+            ),
+        )
+    return data, cached, legal_name, trade_name, registration_status
+
+
 @router.get("/verify", response_model=GstVerificationResponse)
 async def verify_gstin(
     response: Response,
@@ -149,46 +197,13 @@ async def verify_gstin(
         await gateway.assert_gstin_available(
             access_token, workspace_id, normalized_gstin, user_id=str(user["id"])
         )
-        data = await gateway.cached_gstin(normalized_gstin)
-        cached = data is not None
-        if data is not None:
-            legal_name, trade_name, registration_status = _taxpayer_details(data)
-            if not (legal_name or trade_name) or not registration_status:
-                # Never let a stale error response in the cache permanently block a
-                # real taxpayer lookup. Older versions cached before validating.
-                data = None
-                cached = False
-        if data is None:
-            data = await get_whitebooks_client().verify_gstin(normalized_gstin)
-            legal_name, trade_name, registration_status = _taxpayer_details(data)
-            provider_error = _invalid_payload_message(data)
-            if provider_error or not (legal_name or trade_name):
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=(
-                        "This GSTIN could not be found. Check the number and try again."
-                    ),
-                )
-            if not registration_status:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=(
-                        "WhiteBooks returned incomplete GST registration details. "
-                        "Please try again."
-                    ),
-                )
-            await gateway.cache_gstin(normalized_gstin, data)
-        else:
-            legal_name, trade_name, registration_status = _taxpayer_details(data)
-
-        if not _is_active_registration(registration_status):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"This GSTIN has registration status “{registration_status}”. "
-                    "Enter an active GSTIN or choose the non-GST option."
-                ),
-            )
+        (
+            data,
+            cached,
+            legal_name,
+            trade_name,
+            registration_status,
+        ) = await lookup_active_taxpayer(gateway, normalized_gstin)
         workspace_verified = False
         workspace_verified = await gateway.verify_workspace_gstin(
             workspace_id, normalized_gstin

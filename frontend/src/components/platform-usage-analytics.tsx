@@ -1,6 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
-import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, RefreshCw, Search, Users, X } from "lucide-react"
+import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, Phone, RefreshCw, Search, UserCog, Users, X } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -17,7 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { loadUsageReport, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
+import { loadUsageReport, type SetupPendingUser, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
 import { cn } from "@/lib/utils"
 
 const PAGE_LABELS: Record<string, string> = {
@@ -65,6 +65,34 @@ const FEATURE_LABELS: Record<string, string> = {
   whatsapp_sent: "PDF sent on WhatsApp",
   email_sent: "Document emailed",
   gstin_verified: "GSTIN verified",
+}
+
+function SetupPendingUsers({ users, onSetUp }: { users: SetupPendingUser[]; onSetUp?: (identifier: string) => void }) {
+  const signedUp = (value: string) => new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Setup pending</CardTitle>
+        <CardDescription>{users.length ? `${number(users.length)} user${users.length === 1 ? " has" : "s have"} signed up but not finished workspace setup. Call them and, if they agree, complete it from User Management.` : "Everyone who signed up has finished setup."}</CardDescription>
+      </CardHeader>
+      {users.length ? <CardContent>
+        <div className="max-h-96 overflow-auto rounded-lg border">
+          <Table>
+            <TableHeader><TableRow><TableHead>User</TableHead><TableHead>Phone</TableHead><TableHead>Signed up</TableHead><TableHead>Subscription code</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {users.map((user) => <TableRow key={user.user_id}>
+                <TableCell><p className="font-medium">{user.full_name || "—"}</p><p className="text-xs text-muted-foreground">{user.email || "No email"}</p></TableCell>
+                <TableCell>{user.phone ? <a className="inline-flex items-center gap-1.5 hover:underline" href={`tel:${user.phone}`}><Phone className="size-3.5" />{user.phone}</a> : <span className="text-muted-foreground">Not provided</span>}</TableCell>
+                <TableCell><p>{signedUp(user.signed_up_at)}</p><p className="text-xs text-muted-foreground">{user.last_sign_in_at ? `Last seen ${signedUp(user.last_sign_in_at)}` : "Never signed in again"}</p></TableCell>
+                <TableCell className="font-mono text-xs">{user.subscription_code}</TableCell>
+                <TableCell className="text-right">{onSetUp ? <Button size="sm" variant="outline" onClick={() => onSetUp(user.email || user.subscription_code)}><UserCog />Set up</Button> : null}</TableCell>
+              </TableRow>)}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent> : null}
+    </Card>
+  )
 }
 
 function NewUserSignups({ extras }: { extras: UsageExtras }) {
@@ -216,7 +244,7 @@ function DailyActivity({ daily, days }: { daily: UsageReport["daily"]; days: num
   )
 }
 
-export function PlatformUsageAnalytics() {
+export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identifier: string) => void } = {}) {
   const [days, setDays] = useState<number>(5)
   const [customDays, setCustomDays] = useState("")
   const [queryInput, setQueryInput] = useState("")
@@ -330,7 +358,7 @@ export function PlatformUsageAnalytics() {
             <CardContent><DailyActivity daily={report.daily} days={report.since_days} /></CardContent>
           </Card>
 
-          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} /></> : null}
+          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} />{report.extras.setup_pending ? <SetupPendingUsers users={report.extras.setup_pending} onSetUp={onSetUpUser} /> : null}</> : null}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>

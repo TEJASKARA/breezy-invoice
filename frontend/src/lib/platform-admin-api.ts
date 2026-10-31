@@ -1,4 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
+import type { GstVerification } from "@/lib/gst-api"
+import type { Company, Setup } from "@/lib/mvp-store"
 import { supabase } from "@/lib/supabase"
 
 const apiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
@@ -80,6 +82,19 @@ export type UsageExtras = {
   new_users: { day: string; email: string; phone: string | null }[]
   daily_signups: { day: string; users: number }[]
   page_features: { page: string; name: string; uses: number; users: number }[]
+  /** Signed up but never saved workspace setup. Older backends omit it. */
+  setup_pending?: SetupPendingUser[]
+}
+
+export type SetupPendingUser = {
+  user_id: string
+  email: string | null
+  phone: string | null
+  full_name: string | null
+  signed_up_at: string
+  last_sign_in_at: string | null
+  workspace_id: string
+  subscription_code: string
 }
 
 export type UsageReport = {
@@ -112,4 +127,57 @@ export function loadUsageReport(days: number, identifier?: string) {
   const query = new URLSearchParams({ days: String(days) })
   if (identifier?.trim()) query.set("query", identifier.trim())
   return adminRequest<UsageReport>(`/api/v1/admin/usage?${query}`)
+}
+
+
+export type SetupTarget = {
+  user_id: string
+  email: string | null
+  phone: string | null
+  full_name: string | null
+  account_type: "unselected" | "ca" | "founder" | "employee" | string
+  signed_up_at: string | null
+  last_sign_in_at: string | null
+  workspace_id: string | null
+  workspace_name: string | null
+  subscription_code: string | null
+  workspace_status: string | null
+  setup_completed: boolean
+  active_entities: number
+}
+
+export type CompleteSetupResult = {
+  message: string
+  workspace_id: string
+  subscription_code: string | null
+  email: string | null
+  gst_verified: boolean
+  email_sent: boolean
+}
+
+/** Find a user by email or subscription code, with their setup state. */
+export function findSetupTarget(identifier: string) {
+  const query = new URLSearchParams({ query: identifier.trim() })
+  return adminRequest<SetupTarget>(`/api/v1/admin/user-setup?${query}`)
+}
+
+/** Registered GST details for the target workspace (nothing is saved). */
+export function lookupSetupGstin(workspaceId: string, gstin: string) {
+  const query = new URLSearchParams({ workspace_id: workspaceId, gstin: gstin.trim().toUpperCase() })
+  return adminRequest<GstVerification>(`/api/v1/admin/user-setup/gstin?${query}`)
+}
+
+/** Completes onboarding on the user's behalf and (optionally) emails them. */
+export function completeUserSetup(input: { workspaceId: string; setup: Setup; entity: Company; notifyUser: boolean }) {
+  const { id: entityId, ...entity } = input.entity
+  return adminRequest<CompleteSetupResult>("/api/v1/admin/user-setup", {
+    method: "POST",
+    body: JSON.stringify({
+      workspace_id: input.workspaceId,
+      entity_id: entityId,
+      setup: input.setup,
+      entity,
+      notify_user: input.notifyUser,
+    }),
+  })
 }

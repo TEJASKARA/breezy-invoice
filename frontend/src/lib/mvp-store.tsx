@@ -521,7 +521,7 @@ function normalizeWorkspaceTemplate(saved: Partial<TemplateSettings> | undefined
 const emptyState = (): MvpState => ({ setup: null, companies: [], customers: [], invoices: [], proformas: [], employees: [], employeeLetters: [], payslips: [], expenses: [], template: defaultTemplate() })
 
 /** The business supplied during signup is also the workspace's first issuing entity. */
-function primaryCompanyFromSetup(setup: Setup): Company {
+export function primaryCompanyFromSetup(setup: Setup): Company {
   const invoiceNumbering = setup.invoiceNumbering?.mode === "continue"
     ? { ...setup.invoiceNumbering, resetPolicy: "never" as const }
     : undefined
