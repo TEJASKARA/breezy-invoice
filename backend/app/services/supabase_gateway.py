@@ -583,6 +583,24 @@ class SupabaseGateway:
             "breezy_admin_remove_analytics_exclusion", {"target_user_id": user_id}
         )
 
+    async def admin_marketing_import(
+        self, *, upload: dict[str, Any], leads: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_admin_marketing_import", {"upload": upload, "leads": leads}
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("Supabase returned an invalid import result.")
+        return result
+
+    async def admin_marketing_summary(self) -> dict[str, Any]:
+        result = await self.service_rpc("breezy_admin_marketing_summary", {})
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError(
+                "Supabase returned an invalid marketing summary."
+            )
+        return result
+
     async def admin_usage_report(
         self,
         *,

@@ -203,3 +203,62 @@ def test_test_account_endpoints_require_platform_admin(
     finally:
         app.dependency_overrides.clear()
     add.assert_not_awaited()
+
+
+def test_marketing_import_validates_and_attributes_upload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from fastapi.testclient import TestClient
+
+    from app.core.config import get_settings
+    from app.main import app
+    from app.services.supabase_gateway import SupabaseGateway
+
+    admin_id = "00000000-0000-0000-0000-000000000001"
+    settings = Settings(_env_file=None, platform_admin_user_ids=admin_id)
+    app.dependency_overrides[get_settings] = lambda: settings
+    importer = AsyncMock(
+        return_value={"upload_id": "u-1", "inserted": 1, "already_contacted": 0}
+    )
+    monkeypatch.setattr(
+        SupabaseGateway,
+        "authenticated_user",
+        AsyncMock(return_value={"id": admin_id, "email": "rushi@chanax.in"}),
+    )
+    monkeypatch.setattr(SupabaseGateway, "admin_marketing_import", importer)
+    body = {
+        "source": "gst",
+        "file_name": "2026-10-31_GST.xlsx",
+        "total_rows": 2,
+        "duplicate_in_file": 1,
+        "leads": [
+            {
+                "email": " Kaseemmd56@Gmail.com ",
+                "contact_name": "Md Kaseem",
+                "registered_on": "2026-10-31",
+                "details": {"business_type": "REG"},
+            }
+        ],
+    }
+    try:
+        client = TestClient(app)
+        headers = {"Authorization": "Bearer token"}
+        ok = client.post("/api/v1/admin/marketing/import", json=body, headers=headers)
+        bad = client.post(
+            "/api/v1/admin/marketing/import",
+            json={**body, "leads": [{"email": "not-an-email"}]},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert ok.status_code == status.HTTP_200_OK
+    assert ok.json()["inserted"] == 1
+    kwargs = importer.await_args.kwargs
+    assert kwargs["leads"][0]["email"] == "kaseemmd56@gmail.com"
+    assert kwargs["upload"]["uploaded_by_email"] == "rushi@chanax.in"
+    assert kwargs["upload"]["duplicate_in_file"] == 1
+    assert bad.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert importer.await_count == 1

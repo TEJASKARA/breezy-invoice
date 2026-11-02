@@ -211,3 +211,41 @@ export function addAnalyticsTestAccount(email: string, note?: string) {
 export async function removeAnalyticsTestAccount(userId: string) {
   await adminRequest<null>(`/api/v1/admin/analytics-exclusions/${encodeURIComponent(userId)}`, { method: "DELETE" })
 }
+
+export type MarketingSummary = {
+  counts: Partial<Record<"pending" | "sending" | "sent" | "failed" | "bounced" | "unsubscribed", number>>
+  sent_today: number
+  uploads: {
+    id: string
+    source: "gst" | "mca"
+    file_name: string
+    uploaded_by_email: string | null
+    total_rows: number
+    valid_rows: number
+    missing_email: number
+    invalid_email: number
+    duplicate_in_file: number
+    inserted: number
+    already_contacted: number
+    created_at: string
+  }[]
+}
+
+export function loadMarketingSummary() {
+  return adminRequest<MarketingSummary>("/api/v1/admin/marketing/summary")
+}
+
+export function importMarketingLeads(input: {
+  source: "gst" | "mca"
+  file_name: string
+  total_rows: number
+  missing_email: number
+  invalid_email: number
+  duplicate_in_file: number
+  leads: unknown[]
+}) {
+  return adminRequest<{ upload_id: string; inserted: number; already_contacted: number }>("/api/v1/admin/marketing/import", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}

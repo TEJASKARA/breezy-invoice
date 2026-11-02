@@ -1,3 +1,4 @@
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -78,6 +79,59 @@ class AnalyticsExclusionList(BaseModel):
 class AnalyticsExclusionCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     note: str | None = Field(default=None, max_length=200)
+
+
+MARKETING_EMAIL = re.compile(
+    r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}$"
+)
+
+
+class MarketingLead(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    contact_name: str | None = Field(default=None, max_length=200)
+    business_name: str | None = Field(default=None, max_length=300)
+    phone: str | None = Field(default=None, max_length=20)
+    state: str | None = Field(default=None, max_length=100)
+    city: str | None = Field(default=None, max_length=100)
+    source_ref: str | None = Field(default=None, max_length=40)
+    registered_on: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    details: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        if not MARKETING_EMAIL.fullmatch(email) or ".." in email:
+            raise ValueError(f"Invalid email address: {value}")
+        return email
+
+    @field_validator("details")
+    @classmethod
+    def small_details(cls, value: dict[str, str]) -> dict[str, str]:
+        return {key[:40]: str(item)[:300] for key, item in list(value.items())[:12]}
+
+
+class MarketingImportRequest(BaseModel):
+    source: Literal["gst", "mca"]
+    file_name: str = Field(min_length=1, max_length=240)
+    total_rows: int = Field(ge=0, le=200_000)
+    missing_email: int = Field(default=0, ge=0)
+    invalid_email: int = Field(default=0, ge=0)
+    duplicate_in_file: int = Field(default=0, ge=0)
+    leads: list[MarketingLead] = Field(max_length=20_000)
+
+
+class MarketingImportResponse(BaseModel):
+    upload_id: str
+    inserted: int
+    already_contacted: int
+
+
+class MarketingSummaryResponse(BaseModel):
+    counts: dict[str, int] = Field(default_factory=dict)
+    sent_today: int = 0
+    uploads: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PurgeRequestCreate(BaseModel):

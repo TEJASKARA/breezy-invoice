@@ -21,6 +21,9 @@ from app.schemas.admin import (
     AnalyticsExclusion,
     AnalyticsExclusionCreate,
     AnalyticsExclusionList,
+    MarketingImportRequest,
+    MarketingImportResponse,
+    MarketingSummaryResponse,
     PlatformAdminAccessResponse,
     PlatformUsageReportResponse,
     PlatformWorkspaceResponse,
@@ -518,3 +521,52 @@ async def remove_analytics_exclusion(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
+
+
+@router.get("/marketing/summary", response_model=MarketingSummaryResponse)
+async def marketing_summary(
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MarketingSummaryResponse:
+    """Outreach queue counts and recent uploads for the Marketing tab."""
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        summary = await gateway.admin_marketing_summary()
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return MarketingSummaryResponse(**summary)
+
+
+@router.post("/marketing/import", response_model=MarketingImportResponse)
+async def marketing_import(
+    request: MarketingImportRequest,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MarketingImportResponse:
+    """Queue cleaned GST/MCA contacts; addresses already contacted are skipped."""
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        result = await gateway.admin_marketing_import(
+            upload={
+                "source": request.source,
+                "file_name": request.file_name.strip(),
+                "uploaded_by": str(user.get("id") or ""),
+                "uploaded_by_email": str(user.get("email") or ""),
+                "total_rows": request.total_rows,
+                "missing_email": request.missing_email,
+                "invalid_email": request.invalid_email,
+                "duplicate_in_file": request.duplicate_in_file,
+            },
+            leads=[lead.model_dump() for lead in request.leads],
+        )
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return MarketingImportResponse(**result)
