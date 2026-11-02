@@ -30,7 +30,7 @@ function Tile({ label, value, tone }: { label: string; value: number; tone?: "go
   )
 }
 
-/** Platform admin: upload daily GST/MCA exports and queue them for the n8n 9 AM email. */
+/** Platform admin: upload daily GST/MCA exports into public.email_outreach as pending. */
 export function AdminMarketing() {
   const fileInput = useRef<HTMLInputElement>(null)
   const [summary, setSummary] = useState<MarketingSummary | null>(null)
@@ -89,11 +89,11 @@ export function AdminMarketing() {
         duplicate_in_file: preview.duplicateInFile,
         leads: preview.leads.map(({ source: _source, ...lead }) => lead),
       })
-      setNotice(`${number(result.inserted)} new contacts queued for the next 9 AM email.${result.already_contacted ? ` ${number(result.already_contacted)} were already contacted before and were skipped.` : ""}`)
+      setNotice(`${number(result.inserted)} new contacts added to email outreach as pending.${result.already_contacted ? ` ${number(result.already_contacted)} were already in email outreach and were skipped.` : ""}`)
       clearFile()
       await refresh()
     } catch (saveError) {
-      setError(adminErrorMessage(saveError, "The contacts could not be queued."))
+      setError(adminErrorMessage(saveError, "The contacts could not be added."))
     } finally {
       setSaving(false)
     }
@@ -108,17 +108,17 @@ export function AdminMarketing() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="flex items-center gap-2"><Megaphone className="size-4" />Marketing outreach</CardTitle>
-              <CardDescription>Upload the daily GST or MCA export. ChanaX cleans it, removes duplicates and anyone emailed before, and queues the rest. The n8n workflow emails the queue every day at 9 AM.</CardDescription>
+              <CardDescription>Upload the daily GST or MCA export. ChanaX cleans it, removes duplicates and anyone already in email outreach, and adds the rest to <code>email_outreach</code> as pending for the email workflow.</CardDescription>
             </div>
             <Button variant="ghost" size="icon" aria-label="Refresh" onClick={() => void refresh()}><RefreshCw /></Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Tile label="Waiting for 9 AM" value={(counts.pending ?? 0) + (counts.sending ?? 0)} />
+            <Tile label="Pending" value={(counts.pending ?? 0) + (counts.sending ?? 0)} />
             <Tile label="Sent today" value={summary?.sent_today ?? 0} />
             <Tile label="Sent in total" value={counts.sent ?? 0} />
-            <Tile label="Failed or bounced" value={(counts.failed ?? 0) + (counts.bounced ?? 0)} tone="warn" />
+            <Tile label="Failed" value={counts.failed ?? 0} tone="warn" />
             <Tile label="Unsubscribed" value={counts.unsubscribed ?? 0} />
           </div>
         </CardContent>
@@ -173,9 +173,9 @@ export function AdminMarketing() {
                   </TableBody>
                 </Table>
               </div>
-              <p className="text-xs text-muted-foreground">Showing the first {Math.min(8, preview.leads.length)} of {number(preview.leads.length)} cleaned contacts. Anyone already emailed in an earlier upload is skipped when you queue.</p>
+              <p className="text-xs text-muted-foreground">Showing the first {Math.min(8, preview.leads.length)} of {number(preview.leads.length)} cleaned contacts. Anyone already in email outreach (sent, pending, failed or unsubscribed) is skipped.</p>
               <div className="flex justify-end">
-                <Button disabled={saving} onClick={() => void queue()}>{saving ? <LoaderCircle className="animate-spin" /> : <Send />}{saving ? "Queuing…" : `Queue ${number(preview.leads.length)} contacts for 9 AM`}</Button>
+                <Button disabled={saving} onClick={() => void queue()}>{saving ? <LoaderCircle className="animate-spin" /> : <Send />}{saving ? "Adding…" : `Add ${number(preview.leads.length)} contacts as pending`}</Button>
               </div>
             </>
           )}
@@ -186,7 +186,7 @@ export function AdminMarketing() {
         <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="size-4" />Upload history</CardTitle><CardDescription>Latest 30 uploads.</CardDescription></CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Uploaded</TableHead><TableHead>File</TableHead><TableHead>Type</TableHead><TableHead className="text-right">Rows</TableHead><TableHead className="text-right">Queued</TableHead><TableHead className="text-right">Already contacted</TableHead><TableHead className="text-right">Duplicates / invalid</TableHead><TableHead>By</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Uploaded</TableHead><TableHead>File</TableHead><TableHead>Type</TableHead><TableHead className="text-right">Rows</TableHead><TableHead className="text-right">Added</TableHead><TableHead className="text-right">Already in outreach</TableHead><TableHead className="text-right">Duplicates / invalid</TableHead><TableHead>By</TableHead></TableRow></TableHeader>
             <TableBody>
               {summary?.uploads.length ? summary.uploads.map((upload) => (
                 <TableRow key={upload.id}>

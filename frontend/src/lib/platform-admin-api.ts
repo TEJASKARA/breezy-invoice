@@ -213,7 +213,8 @@ export async function removeAnalyticsTestAccount(userId: string) {
 }
 
 export type MarketingSummary = {
-  counts: Partial<Record<"pending" | "sending" | "sent" | "failed" | "bounced" | "unsubscribed", number>>
+  /** email_outreach rows by email_status; "unsubscribed" counts email_unsubscribed rows. */
+  counts: Partial<Record<"pending" | "sending" | "sent" | "failed" | "skipped" | "none" | "unsubscribed", number>>
   sent_today: number
   uploads: {
     id: string

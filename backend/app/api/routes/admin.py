@@ -547,7 +547,7 @@ async def marketing_import(
     authorization: Annotated[str, Header()],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> MarketingImportResponse:
-    """Queue cleaned GST/MCA contacts; addresses already contacted are skipped."""
+    """Add cleaned GST/MCA contacts to email_outreach as pending; known emails skip."""
     gateway = SupabaseGateway(settings)
     try:
         user = await gateway.authenticated_user(_bearer_token(authorization))
