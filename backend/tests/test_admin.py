@@ -70,6 +70,9 @@ def test_usage_report_is_restricted_to_platform_admins(
     monkeypatch.setattr(
         SupabaseGateway, "admin_usage_report", AsyncMock(return_value=report)
     )
+    monkeypatch.setattr(
+        SupabaseGateway, "admin_analytics_exclusions", AsyncMock(return_value=[])
+    )
     try:
         client = TestClient(app)
         monkeypatch.setattr(
@@ -109,3 +112,94 @@ def test_workspace_search_tolerates_unnamed_workspaces() -> None:
     )
     assert workspace.name == "Unnamed workspace"
     assert workspace.document_credits_remaining == 0
+
+
+def test_test_accounts_are_excluded_from_usage_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from fastapi.testclient import TestClient
+
+    from app.core.config import get_settings
+    from app.main import app
+    from app.services.supabase_gateway import SupabaseGateway
+
+    admin_id = "00000000-0000-0000-0000-000000000001"
+    tester_id = "00000000-0000-0000-0000-000000000009"
+    settings = Settings(_env_file=None, platform_admin_user_ids=admin_id)
+    app.dependency_overrides[get_settings] = lambda: settings
+    report = AsyncMock(
+        return_value={
+            "since_days": 5,
+            "generated_at": "2026-11-02T00:00:00+00:00",
+            "scope": {"type": "platform"},
+            "totals": {},
+        }
+    )
+    monkeypatch.setattr(
+        SupabaseGateway, "authenticated_user", AsyncMock(return_value={"id": admin_id})
+    )
+    monkeypatch.setattr(
+        SupabaseGateway,
+        "admin_analytics_exclusions",
+        AsyncMock(return_value=[{"user_id": tester_id, "email": "qa@example.com"}]),
+    )
+    monkeypatch.setattr(SupabaseGateway, "admin_usage_report", report)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/admin/usage", headers={"Authorization": "Bearer token"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == status.HTTP_200_OK
+    assert report.await_args.kwargs["excluded_user_ids"] == sorted(
+        [admin_id, tester_id]
+    )
+
+
+def test_test_account_endpoints_require_platform_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from fastapi.testclient import TestClient
+
+    from app.core.config import get_settings
+    from app.main import app
+    from app.services.supabase_gateway import SupabaseGateway
+
+    settings = Settings(
+        _env_file=None,
+        platform_admin_user_ids="00000000-0000-0000-0000-000000000001",
+        platform_admin_emails="",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    add = AsyncMock()
+    monkeypatch.setattr(
+        SupabaseGateway,
+        "authenticated_user",
+        AsyncMock(return_value={"id": "00000000-0000-0000-0000-000000000002"}),
+    )
+    monkeypatch.setattr(SupabaseGateway, "admin_add_analytics_exclusion", add)
+    try:
+        client = TestClient(app)
+        headers = {"Authorization": "Bearer token"}
+        assert (
+            client.post(
+                "/api/v1/admin/analytics-exclusions",
+                json={"email": "qa@example.com"},
+                headers=headers,
+            ).status_code
+            == status.HTTP_403_FORBIDDEN
+        )
+        assert (
+            client.get(
+                "/api/v1/admin/analytics-exclusions", headers=headers
+            ).status_code
+            == status.HTTP_403_FORBIDDEN
+        )
+    finally:
+        app.dependency_overrides.clear()
+    add.assert_not_awaited()

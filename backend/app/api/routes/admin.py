@@ -18,6 +18,9 @@ from app.schemas.admin import (
     AdminCompleteSetupRequest,
     AdminCompleteSetupResponse,
     AdminSetupTargetResponse,
+    AnalyticsExclusion,
+    AnalyticsExclusionCreate,
+    AnalyticsExclusionList,
     PlatformAdminAccessResponse,
     PlatformUsageReportResponse,
     PlatformWorkspaceResponse,
@@ -163,10 +166,14 @@ async def platform_usage_report(
     try:
         user = await gateway.authenticated_user(_bearer_token(authorization))
         _require_platform_admin(user, settings)
+        test_accounts = await gateway.admin_analytics_exclusions()
+        excluded = set(settings.platform_admin_ids) | {
+            str(item["user_id"]) for item in test_accounts if item.get("user_id")
+        }
         report = await gateway.admin_usage_report(
             since_days=days,
             identifier=query,
-            excluded_user_ids=list(settings.platform_admin_ids),
+            excluded_user_ids=sorted(excluded),
         )
     except SupabaseGatewayError as exc:
         message = str(exc)
@@ -450,3 +457,64 @@ async def complete_user_setup(
         gst_verified=gst_verified,
         email_sent=email_sent,
     )
+
+
+@router.get("/analytics-exclusions", response_model=AnalyticsExclusionList)
+async def list_analytics_exclusions(
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AnalyticsExclusionList:
+    """Test accounts hidden from platform-wide usage analytics."""
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        accounts = await gateway.admin_analytics_exclusions()
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return AnalyticsExclusionList(
+        accounts=[AnalyticsExclusion(**item) for item in accounts]
+    )
+
+
+@router.post("/analytics-exclusions", response_model=AnalyticsExclusion)
+async def add_analytics_exclusion(
+    request: AnalyticsExclusionCreate,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AnalyticsExclusion:
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        account = await gateway.admin_add_analytics_exclusion(
+            email=request.email, actor_user_id=str(user["id"]), note=request.note
+        )
+    except SupabaseGatewayError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if message.startswith("No ChanaX account")
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return AnalyticsExclusion(**account)
+
+
+@router.delete("/analytics-exclusions/{user_id}", status_code=204)
+async def remove_analytics_exclusion(
+    user_id: uuid.UUID,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    gateway = SupabaseGateway(settings)
+    try:
+        user = await gateway.authenticated_user(_bearer_token(authorization))
+        _require_platform_admin(user, settings)
+        await gateway.admin_remove_analytics_exclusion(str(user_id))
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc

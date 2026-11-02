@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, Phone, RefreshCw, Search, UserCog, Users, X } from "lucide-react"
+import { Activity, BarChart3, Building2, Clock, EyeOff, FlaskConical, MousePointerClick, MoonStar, Phone, Plus, RefreshCw, Search, UserCog, Users, X } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { adminErrorMessage, loadUsageReport, type SetupPendingUser, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
+import { addAnalyticsTestAccount, adminErrorMessage, loadAnalyticsTestAccounts, loadUsageReport, removeAnalyticsTestAccount, type AnalyticsTestAccount, type SetupPendingUser, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
 import { cn } from "@/lib/utils"
 
 const PAGE_LABELS: Record<string, string> = {
@@ -243,6 +243,41 @@ function DailyActivity({ daily, days }: { daily: UsageReport["daily"]; days: num
   )
 }
 
+/** Internal/testing accounts hidden from the platform-wide numbers. */
+function TestAccountsPanel({ accounts, busy, onAdd, onRemove }: {
+  accounts: AnalyticsTestAccount[]
+  busy: boolean
+  onAdd: (email: string) => Promise<void>
+  onRemove: (account: AnalyticsTestAccount) => Promise<void>
+}) {
+  const [email, setEmail] = useState("")
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><FlaskConical className="size-4" />Test accounts ({accounts.length})</CardTitle>
+        <CardDescription>Activity, sign-ups and workspaces of these emails are left out of the platform-wide numbers. Searching one of them directly still shows its usage. Nothing is deleted.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); if (email.trim()) void onAdd(email).then(() => setEmail("")) }}>
+          <Label htmlFor="test-account-email" className="sr-only">Test account email</Label>
+          <Input id="test-account-email" type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tester@example.com" className="sm:max-w-sm" />
+          <Button type="submit" variant="outline" disabled={busy || !email.trim()}><Plus />Exclude from analytics</Button>
+        </form>
+        {accounts.length ? (
+          <div className="flex flex-wrap gap-2">
+            {accounts.map((account) => (
+              <span key={account.user_id} className="inline-flex items-center gap-1 rounded-full border bg-muted/40 py-1 pl-3 pr-1 text-sm">
+                {account.email}
+                <Button type="button" size="icon" variant="ghost" className="size-6" disabled={busy} aria-label={`Include ${account.email} in analytics again`} title="Include in analytics again" onClick={() => void onRemove(account)}><X className="size-3.5" /></Button>
+              </span>
+            ))}
+          </div>
+        ) : <p className="text-sm text-muted-foreground">No test accounts yet. Add an email above, or use &ldquo;Hide&rdquo; on a row in Most active users.</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identifier: string) => void } = {}) {
   const [days, setDays] = useState<number>(5)
   const [customDays, setCustomDays] = useState("")
@@ -266,6 +301,32 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
 
   useEffect(() => { void load(days, activeQuery) }, [days, activeQuery, load])
 
+  const [testAccounts, setTestAccounts] = useState<AnalyticsTestAccount[]>([])
+  const [testAccountsBusy, setTestAccountsBusy] = useState(false)
+  useEffect(() => {
+    let active = true
+    void loadAnalyticsTestAccounts()
+      .then((accounts) => { if (active) setTestAccounts(accounts) })
+      .catch((loadError) => { if (active) setError(adminErrorMessage(loadError, "The test accounts could not be loaded.")) })
+    return () => { active = false }
+  }, [])
+  const testAccountIds = new Set(testAccounts.map((account) => account.user_id))
+  const changeTestAccounts = async (change: () => Promise<unknown>, fallback: string) => {
+    setTestAccountsBusy(true)
+    setError("")
+    try {
+      await change()
+      setTestAccounts(await loadAnalyticsTestAccounts())
+      await load(days, activeQuery)
+    } catch (changeError) {
+      setError(adminErrorMessage(changeError, fallback))
+    } finally {
+      setTestAccountsBusy(false)
+    }
+  }
+  const excludeTestAccount = (email: string) => changeTestAccounts(() => addAnalyticsTestAccount(email), "The account could not be excluded.")
+  const includeTestAccount = (account: AnalyticsTestAccount) => changeTestAccounts(() => removeAnalyticsTestAccount(account.user_id), "The account could not be included again.")
+
   const lookUp = (identifier: string) => { setQueryInput(identifier); setActiveQuery(identifier.trim()) }
   const scope = report?.scope
   const totals = report?.totals
@@ -275,7 +336,7 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><BarChart3 className="size-4" />Usage analytics</CardTitle>
-          <CardDescription>Which pages and features subscribers use. Search an email or subscription code to see one user or one workspace. Only you can see this; your own activity is excluded.</CardDescription>
+          <CardDescription>Which pages and features subscribers use. Search an email or subscription code to see one user or one workspace. Only you can see this; your own activity and test accounts are excluded.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form className="flex flex-col gap-3 md:flex-row md:items-end" onSubmit={(event) => { event.preventDefault(); lookUp(queryInput) }}>
@@ -305,6 +366,8 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
       </Card>
 
       {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
+
+      <TestAccountsPanel accounts={testAccounts} busy={testAccountsBusy} onAdd={excludeTestAccount} onRemove={includeTestAccount} />
       {!report && loading ? <p className="py-10 text-center text-sm text-muted-foreground">Loading usage…</p> : null}
 
       {report && scope && totals ? (
@@ -441,7 +504,7 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
               <CardHeader><CardTitle>{scope.type === "workspace" ? "Users in this workspace" : "Most active users"}</CardTitle><CardDescription>Click a row to see that user's usage.</CardDescription></CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Email</TableHead><TableHead className="text-right">Events</TableHead><TableHead className="text-right">Actions</TableHead><TableHead>Last page</TableHead><TableHead>Last seen</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Email</TableHead><TableHead className="text-right">Events</TableHead><TableHead className="text-right">Actions</TableHead><TableHead>Last page</TableHead><TableHead>Last seen</TableHead><TableHead><span className="sr-only">Test account</span></TableHead></TableRow></TableHeader>
                   <TableBody>
                     {report.users.length ? report.users.map((item) => (
                       <TableRow key={item.user_id} className={cn(item.email && "cursor-pointer")} onClick={() => item.email && lookUp(item.email)}>
@@ -450,8 +513,13 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
                         <TableCell className="text-right tabular-nums">{number(item.actions)}</TableCell>
                         <TableCell className="text-muted-foreground">{item.last_page ? pageLabel(item.last_page) : "—"}</TableCell>
                         <TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(item.last_seen_at)}</TableCell>
+                        <TableCell className="text-right">
+                          {item.email && !testAccountIds.has(item.user_id) ? (
+                            <Button type="button" size="sm" variant="ghost" disabled={testAccountsBusy} title="Mark as a test account and hide from analytics" onClick={(event) => { event.stopPropagation(); void excludeTestAccount(item.email!) }}><EyeOff />Hide</Button>
+                          ) : testAccountIds.has(item.user_id) ? <Badge variant="outline">Test account</Badge> : null}
+                        </TableCell>
                       </TableRow>
-                    )) : <TableRow><TableCell colSpan={5} className="h-20 text-center text-muted-foreground">No user activity in this period.</TableCell></TableRow>}
+                    )) : <TableRow><TableCell colSpan={6} className="h-20 text-center text-muted-foreground">No user activity in this period.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </CardContent>

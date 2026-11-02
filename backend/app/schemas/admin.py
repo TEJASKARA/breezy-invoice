@@ -64,6 +64,22 @@ class PlatformUsageReportResponse(BaseModel):
     recent: list[dict[str, Any]] = []
     extras: dict[str, Any] | None = None
 
+class AnalyticsExclusion(BaseModel):
+    user_id: str
+    email: str
+    note: str | None = None
+    created_at: str | None = None
+
+
+class AnalyticsExclusionList(BaseModel):
+    accounts: list[AnalyticsExclusion]
+
+
+class AnalyticsExclusionCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    note: str | None = Field(default=None, max_length=200)
+
+
 class PurgeRequestCreate(BaseModel):
     subscription_code: str = Field(min_length=3, max_length=80)
     reason: str = Field(min_length=3, max_length=500)

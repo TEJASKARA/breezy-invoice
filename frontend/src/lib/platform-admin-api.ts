@@ -193,3 +193,21 @@ export function adminErrorMessage(error: unknown, fallback: string) {
   if (typeof error === "string" && error.trim()) return error.trim()
   return fallback
 }
+
+export type AnalyticsTestAccount = { user_id: string; email: string; note: string | null; created_at: string | null }
+
+/** Accounts (e.g. internal testers) hidden from platform-wide usage analytics. */
+export function loadAnalyticsTestAccounts() {
+  return adminRequest<{ accounts: AnalyticsTestAccount[] }>("/api/v1/admin/analytics-exclusions").then((result) => result.accounts)
+}
+
+export function addAnalyticsTestAccount(email: string, note?: string) {
+  return adminRequest<AnalyticsTestAccount>("/api/v1/admin/analytics-exclusions", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), note: note?.trim() || null }),
+  })
+}
+
+export async function removeAnalyticsTestAccount(userId: string) {
+  await adminRequest<null>(`/api/v1/admin/analytics-exclusions/${encodeURIComponent(userId)}`, { method: "DELETE" })
+}

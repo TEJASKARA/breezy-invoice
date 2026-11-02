@@ -555,6 +555,34 @@ class SupabaseGateway:
             )
         return result
 
+    async def admin_analytics_exclusions(self) -> list[dict[str, Any]]:
+        result = await self.service_rpc("breezy_admin_analytics_exclusions", {})
+        if not isinstance(result, list):
+            raise SupabaseGatewayError(
+                "Supabase returned an invalid test-account list."
+            )
+        return [item for item in result if isinstance(item, dict)]
+
+    async def admin_add_analytics_exclusion(
+        self, *, email: str, actor_user_id: str, note: str | None = None
+    ) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_admin_add_analytics_exclusion",
+            {
+                "target_email": email.strip(),
+                "actor_user_id": actor_user_id,
+                "exclusion_note": (note or "").strip() or None,
+            },
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("Supabase returned an invalid test account.")
+        return result
+
+    async def admin_remove_analytics_exclusion(self, user_id: str) -> None:
+        await self.service_rpc(
+            "breezy_admin_remove_analytics_exclusion", {"target_user_id": user_id}
+        )
+
     async def admin_usage_report(
         self,
         *,
