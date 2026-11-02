@@ -17,6 +17,7 @@
     "test:workspace": "node --test tests/workspace-context.test.mjs",
     "test:replacement": "node --test tests/invoice-replacement.test.mjs tests/company-updates.test.mjs",
     "test:entities": "node --test tests/entity-selection.test.mjs",
+    "test:marketing": "node --test tests/marketing-leads.test.mjs",
     "test:ca": "node --test tests/ca-invitation-session.test.mjs",
     "preview": "vite preview"
   },

@@ -30,6 +30,7 @@ jobs:
       - run: npm run test:workspace
       - run: npm run test:replacement
       - run: npm run test:entities
+      - run: npm run test:marketing
       - run: npm run test:ca
       - run: npm run lint
       - run: npm run build
