@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PlatformAdminAccessResponse(BaseModel):
@@ -9,12 +9,27 @@ class PlatformAdminAccessResponse(BaseModel):
 
 class PlatformWorkspaceResponse(BaseModel):
     workspace_id: str
-    name: str
+    name: str = "Unnamed workspace"
     subscription_code: str
-    status: Literal["active", "suspended", "closed"]
-    document_credits_remaining: int
-    quotation_credits_remaining: int
+    status: Literal["active", "suspended", "closed"] = "active"
+    document_credits_remaining: int = 0
+    quotation_credits_remaining: int = 0
     matched_email: str | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def default_name(cls, value: object) -> object:
+        # Workspaces created before onboarding finished have no name yet.
+        if isinstance(value, str) and value.strip():
+            return value
+        return "Unnamed workspace"
+
+    @field_validator(
+        "document_credits_remaining", "quotation_credits_remaining", mode="before"
+    )
+    @classmethod
+    def default_credits(cls, value: object) -> object:
+        return 0 if value is None else value
 
 
 class PlatformWorkspaceSearchResponse(BaseModel):

@@ -39,10 +39,15 @@ async function adminRequest<T>(path: string, init: RequestInit = {}): Promise<T>
   let payload: unknown = null
   try { payload = await response.json() } catch { /* handled below */ }
   if (!response.ok) {
-    const detail = payload && typeof payload === "object" && "detail" in payload
-      ? String((payload as { detail?: unknown }).detail || "")
+    const raw = payload && typeof payload === "object" && "detail" in payload
+      ? (payload as { detail?: unknown }).detail
       : ""
-    throw new Error(customerErrorMessage({ message: detail, status: response.status }, "The platform administration request failed."))
+    const detail = Array.isArray(raw)
+      ? raw.map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : String(item))).join("; ")
+      : String(raw || "")
+    // Platform admins are developers: show the real reason, not sanitised customer copy.
+    customerErrorMessage({ message: detail, status: response.status }, "The platform administration request failed.")
+    throw new Error(`${detail || "The platform administration request failed."} (HTTP ${response.status})`)
   }
   return payload as T
 }

@@ -87,13 +87,20 @@ async def search_platform_workspaces(
         user = await gateway.authenticated_user(_bearer_token(authorization))
         _require_platform_admin(user, settings)
         workspaces = await gateway.admin_workspaces_by_identifier(query)
+        return PlatformWorkspaceSearchResponse(
+            workspaces=[PlatformWorkspaceResponse(**item) for item in workspaces]
+        )
     except SupabaseGatewayError as exc:
+        logger.warning("Platform workspace search failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
-    return PlatformWorkspaceSearchResponse(
-        workspaces=[PlatformWorkspaceResponse(**item) for item in workspaces]
-    )
+    except ValueError as exc:
+        logger.exception("Platform workspace search returned unexpected data")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Workspace search returned data the admin page cannot read: {exc}",
+        ) from exc
 
 
 @router.get(

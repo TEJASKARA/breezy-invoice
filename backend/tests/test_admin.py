@@ -94,3 +94,18 @@ def test_usage_report_is_restricted_to_platform_admins(
         assert allowed.json()["totals"]["page_views"] == 3
     finally:
         app.dependency_overrides.clear()
+
+
+def test_workspace_search_tolerates_unnamed_workspaces() -> None:
+    from app.schemas.admin import PlatformWorkspaceResponse
+
+    workspace = PlatformWorkspaceResponse(
+        workspace_id="00000000-0000-0000-0000-000000000001",
+        name=None,
+        subscription_code="ABC123DEF456",
+        status="active",
+        document_credits_remaining=None,
+        quotation_credits_remaining=5,
+    )
+    assert workspace.name == "Unnamed workspace"
+    assert workspace.document_credits_remaining == 0
