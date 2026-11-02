@@ -1,4 +1,3 @@
-import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
 import { Activity, BarChart3, Building2, Clock, MousePointerClick, MoonStar, Phone, RefreshCw, Search, UserCog, Users, X } from "lucide-react"
 import {
@@ -17,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { loadUsageReport, type SetupPendingUser, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
+import { adminErrorMessage, loadUsageReport, type SetupPendingUser, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
 import { cn } from "@/lib/utils"
 
 const PAGE_LABELS: Record<string, string> = {
@@ -259,7 +258,7 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
     try {
       setReport(await loadUsageReport(periodDays, identifier))
     } catch (loadError) {
-      setError(customerErrorMessage(loadError, "The usage report could not be loaded."))
+      setError(adminErrorMessage(loadError, "The usage report could not be loaded."))
     } finally {
       setLoading(false)
     }

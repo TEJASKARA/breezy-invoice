@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { customerErrorMessage } from "@/lib/customer-errors"
 import { primaryCompanyFromSetup, type Setup } from "@/lib/mvp-store"
-import { completeUserSetup, findSetupTarget, lookupSetupGstin, type CompleteSetupResult, type SetupTarget } from "@/lib/platform-admin-api"
+import { adminErrorMessage, completeUserSetup, findSetupTarget, lookupSetupGstin, type CompleteSetupResult, type SetupTarget } from "@/lib/platform-admin-api"
 
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
 
@@ -46,7 +45,7 @@ export function AdminUserSetup({ initialQuery = "" }: { initialQuery?: string })
     try {
       setTarget(await findSetupTarget(trimmed))
     } catch (caught) {
-      setError(customerErrorMessage(caught, "The user could not be found."))
+      setError(adminErrorMessage(caught, "The user could not be found."))
     } finally {
       setSearching(false)
     }

@@ -186,3 +186,10 @@ export function completeUserSetup(input: { workspaceId: string; setup: Setup; en
     }),
   })
 }
+
+/** Admin screens are for ChanaX developers: show the real failure reason, never the sanitised customer copy. */
+export function adminErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim()
+  if (typeof error === "string" && error.trim()) return error.trim()
+  return fallback
+}

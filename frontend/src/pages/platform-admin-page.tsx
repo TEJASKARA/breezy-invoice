@@ -1,4 +1,3 @@
-import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
 import { BarChart3, Coins, Mail, Search, ShieldCheck, Trash2, UserCog } from "lucide-react"
@@ -11,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
+import { adminErrorMessage,
   findPlatformWorkspaces,
   grantPlatformCredits,
   loadPlatformAdminAccess,
@@ -58,7 +57,7 @@ export function PlatformAdminPage() {
       if (results.length === 1) setWorkspace(results[0])
       if (results.length === 0) setError("No workspace matches that email address or subscription code.")
     } catch (lookupError) {
-      setError(customerErrorMessage(lookupError, "The workspace could not be found."))
+      setError(adminErrorMessage(lookupError, "The workspace could not be found."))
     } finally {
       setSearching(false)
     }
@@ -80,7 +79,7 @@ export function PlatformAdminPage() {
       setReason("")
       setConfirmed(false)
     } catch (grantError) {
-      setError(customerErrorMessage(grantError, "The credits could not be granted."))
+      setError(adminErrorMessage(grantError, "The credits could not be granted."))
     } finally {
       setSaving(false)
     }
@@ -115,7 +114,7 @@ export function PlatformAdminPage() {
       <Button role="tab" aria-selected={tab === "users"} size="sm" className="flex-1 sm:flex-none" variant={tab === "users" ? "default" : "ghost"} onClick={() => setTab("users")}><UserCog />User Management</Button>
     </div>
 
-    {tab === "usage" ? <PlatformUsageAnalytics onSetUpUser={(identifier) => { setSetupQuery(identifier); setTab("users") }} /> : tab === "users" ? <AdminUserSetup initialQuery={setupQuery} /> : tab === "lifecycle" ? <Card><CardHeader><CardTitle>Permanent data purge</CardTitle><CardDescription>For suspended workspaces in the 30-day recovery period. This permanently removes the workspace and releases its GSTIN.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="purge-code">Approval code</Label><Input id="purge-code" value={purgeCode} maxLength={6} onChange={(event) => setPurgeCode(event.target.value.replace(/\D/g, ""))} placeholder="6-digit code" /></div><Button variant="destructive" disabled={!workspace || reason.trim().length < 3 || saving} onClick={() => void (async () => { try { setSaving(true); if (!purgeRequestId) { const result = await requestPlatformPurge(workspace!.subscription_code, reason); setPurgeRequestId(result.request_id); setSuccess(result.message) } else { const result = await approvePlatformPurge(purgeRequestId, purgeCode); setSuccess(result.message); setPurgeRequestId(""); setPurgeCode("") } } catch (e) { setError(customerErrorMessage(e, "Purge request failed.")) } finally { setSaving(false) } })()}>{!purgeRequestId ? "Request approval code" : "Approve and permanently purge"}</Button><p className="text-xs text-muted-foreground">Find a suspended workspace in Credits first, enter a reason there, then request approval. The requester cannot approve their own request.</p></CardContent></Card> : <>
+    {tab === "usage" ? <PlatformUsageAnalytics onSetUpUser={(identifier) => { setSetupQuery(identifier); setTab("users") }} /> : tab === "users" ? <AdminUserSetup initialQuery={setupQuery} /> : tab === "lifecycle" ? <Card><CardHeader><CardTitle>Permanent data purge</CardTitle><CardDescription>For suspended workspaces in the 30-day recovery period. This permanently removes the workspace and releases its GSTIN.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="space-y-2"><Label htmlFor="purge-code">Approval code</Label><Input id="purge-code" value={purgeCode} maxLength={6} onChange={(event) => setPurgeCode(event.target.value.replace(/\D/g, ""))} placeholder="6-digit code" /></div><Button variant="destructive" disabled={!workspace || reason.trim().length < 3 || saving} onClick={() => void (async () => { try { setSaving(true); if (!purgeRequestId) { const result = await requestPlatformPurge(workspace!.subscription_code, reason); setPurgeRequestId(result.request_id); setSuccess(result.message) } else { const result = await approvePlatformPurge(purgeRequestId, purgeCode); setSuccess(result.message); setPurgeRequestId(""); setPurgeCode("") } } catch (e) { setError(adminErrorMessage(e, "Purge request failed.")) } finally { setSaving(false) } })()}>{!purgeRequestId ? "Request approval code" : "Approve and permanently purge"}</Button><p className="text-xs text-muted-foreground">Find a suspended workspace in Credits first, enter a reason there, then request approval. The requester cannot approve their own request.</p></CardContent></Card> : <>
 
     {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
     {success ? <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">{success}</div> : null}
