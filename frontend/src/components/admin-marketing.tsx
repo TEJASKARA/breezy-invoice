@@ -87,7 +87,9 @@ export function AdminMarketing() {
         missing_email: preview.missingEmail,
         invalid_email: preview.invalidEmail,
         duplicate_in_file: preview.duplicateInFile,
-        leads: preview.leads.map(({ source: _source, ...lead }) => lead),
+        // email_outreach stores only name and email: send just what is saved
+        // (keeps a 4,000-contact upload around 0.5 MB, under the server limit).
+        leads: preview.leads.map((lead) => ({ email: lead.email, contact_name: lead.contact_name, business_name: lead.business_name })),
       })
       setNotice(`${number(result.inserted)} new contacts added to email outreach as pending.${result.already_contacted ? ` ${number(result.already_contacted)} were already in email outreach and were skipped.` : ""}`)
       clearFile()
