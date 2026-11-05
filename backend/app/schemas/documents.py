@@ -4,6 +4,27 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+def normalize_phone_number(value: str) -> str:
+    """Digits only with country code, e.g. 919876543210. Raises ValueError."""
+    cleaned = re.sub(r"[\s\-().]", "", value.strip())
+    if cleaned.startswith("+"):
+        cleaned = cleaned[1:]
+    elif cleaned.startswith("00"):
+        cleaned = cleaned[2:]
+    if not re.fullmatch(r"[0-9]+", cleaned):
+        raise ValueError("Enter a valid WhatsApp number using digits only.")
+    # A bare 10-digit Indian mobile number: add the country code.
+    if len(cleaned) == 10 and cleaned[0] in "6789":
+        cleaned = f"91{cleaned}"
+    elif len(cleaned) == 11 and cleaned.startswith("0") and cleaned[1] in "6789":
+        cleaned = f"91{cleaned[1:]}"
+    if not 10 <= len(cleaned) <= 15 or cleaned.startswith("0"):
+        raise ValueError(
+            "Enter the WhatsApp number with its country code, e.g. +91 98765 43210."
+        )
+    return cleaned
+
+
 class EmployeeLetterEmailRequest(BaseModel):
     workspace_id: str = Field(min_length=36, max_length=36)
     letter_id: str = Field(min_length=36, max_length=36)
@@ -67,23 +88,7 @@ class DocumentWhatsAppRequest(BaseModel):
     @classmethod
     def valid_whatsapp_number(cls, value: str) -> str:
         """Returns digits only with country code, e.g. 919876543210."""
-        cleaned = re.sub(r"[\s\-().]", "", value.strip())
-        if cleaned.startswith("+"):
-            cleaned = cleaned[1:]
-        elif cleaned.startswith("00"):
-            cleaned = cleaned[2:]
-        if not re.fullmatch(r"[0-9]+", cleaned):
-            raise ValueError("Enter a valid WhatsApp number using digits only.")
-        # A bare 10-digit Indian mobile number: add the country code.
-        if len(cleaned) == 10 and cleaned[0] in "6789":
-            cleaned = f"91{cleaned}"
-        elif len(cleaned) == 11 and cleaned.startswith("0") and cleaned[1] in "6789":
-            cleaned = f"91{cleaned[1:]}"
-        if not 10 <= len(cleaned) <= 15 or cleaned.startswith("0"):
-            raise ValueError(
-                "Enter the WhatsApp number with its country code, e.g. +91 98765 43210."
-            )
-        return cleaned
+        return normalize_phone_number(value)
 
     @field_validator("filename")
     @classmethod

@@ -160,3 +160,27 @@ Set in `backend/.env` on the server, then restart the API:
 N8N_WHATSAPP_WEBHOOK_URL=https://n8n.example.com/webhook/<id>
 N8N_WHATSAPP_SECRET=<optional shared secret>
 ```
+
+## Sign-up phone verification (n8n)
+
+The sign-up dialog calls `POST /api/v1/account/phone/send-code`. The API creates a
+6-digit code (stored only as a keyed hash; 10-minute expiry, 30 s resend cooldown,
+5 codes/hour, 5 attempts) and POSTs this JSON to `N8N_OTP_WEBHOOK_URL`:
+
+```json
+{
+  "event": "phone.verification",
+  "phone": "919876543210",
+  "phone_e164": "+919876543210",
+  "otp": "123456",
+  "expires_in_minutes": 10,
+  "user_id": "<uuid>",
+  "email": "user@example.com",
+  "sent_at": "2026-11-05T11:45:00+00:00"
+}
+```
+
+- Send `otp` with the WhatsApp authentication template (body + copy-code button parameter).
+- Header `X-ChanaX-Secret` carries `N8N_OTP_SECRET` (or `N8N_WHATSAPP_SECRET` when empty).
+- Reply with any 2xx when the message is accepted; a non-2xx tells the user it could not be sent.
+- `POST /api/v1/account/phone/verify` checks the code and sets `profiles.phone_verified_at`.
