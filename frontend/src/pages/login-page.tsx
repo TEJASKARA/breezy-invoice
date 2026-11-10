@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { supabase } from "@/lib/supabase"
 import { pendingCaInvitation } from "@/lib/ca-invitation-session"
+import { PhoneSignIn } from "@/components/phone-sign-in"
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -19,6 +20,7 @@ export function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isSignUp, setIsSignUp] = useState(false)
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
+  const [usePhone, setUsePhone] = useState(false)
   const [message, setMessage] = useState("")
   const [messageIsError, setMessageIsError] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -114,10 +116,17 @@ export function LoginPage() {
               </Button> : null}
               {!isPasswordRecovery ? <div className="flex items-center gap-3">
                 <Separator className="flex-1" />
-                <span className="text-xs text-muted-foreground">or continue with email</span>
+                <span className="text-xs text-muted-foreground">{usePhone && !isSignUp ? "or sign in with your phone" : "or continue with email"}</span>
                 <Separator className="flex-1" />
               </div> : null}
-              <form onSubmit={submit} className="space-y-5">
+              {!isSignUp && !isPasswordRecovery ? <div className="grid grid-cols-2 rounded-lg border p-1" role="tablist" aria-label="Sign-in method">
+                <Button type="button" role="tab" aria-selected={!usePhone} size="sm" variant={usePhone ? "ghost" : "default"} onClick={() => { setUsePhone(false); setMessage("") }}>Email</Button>
+                <Button type="button" role="tab" aria-selected={usePhone} size="sm" variant={usePhone ? "default" : "ghost"} onClick={() => { setUsePhone(true); setMessage("") }}>Phone</Button>
+              </div> : null}
+              {usePhone && !isSignUp && !isPasswordRecovery ? <>
+                <PhoneSignIn onSignedIn={() => navigate(pendingCaInvitation() ? "/ca-invite" : "/")} />
+                <Button type="button" variant="ghost" className="w-full" onClick={() => { setUsePhone(false); setIsSignUp(true); setMessage(""); setMessageIsError(false) }}>New here? Create an account</Button>
+              </> : <form onSubmit={submit} className="space-y-5">
               {isPasswordRecovery ? <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">Choose a new password for your ChanaX account.</p> : null}
               {!isPasswordRecovery ? (
               <div className="space-y-2">
@@ -141,7 +150,7 @@ export function LoginPage() {
               </Button>
               {!isPasswordRecovery ? <Button type="button" variant="ghost" className="w-full" onClick={() => { setIsSignUp((value) => !value); setMessage(""); setMessageIsError(false) }}>{isSignUp ? "Already have an account? Sign in" : "New here? Create an account"}</Button> : null}
               {message && <p role={messageIsError ? "alert" : "status"} className={messageIsError ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{message}</p>}
-              </form>
+              </form>}
             </CardContent>
           </Card>
           <p className="mt-5 text-center text-xs text-muted-foreground">

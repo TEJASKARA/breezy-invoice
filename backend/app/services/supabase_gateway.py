@@ -819,6 +819,37 @@ class SupabaseGateway:
                 detail or "Supabase could not send the invitation email."
             )
 
+    async def create_sign_in_token(self, email: str) -> str:
+        """One-time magic-link token hash; the browser exchanges it for a session.
+
+        generate_link does not send an email.
+        """
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url.rstrip('/')}"
+                "/auth/v1/admin/generate_link",
+                json={"type": "magiclink", "email": email},
+                headers=self._service_headers(),
+            )
+        if response.is_error:
+            logger.error("generate_link failed with status %s", response.status_code)
+            raise SupabaseGatewayError("We couldn't sign you in. Please try again.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise SupabaseGatewayError(
+                "We couldn't sign you in. Please try again."
+            ) from exc
+        if not isinstance(payload, dict):
+            payload = {}
+        properties = payload.get("properties")
+        token = payload.get("hashed_token") or (
+            properties.get("hashed_token") if isinstance(properties, dict) else None
+        )
+        if not token:
+            raise SupabaseGatewayError("We couldn't sign you in. Please try again.")
+        return str(token)
+
     async def cached_gstin(self, gstin: str) -> dict[str, Any] | None:
         rows = await self._get(
             "breezy_gstin_cache",

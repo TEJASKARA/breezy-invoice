@@ -170,6 +170,7 @@ The sign-up dialog calls `POST /api/v1/account/phone/send-code`. The API creates
 ```json
 {
   "event": "phone.verification",
+  "purpose": "verify",
   "phone": "919876543210",
   "phone_e164": "+919876543210",
   "otp": "123456",
@@ -181,6 +182,7 @@ The sign-up dialog calls `POST /api/v1/account/phone/send-code`. The API creates
 ```
 
 - Send `otp` with the WhatsApp authentication template (body + copy-code button parameter).
+- `purpose` is `verify` (sign-up phone check) or `login` (sign in with phone). Both use the same template, so the n8n workflow needs no change.
 - Header `X-ChanaX-Secret` carries `N8N_OTP_SECRET` (or `N8N_WHATSAPP_SECRET` when empty).
 - Reply with any 2xx when the message is accepted; a non-2xx tells the user it could not be sent.
 - `POST /api/v1/account/phone/verify` checks the code and sets `profiles.phone_verified_at`.

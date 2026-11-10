@@ -11,7 +11,9 @@ from app.services.phone_verification import (
     PhoneVerificationError,
     PhoneVerificationUnavailable,
     check_verification_code,
+    send_login_code,
     send_verification_code,
+    sign_in_with_code,
 )
 from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
 from app.services.welcome_email import deliver_welcome
@@ -103,3 +105,41 @@ async def verify_phone_code(
     except (PhoneVerificationError, SupabaseGatewayError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"phone": str(result.get("phone") or f"+{request.phone}")}
+
+
+@router.post("/phone-login/send-code")
+async def send_phone_login_code(
+    request: PhoneCodeRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, str]:
+    """Signed-out: WhatsApp a sign-in code to a verified phone number."""
+    try:
+        await send_login_code(settings, phone=request.phone)
+    except PhoneVerificationUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (PhoneVerificationError, SupabaseGatewayError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "Phone sign-in is unavailable right now.") from exc
+    return {
+        "message": f"We sent a 6-digit sign-in code to +{request.phone} on WhatsApp."
+    }
+
+
+@router.post("/phone-login/verify")
+async def verify_phone_login_code(
+    request: PhoneVerifyRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, str]:
+    """Signed-out: exchange a correct code for a one-time sign-in token."""
+    try:
+        token_hash = await sign_in_with_code(
+            settings, phone=request.phone, code=request.code.strip()
+        )
+    except PhoneVerificationUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (PhoneVerificationError, SupabaseGatewayError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "Phone sign-in is unavailable right now.") from exc
+    return {"token_hash": token_hash}
