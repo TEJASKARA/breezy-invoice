@@ -80,11 +80,11 @@ export function approvePlatformPurge(requestId: string, code: string) { return a
 export type UsageScope =
   | { type: "platform" }
   | { type: "workspace"; workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string }
-  | { type: "user"; user_id: string; email: string; signed_up_at: string; last_sign_in_at: string | null; workspaces: { workspace_id: string; name: string; subscription_code: string; role: string }[] }
+  | { type: "user"; user_id: string; email: string | null; signed_up_at: string; last_sign_in_at: string | null; workspaces: { workspace_id: string; name: string; subscription_code: string; role: string }[] }
 
 export type UsageExtras = {
   anonymous_site_views: number
-  new_users: { day: string; email: string; phone: string | null }[]
+  new_users: { day: string; email: string | null; phone: string | null }[]
   daily_signups: { day: string; users: number }[]
   page_features: { page: string; name: string; uses: number; users: number }[]
   /** Signed up but never saved workspace setup. Older backends omit it. */

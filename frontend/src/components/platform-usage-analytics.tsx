@@ -162,12 +162,14 @@ function SetupPendingUsers({ users, onSetUp }: { users: SetupPendingUser[]; onSe
 }
 
 function NewUserSignups({ extras }: { extras: UsageExtras }) {
-  const [selectedEmail, setSelectedEmail] = useState<string | null>(null)
-  const usersByDay = new Map<string, UsageExtras["new_users"]>()
-  for (const user of extras.new_users) {
-    usersByDay.set(user.day, [...(usersByDay.get(user.day) || []), user])
-  }
-  const selectedUser = extras.new_users.find((user) => user.email === selectedEmail) ?? null
+  // Select by position: phone-only sign-ups have no email, so email is not a key.
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const usersByDay = new Map<string, { user: UsageExtras["new_users"][number]; index: number }[]>()
+  extras.new_users.forEach((user, index) => {
+    usersByDay.set(user.day, [...(usersByDay.get(user.day) || []), { user, index }])
+  })
+  const selectedUser = selectedIndex === null ? null : extras.new_users[selectedIndex] ?? null
+  const label = (user: UsageExtras["new_users"][number]) => user.email || user.phone || "Phone sign-up"
 
   return (
     <Card>
@@ -194,17 +196,17 @@ function NewUserSignups({ extras }: { extras: UsageExtras }) {
                 <div key={signup.day} className="flex flex-col gap-2 border-b pb-2 last:border-0 last:pb-0 sm:flex-row sm:items-start sm:gap-3">
                   <span className="font-medium sm:w-28">{signup.day}</span>
                   <div className="flex flex-wrap gap-1.5">
-                    {(usersByDay.get(signup.day) || []).map((user) => (
+                    {(usersByDay.get(signup.day) || []).map(({ user, index }) => (
                       <button
-                        key={`${user.day}-${user.email}`}
+                        key={index}
                         type="button"
-                        onClick={() => setSelectedEmail(user.email)}
+                        onClick={() => setSelectedIndex(index)}
                         className={cn(
                           "rounded-md border px-2 py-1 text-left text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          selectedUser?.email === user.email && "border-primary bg-primary/5 text-foreground",
+                          selectedIndex === index && "border-primary bg-primary/5 text-foreground",
                         )}
                       >
-                        {user.email}
+                        {label(user)}
                       </button>
                     ))}
                   </div>
@@ -214,8 +216,8 @@ function NewUserSignups({ extras }: { extras: UsageExtras }) {
             <aside className="rounded-lg border bg-muted/30 p-4" aria-live="polite">
               {selectedUser ? <>
                 <div className="flex items-center gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{selectedUser.email.slice(0, 1).toUpperCase()}</span>
-                  <div className="min-w-0"><p className="truncate font-medium">{selectedUser.email}</p><p className="text-xs text-muted-foreground">Signed up {selectedUser.day}</p></div>
+                  <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{label(selectedUser).replace(/^\+/, "").slice(0, 1).toUpperCase()}</span>
+                  <div className="min-w-0"><p className="truncate font-medium">{label(selectedUser)}</p><p className="text-xs text-muted-foreground">Signed up {selectedUser.day}</p></div>
                 </div>
                 <div className="mt-4 border-t pt-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone number</p><p className="mt-1 font-medium">{selectedUser.phone || "Not provided"}</p></div>
               </> : <p className="text-sm text-muted-foreground">Select a new user to view their contact number.</p>}

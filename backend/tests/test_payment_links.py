@@ -265,3 +265,36 @@ def test_admin_report_adds_workspace_overview(monkeypatch) -> None:
     report = asyncio.run(gateway.admin_usage_report(since_days=7, identifier="ABC123"))
     assert report["workspace_overviews"][0]["invoices"]["total"] == 3
     assert calls == ["breezy_admin_usage_report", "breezy_admin_workspace_overview"]
+
+
+def test_usage_endpoint_returns_workspace_overviews(monkeypatch) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None)
+    monkeypatch.setattr(
+        SupabaseGateway, "authenticated_user", AsyncMock(return_value=ADMIN)
+    )
+    monkeypatch.setattr(admin_routes, "_require_platform_admin", lambda *_: None)
+    monkeypatch.setattr(
+        SupabaseGateway, "admin_analytics_exclusions", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        SupabaseGateway,
+        "admin_usage_report",
+        AsyncMock(
+            return_value={
+                "since_days": 7,
+                "generated_at": "2026-11-10T00:00:00Z",
+                "scope": {"type": "workspace", "workspace_id": WORKSPACE},
+                "totals": {},
+                "workspace_overviews": [{"workspace_id": WORKSPACE}],
+            }
+        ),
+    )
+    try:
+        response = TestClient(app).get(
+            "/api/v1/admin/usage?days=7&query=ABC123",
+            headers={"Authorization": "Bearer t"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert response.json()["workspace_overviews"] == [{"workspace_id": WORKSPACE}]

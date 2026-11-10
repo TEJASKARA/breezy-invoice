@@ -64,6 +64,7 @@ class PlatformUsageReportResponse(BaseModel):
     inactive_workspaces: list[dict[str, Any]] = []
     recent: list[dict[str, Any]] = []
     extras: dict[str, Any] | None = None
+    workspace_overviews: list[dict[str, Any]] = []
 
 class AnalyticsExclusion(BaseModel):
     user_id: str
