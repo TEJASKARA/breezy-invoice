@@ -34,7 +34,8 @@ export function LoginPage() {
   const [message, setMessage] = useState("")
   const [messageIsError, setMessageIsError] = useState(false)
   const [busy, setBusy] = useState(false)
-  const destination = () => pendingCaInvitation() ? "/ca-invite" : "/"
+  // Straight into the workspace: it opens setup automatically for new accounts.
+  const destination = () => pendingCaInvitation() ? "/ca-invite" : "/workspace"
 
   useEffect(() => {
     if (!supabase) return

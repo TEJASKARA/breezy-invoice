@@ -59,3 +59,9 @@ test("unknown or malformed errors use safe defaults", () => {
   assert.equal(customerErrorMessage(new Error("x".repeat(600)), fallback), fallback)
   assert.doesNotMatch(customerErrorMessage(null, "Supabase failed"), /supabase/i)
 })
+
+test("bare numeric errors never reach the customer", () => {
+  assert.equal(customerErrorMessage(new Error("0"), fallback), fallback)
+  assert.equal(customerErrorMessage({ message: "500", code: "unexpected_failure" }, fallback), fallback)
+  assert.equal(customerErrorMessage(new Error("Database error saving new user"), fallback), fallback)
+})

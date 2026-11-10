@@ -38,6 +38,7 @@ function formatCustomerError(error: unknown, fallback = defaultMessage): string 
   }
   if (technicalDetails.test(message) || /^PGRST/.test(code) || /^42/.test(code) || /^XX/.test(code)) return safeFallback
   if (code && /^\d{5}$/.test(code) && !["23505", "42501"].includes(code)) return safeFallback
-  if (!message.trim() || message.length > 450) return safeFallback
+  // Bare codes such as "0" or "500" are not explanations.
+  if (!message.trim() || message.length > 450 || !/[a-z]{3}/i.test(message)) return safeFallback
   return message.trim()
 }
