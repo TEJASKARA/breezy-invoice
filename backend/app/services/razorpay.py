@@ -187,6 +187,62 @@ class RazorpayClient:
             raise RazorpayRequestError(self._safe_error(response))
         return response.json()
 
+    async def _request(
+        self, method: str, path: str, json: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        self._configured()
+        async with httpx.AsyncClient(
+            timeout=20,
+            transport=self.transport,
+            auth=(self.settings.razorpay_key_id, self.settings.razorpay_key_secret),
+        ) as client:
+            response = await client.request(
+                method, f"https://api.razorpay.com/v1{path}", json=json
+            )
+        if response.is_error:
+            raise RazorpayRequestError(self._safe_error(response))
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
+    async def create_payment_link(
+        self,
+        *,
+        reference_id: str,
+        amount_paise: int,
+        description: str,
+        customer: dict[str, str],
+        notes: dict[str, str],
+        notify: bool,
+    ) -> dict[str, Any]:
+        """Razorpay Payment Link; Razorpay emails/texts it when notify is on."""
+        payload = await self._request(
+            "POST",
+            "/payment_links",
+            {
+                "amount": amount_paise,
+                "currency": "INR",
+                "accept_partial": False,
+                "reference_id": reference_id,
+                "description": description[:2048],
+                "customer": {key: value for key, value in customer.items() if value},
+                "notify": {
+                    "email": notify and bool(customer.get("email")),
+                    "sms": notify and bool(customer.get("contact")),
+                },
+                "reminder_enable": notify,
+                "notes": notes,
+            },
+        )
+        if not payload.get("id") or not payload.get("short_url"):
+            raise RazorpayRequestError("Razorpay did not return a payment link.")
+        return payload
+
+    async def payment_link(self, link_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/payment_links/{link_id}")
+
+    async def cancel_payment_link(self, link_id: str) -> dict[str, Any]:
+        return await self._request("POST", f"/payment_links/{link_id}/cancel")
+
     @staticmethod
     def _safe_error(response: httpx.Response) -> str:
         try:
@@ -197,3 +253,9 @@ class RazorpayClient:
         except ValueError:
             pass
         return f"Razorpay could not complete the request ({response.status_code})."
+
+
+def custom_quote_amounts(base_amount_paise: int) -> tuple[int, int, int]:
+    """(base, GST at 18%, total) in paise, rounded like the fixed plans."""
+    gst = (base_amount_paise * GST_RATE_PERCENT + 50) // 100
+    return base_amount_paise, gst, base_amount_paise + gst

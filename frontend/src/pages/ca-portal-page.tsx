@@ -1,6 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useCallback, useEffect, useState } from "react"
-import { Building2, CheckCircle2, Clock3, LogOut, Plus, Send, XCircle } from "lucide-react"
+import { Building2, CheckCircle2, Clock3, LogOut, Plus, Send, UserRound, XCircle } from "lucide-react"
 import { Navigate, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
@@ -102,7 +102,7 @@ export function CaPortalPage() {
 
   return (
     <main className="min-h-svh bg-muted/30">
-      <header className="border-b bg-background"><div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center gap-3 px-5 py-2"><BrandMark /><div className="ml-auto flex flex-wrap items-center gap-3">{ownWorkspace?.workspace.subscription_code ? <SubscriptionCode key={ownWorkspace.workspace.id} code={ownWorkspace.workspace.subscription_code} label="My firm subscription code" /> : null}<Badge variant="outline">CA portal</Badge><Button variant="ghost" onClick={() => void signOut()}><LogOut />Sign out</Button></div></div></header>
+      <header className="border-b bg-background"><div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center gap-3 px-5 py-2"><BrandMark /><div className="ml-auto flex flex-wrap items-center gap-3">{ownWorkspace?.workspace.subscription_code ? <SubscriptionCode key={ownWorkspace.workspace.id} code={ownWorkspace.workspace.subscription_code} label="My firm subscription code" /> : null}<Badge variant="outline">CA portal</Badge><Button variant="ghost" onClick={() => navigate("/profile")}><UserRound />Profile</Button><Button variant="ghost" onClick={() => void signOut()}><LogOut />Sign out</Button></div></div></header>
       <div className="mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
         <div><p className="text-sm font-medium text-primary">{userProfile.ca_firm_name}</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">CA workspace hub</h1><p className="mt-2 text-muted-foreground">Manage your own firm separately and open every client company that has granted you access.</p></div>
 

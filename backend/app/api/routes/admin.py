@@ -24,6 +24,9 @@ from app.schemas.admin import (
     MarketingImportRequest,
     MarketingImportResponse,
     MarketingSummaryResponse,
+    PaymentLinkCreateRequest,
+    PaymentLinkListResponse,
+    PaymentLinkResponse,
     PlatformAdminAccessResponse,
     PlatformUsageReportResponse,
     PlatformWorkspaceResponse,
@@ -39,6 +42,12 @@ from app.services.email_sender import (
     EmailDeliveryError,
     send_account_ready_email,
     send_purge_approval_code_email,
+)
+from app.services.razorpay import (
+    RazorpayClient,
+    RazorpayConfigurationError,
+    RazorpayRequestError,
+    custom_quote_amounts,
 )
 from app.services.supabase_gateway import (
     GstVerificationUnavailable,
@@ -570,3 +579,205 @@ async def marketing_import(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     return MarketingImportResponse(**result)
+
+
+def _link_response(row: dict[str, Any]) -> PaymentLinkResponse:
+    workspace = row.get("workspace") if isinstance(row.get("workspace"), dict) else {}
+    return PaymentLinkResponse(
+        **{
+            key: row.get(key)
+            for key in PaymentLinkResponse.model_fields
+            if key in row and key not in {"workspace_name", "subscription_code"}
+        },
+        workspace_name=workspace.get("name") or row.get("workspace_name"),
+        subscription_code=workspace.get("subscription_code")
+        or row.get("subscription_code"),
+    )
+
+
+async def _admin(gateway: SupabaseGateway, authorization: str, settings: Settings):
+    user = await gateway.authenticated_user(_bearer_token(authorization))
+    _require_platform_admin(user, settings)
+    return user
+
+
+def _paid_payment(link: dict[str, Any]) -> dict[str, Any] | None:
+    for payment in link.get("payments") or []:
+        if isinstance(payment, dict) and payment.get("status") == "captured":
+            return payment
+    return None
+
+
+async def _sync_link_status(
+    gateway: SupabaseGateway, razorpay: RazorpayClient, row: dict[str, Any]
+) -> None:
+    """Pull the latest status from Razorpay; fulfil a paid link once."""
+    provider_id = str(row.get("provider_link_id") or "")
+    if not provider_id or row.get("status") == "paid":
+        return
+    link = await razorpay.payment_link(provider_id)
+    status_value = str(link.get("status") or "")
+    if status_value == "paid":
+        payment = _paid_payment(link)
+        order_id = str(link.get("order_id") or "")
+        payment_id = str((payment or {}).get("payment_id") or "")
+        if payment_id and not order_id:
+            order_id = str((await razorpay.payment(payment_id)).get("order_id") or "")
+        if not order_id or not payment_id:
+            raise SupabaseGatewayError(
+                "Razorpay shows this link as paid but the payment details are "
+                "not available yet. Try again in a minute."
+            )
+        await gateway.settle_payment_link(
+            provider_link_id=provider_id,
+            provider_order_id=order_id,
+            provider_payment_id=payment_id,
+            amount_paise=int(link.get("amount_paid") or link.get("amount") or 0),
+            event_type="payment_link.status_check",
+        )
+    elif status_value in {"cancelled", "expired"} and status_value != row.get("status"):
+        await gateway.update_payment_link(str(row["id"]), {"status": status_value})
+
+
+@router.get("/payment-links", response_model=PaymentLinkListResponse)
+async def list_payment_links(
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PaymentLinkListResponse:
+    gateway = SupabaseGateway(settings)
+    try:
+        await _admin(gateway, authorization, settings)
+        rows = await gateway.payment_link_records()
+    except SupabaseGatewayError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return PaymentLinkListResponse(links=[_link_response(row) for row in rows])
+
+
+@router.post("/payment-links", response_model=PaymentLinkResponse)
+async def create_payment_link(
+    request: PaymentLinkCreateRequest,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PaymentLinkResponse:
+    """Custom quote: price + 18% GST; when paid, credits/months apply automatically."""
+    gateway = SupabaseGateway(settings)
+    razorpay = RazorpayClient(settings)
+    link_id = str(uuid.uuid4())
+    base, gst, total = custom_quote_amounts(request.base_amount_paise)
+    try:
+        user = await _admin(gateway, authorization, settings)
+        target = await gateway.admin_setup_target(request.subscription_code)
+        if not target.get("workspace_id"):
+            raise SupabaseGatewayError("This user does not own a ChanaX workspace.")
+        if target.get("workspace_status") != "active":
+            raise SupabaseGatewayError("Payment links need an active workspace.")
+        phone = str(target.get("phone") or "")
+        record = {
+            "id": link_id,
+            "workspace_id": target["workspace_id"],
+            "created_by": user["id"],
+            "description": request.description.strip(),
+            "base_amount_paise": base,
+            "gst_amount_paise": gst,
+            "amount_paise": total,
+            "credits": request.credits,
+            "duration_months": request.duration_months,
+            "customer_name": target.get("full_name") or target.get("workspace_name"),
+            "customer_email": target.get("email"),
+            "customer_phone": phone or None,
+            "status": "creating",
+        }
+        await gateway.create_payment_link_record(record)
+        try:
+            link = await razorpay.create_payment_link(
+                reference_id=link_id,
+                amount_paise=total,
+                description=request.description.strip(),
+                customer={
+                    "name": str(record["customer_name"] or ""),
+                    "email": str(target.get("email") or ""),
+                    "contact": phone,
+                },
+                notes={
+                    "chanax_payment_link_id": link_id,
+                    "workspace_id": str(target["workspace_id"]),
+                    "subscription_code": str(target.get("subscription_code") or ""),
+                    "credits": str(request.credits),
+                    "duration_months": str(request.duration_months),
+                    "base_amount_paise": str(base),
+                    "gst_amount_paise": str(gst),
+                },
+                notify=request.notify_customer,
+            )
+        except (RazorpayConfigurationError, RazorpayRequestError):
+            await gateway.update_payment_link(link_id, {"status": "failed"})
+            raise
+        changes = {
+            "provider_link_id": str(link["id"]),
+            "short_url": str(link["short_url"]),
+            "status": "created",
+        }
+        await gateway.update_payment_link(link_id, changes)
+    except RazorpayConfigurationError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except SupabaseGatewayError as exc:
+        raise _not_found_or_bad_request(exc) from exc
+    except RazorpayRequestError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    logger.info(
+        "Payment link created link_id=%s workspace_id=%s actor=%s",
+        link_id,
+        record["workspace_id"],
+        user.get("id"),
+    )
+    return _link_response(
+        {
+            **record,
+            **changes,
+            "workspace_name": target.get("workspace_name"),
+            "subscription_code": target.get("subscription_code"),
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+
+@router.post("/payment-links/{link_id}/refresh", response_model=PaymentLinkResponse)
+async def refresh_payment_link(
+    link_id: str,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PaymentLinkResponse:
+    """Check Razorpay for the latest status (fallback if a webhook was missed)."""
+    gateway = SupabaseGateway(settings)
+    try:
+        await _admin(gateway, authorization, settings)
+        row = await gateway.payment_link_record(link_id)
+        await _sync_link_status(gateway, RazorpayClient(settings), row)
+        row = await gateway.payment_link_record(link_id)
+    except RazorpayConfigurationError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except (RazorpayRequestError, SupabaseGatewayError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return _link_response(row)
+
+
+@router.post("/payment-links/{link_id}/cancel", response_model=PaymentLinkResponse)
+async def cancel_payment_link(
+    link_id: str,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PaymentLinkResponse:
+    gateway = SupabaseGateway(settings)
+    try:
+        await _admin(gateway, authorization, settings)
+        row = await gateway.payment_link_record(link_id)
+        if row.get("status") != "created" or not row.get("provider_link_id"):
+            raise SupabaseGatewayError("Only an unpaid, active link can be cancelled.")
+        await RazorpayClient(settings).cancel_payment_link(str(row["provider_link_id"]))
+        await gateway.update_payment_link(link_id, {"status": "cancelled"})
+        row = await gateway.payment_link_record(link_id)
+    except RazorpayConfigurationError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except (RazorpayRequestError, SupabaseGatewayError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return _link_response(row)

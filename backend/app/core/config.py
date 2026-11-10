@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # The secret is sent as X-ChanaX-Secret; it falls back to the WhatsApp one.
     n8n_otp_webhook_url: str = ""
     n8n_otp_secret: str = ""
+    # Supabase Auth "Send SMS" hook secret (v1,whsec_...). Supabase calls
+    # /api/v1/account/sms-hook with each phone sign-in code; it goes out via n8n.
+    supabase_sms_hook_secret: str = ""
 
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""

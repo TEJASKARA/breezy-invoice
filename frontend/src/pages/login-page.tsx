@@ -1,5 +1,5 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
-import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react"
+import { ArrowLeft, ArrowRight, LoaderCircle, ShieldCheck, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
@@ -9,26 +9,38 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { supabase } from "@/lib/supabase"
 import { pendingCaInvitation } from "@/lib/ca-invitation-session"
-import { PhoneSignIn } from "@/components/phone-sign-in"
+import { supabase } from "@/lib/supabase"
+import { normalizeWhatsAppNumber } from "@/lib/whatsapp-number"
 
+type Step = "identify" | "email" | "phone-code" | "recovery"
+
+const formatPhone = (digits: string) => digits.startsWith("91") && digits.length === 12
+  ? `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`
+  : `+${digits}`
+
+/** One page for sign-in and sign-up, with email (password) or phone (WhatsApp code). */
 export function LoginPage() {
   const navigate = useNavigate()
+  const [step, setStep] = useState<Step>("identify")
+  const [identifier, setIdentifier] = useState("")
   const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [code, setCode] = useState("")
   const [isSignUp, setIsSignUp] = useState(false)
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
-  const [usePhone, setUsePhone] = useState(false)
+  const [resendIn, setResendIn] = useState(0)
   const [message, setMessage] = useState("")
   const [messageIsError, setMessageIsError] = useState(false)
   const [busy, setBusy] = useState(false)
+  const destination = () => pendingCaInvitation() ? "/ca-invite" : "/"
+
   useEffect(() => {
     if (!supabase) return
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
-        setIsPasswordRecovery(true)
+        setStep("recovery")
         setMessageIsError(false)
         setMessage("Enter a new password for your account.")
       }
@@ -36,46 +48,123 @@ export function LoginPage() {
     return () => data.subscription.unsubscribe()
   }, [])
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); if (!supabase) { setMessageIsError(true); setMessage("Sign-in is temporarily unavailable. Please try again later."); return }
-    if (isPasswordRecovery) {
-      if (password.length < 6) { setMessageIsError(true); setMessage("Your new password must contain at least 6 characters."); return }
-      if (password !== confirmPassword) { setMessageIsError(true); setMessage("The passwords do not match."); return }
-      setBusy(true); setMessage("")
-      const { error } = await supabase.auth.updateUser({ password })
-      setBusy(false)
-      setMessageIsError(Boolean(error))
-      if (error) setMessage(customerErrorMessage(error))
-      else { setMessage("Password updated. You can now use your new password."); setIsPasswordRecovery(false); setConfirmPassword("") }
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const timer = window.setTimeout(() => setResendIn((value) => value - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [resendIn])
+
+  function show(text: string, isError = false) {
+    setMessage(text)
+    setMessageIsError(isError)
+  }
+
+  function back() {
+    setStep("identify")
+    setPassword("")
+    setConfirmPassword("")
+    setCode("")
+    setIsSignUp(false)
+    show("")
+  }
+
+  async function sendPhoneCode(digits: string) {
+    if (!supabase) return show("Sign-in is temporarily unavailable. Please try again later.", true)
+    setBusy(true)
+    show("")
+    // Creates the account on first use, so this is sign-up and sign-in in one.
+    const { error } = await supabase.auth.signInWithOtp({ phone: `+${digits}` })
+    setBusy(false)
+    if (error) return show(customerErrorMessage(error, "We couldn't send the code. Please try again."), true)
+    setPhone(digits)
+    setCode("")
+    setResendIn(30)
+    setStep("phone-code")
+    show(`We sent a 6-digit code to ${formatPhone(digits)} on WhatsApp.`)
+  }
+
+  async function continueWithIdentifier(event: React.FormEvent) {
+    event.preventDefault()
+    const value = identifier.trim()
+    if (!value) return show("Enter your email address or phone number.", true)
+    if (value.includes("@")) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return show("Enter a valid email address.", true)
+      setEmail(value.toLowerCase())
+      setStep("email")
+      show("")
       return
     }
-    setBusy(true); setMessage("")
-    const destination = pendingCaInvitation() ? '/ca-invite' : '/'
+    const digits = normalizeWhatsAppNumber(value)
+    if (!digits) return show("Enter a valid mobile number, for example 98765 43210, or an email address.", true)
+    await sendPhoneCode(digits)
+  }
+
+  async function verifyPhoneCode(event: React.FormEvent) {
+    event.preventDefault()
+    if (!supabase) return show("Sign-in is temporarily unavailable. Please try again later.", true)
+    if (!/^\d{6}$/.test(code)) return show("Enter the 6-digit code from WhatsApp.", true)
+    setBusy(true)
+    show("")
+    const { error } = await supabase.auth.verifyOtp({ phone: `+${phone}`, token: code, type: "sms" })
+    setBusy(false)
+    if (error) return show(customerErrorMessage(error, "That code is incorrect or has expired. Request a new code."), true)
+    navigate(destination())
+  }
+
+  async function submitEmail(event: React.FormEvent) {
+    event.preventDefault()
+    if (!supabase) return show("Sign-in is temporarily unavailable. Please try again later.", true)
+    if (password.length < 6) return show("Your password must contain at least 6 characters.", true)
+    setBusy(true)
+    show("")
     const result = isSignUp
-      ? await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}${destination}`,
-        },
-      })
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${destination()}` } })
       : await supabase.auth.signInWithPassword({ email, password })
     setBusy(false)
-    setMessageIsError(Boolean(result.error))
-    if (result.error) setMessage(customerErrorMessage(result.error))
-    else if (isSignUp && !result.data.session) setMessage("Check your email to confirm your account, then sign in.")
-    else navigate(destination)
+    if (result.error) return show(customerErrorMessage(result.error), true)
+    if (isSignUp && !result.data.session) return show("Check your email to confirm your account, then sign in.")
+    navigate(destination())
   }
-  async function resetPassword() {
-    if (!supabase) { setMessageIsError(true); setMessage("Your account connection is temporarily unavailable. Please try again later."); return }
-    if (!email.trim()) { setMessageIsError(true); setMessage("Enter your email address first."); return }
-    setBusy(true); setMessage("")
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/login` })
+
+  async function updateRecoveredPassword(event: React.FormEvent) {
+    event.preventDefault()
+    if (!supabase) return show("Your account connection is temporarily unavailable. Please try again later.", true)
+    if (password.length < 6) return show("Your new password must contain at least 6 characters.", true)
+    if (password !== confirmPassword) return show("The passwords do not match.", true)
+    setBusy(true)
+    show("")
+    const { error } = await supabase.auth.updateUser({ password })
     setBusy(false)
-    setMessageIsError(Boolean(error))
-    setMessage(error ? customerErrorMessage(error) : "Password reset instructions were sent to your email.")
+    if (error) return show(customerErrorMessage(error), true)
+    setPassword("")
+    setConfirmPassword("")
+    setStep("identify")
+    show("Password updated. You can now sign in with your new password.")
   }
-  async function google() { if (!supabase) { setMessageIsError(true); setMessage("Sign-in is temporarily unavailable. Please try again later."); return }; const destination = pendingCaInvitation() ? '/ca-invite' : '/'; const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}${destination}` } }); if (error) { setMessageIsError(true); setMessage(customerErrorMessage(error)) } }
+
+  async function resetPassword() {
+    if (!supabase) return show("Your account connection is temporarily unavailable. Please try again later.", true)
+    setBusy(true)
+    show("")
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/login` })
+    setBusy(false)
+    show(error ? customerErrorMessage(error) : "Password reset instructions were sent to your email.", Boolean(error))
+  }
+
+  async function google() {
+    if (!supabase) return show("Sign-in is temporarily unavailable. Please try again later.", true)
+    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}${destination()}` } })
+    if (error) show(customerErrorMessage(error), true)
+  }
+
+  const heading = step === "recovery" ? "Choose a new password"
+    : step === "email" ? (isSignUp ? "Create your account" : "Enter your password")
+    : step === "phone-code" ? "Enter the WhatsApp code"
+    : "Get started with your email or phone number"
+  const subheading = step === "recovery" ? "Set a new password for your ChanaX account."
+    : step === "identify" ? "Sign in or create your ChanaX account."
+    : null
+
   return (
     <main className="public-light grid min-h-svh bg-white text-[#171717] lg:grid-cols-2">
       <section className="relative hidden overflow-hidden bg-[#111111] p-12 text-white lg:flex lg:flex-col">
@@ -106,51 +195,87 @@ export function LoginPage() {
           <BrandMark tone="brand" className="mb-8 lg:hidden" />
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl">Welcome back</CardTitle>
-              <CardDescription>Sign in to your ChanaX workspace.</CardDescription>
+              {step === "email" || step === "phone-code" ? (
+                <button type="button" onClick={back} disabled={busy} className="mb-2 inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                  <ArrowLeft className="size-3.5" />Use a different email or number
+                </button>
+              ) : null}
+              <CardTitle className="text-xl leading-snug">{heading}</CardTitle>
+              {subheading ? <CardDescription>{subheading}</CardDescription> : null}
             </CardHeader>
             <CardContent className="space-y-5">
-              {!isPasswordRecovery ? <Button type="button" variant="outline" className="w-full" onClick={google} disabled={busy}>
-                <span className="text-base font-semibold text-blue-600">G</span>
-                Continue with Google
-              </Button> : null}
-              {!isPasswordRecovery ? <div className="flex items-center gap-3">
-                <Separator className="flex-1" />
-                <span className="text-xs text-muted-foreground">{usePhone && !isSignUp ? "or sign in with your phone" : "or continue with email"}</span>
-                <Separator className="flex-1" />
-              </div> : null}
-              {!isSignUp && !isPasswordRecovery ? <div className="grid grid-cols-2 rounded-lg border p-1" role="tablist" aria-label="Sign-in method">
-                <Button type="button" role="tab" aria-selected={!usePhone} size="sm" variant={usePhone ? "ghost" : "default"} onClick={() => { setUsePhone(false); setMessage("") }}>Email</Button>
-                <Button type="button" role="tab" aria-selected={usePhone} size="sm" variant={usePhone ? "default" : "ghost"} onClick={() => { setUsePhone(true); setMessage("") }}>Phone</Button>
-              </div> : null}
-              {usePhone && !isSignUp && !isPasswordRecovery ? <>
-                <PhoneSignIn onSignedIn={() => navigate(pendingCaInvitation() ? "/ca-invite" : "/")} />
-                <Button type="button" variant="ghost" className="w-full" onClick={() => { setUsePhone(false); setIsSignUp(true); setMessage(""); setMessageIsError(false) }}>New here? Create an account</Button>
-              </> : <form onSubmit={submit} className="space-y-5">
-              {isPasswordRecovery ? <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">Choose a new password for your ChanaX account.</p> : null}
-              {!isPasswordRecovery ? (
-              <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
-                <Input id="email" required value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="you@cafirm.com" autoComplete="email" />
-              </div>
-              ) : null}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  {!isSignUp && !isPasswordRecovery ? <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" disabled={busy} onClick={() => void resetPassword()}>
-                    Forgot password?
-                  </Button> : null}
+              {step === "identify" ? <>
+                <form onSubmit={continueWithIdentifier} className="space-y-4" noValidate>
+                  <div className="space-y-2">
+                    <Label htmlFor="identifier" className="sr-only">Email address or phone number</Label>
+                    <Input id="identifier" autoFocus value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="Enter your email or phone number" autoComplete="username" inputMode="email" />
+                  </div>
+                  <Button className="w-full" disabled={busy}>
+                    {busy ? <LoaderCircle className="animate-spin" /> : null}
+                    {busy ? "Sending code…" : "Continue"}
+                    {!busy ? <ArrowRight /> : null}
+                  </Button>
+                </form>
+                <div className="flex items-center gap-3">
+                  <Separator className="flex-1" />
+                  <span className="text-xs text-muted-foreground">or</span>
+                  <Separator className="flex-1" />
                 </div>
-                <Input id="password" required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={isSignUp || isPasswordRecovery ? "new-password" : "current-password"} />
-              </div>
-              {isPasswordRecovery ? <div className="space-y-2"><Label htmlFor="confirm-password">Confirm new password</Label><Input id="confirm-password" required minLength={6} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" /></div> : null}
-              <Button className="w-full" disabled={busy}>
-                {busy ? "Please wait…" : isPasswordRecovery ? "Update password" : isSignUp ? "Create account" : "Sign in"}
-                <ArrowRight />
-              </Button>
-              {!isPasswordRecovery ? <Button type="button" variant="ghost" className="w-full" onClick={() => { setIsSignUp((value) => !value); setMessage(""); setMessageIsError(false) }}>{isSignUp ? "Already have an account? Sign in" : "New here? Create an account"}</Button> : null}
-              {message && <p role={messageIsError ? "alert" : "status"} className={messageIsError ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{message}</p>}
-              </form>}
+                <Button type="button" variant="outline" className="w-full" onClick={() => void google()} disabled={busy}>
+                  <span className="text-base font-semibold text-blue-600">G</span>
+                  Continue with Google
+                </Button>
+                <p className="text-xs text-muted-foreground">With a phone number, we send a code on WhatsApp. New numbers get a new account.</p>
+              </> : null}
+
+              {step === "email" ? (
+                <form onSubmit={submitEmail} className="space-y-5">
+                  <p className="rounded-lg bg-muted px-3 py-2 text-sm"><span className="text-muted-foreground">Email: </span><span className="font-medium">{email}</span></p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">{isSignUp ? "Create a password" : "Password"}</Label>
+                      {!isSignUp ? <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" disabled={busy} onClick={() => void resetPassword()}>Forgot password?</Button> : null}
+                    </div>
+                    <Input id="password" autoFocus required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={isSignUp ? "new-password" : "current-password"} />
+                  </div>
+                  <Button className="w-full" disabled={busy}>
+                    {busy ? "Please wait…" : isSignUp ? "Create account" : "Sign in"}
+                    <ArrowRight />
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" onClick={() => { setIsSignUp((value) => !value); show("") }}>
+                    {isSignUp ? "Already have an account? Sign in" : "New to ChanaX? Create an account"}
+                  </Button>
+                </form>
+              ) : null}
+
+              {step === "phone-code" ? (
+                <form onSubmit={verifyPhoneCode} className="space-y-5">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="phone-code">6-digit code</Label>
+                      <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" disabled={busy || resendIn > 0} onClick={() => void sendPhoneCode(phone)}>
+                        {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
+                      </Button>
+                    </div>
+                    <Input id="phone-code" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="123456" className="font-mono tracking-[0.3em]" />
+                  </div>
+                  <Button className="w-full" disabled={busy}>
+                    {busy ? <LoaderCircle className="animate-spin" /> : null}
+                    {busy ? "Checking…" : "Continue"}
+                    {!busy ? <ArrowRight /> : null}
+                  </Button>
+                </form>
+              ) : null}
+
+              {step === "recovery" ? (
+                <form onSubmit={updateRecoveredPassword} className="space-y-5">
+                  <div className="space-y-2"><Label htmlFor="new-password">New password</Label><Input id="new-password" required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="new-password" /></div>
+                  <div className="space-y-2"><Label htmlFor="confirm-password">Confirm new password</Label><Input id="confirm-password" required minLength={6} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" /></div>
+                  <Button className="w-full" disabled={busy}>{busy ? "Please wait…" : "Update password"}<ArrowRight /></Button>
+                </form>
+              ) : null}
+
+              {message ? <p role={messageIsError ? "alert" : "status"} className={messageIsError ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{message}</p> : null}
             </CardContent>
           </Card>
           <p className="mt-5 text-center text-xs text-muted-foreground">

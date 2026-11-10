@@ -170,7 +170,6 @@ The sign-up dialog calls `POST /api/v1/account/phone/send-code`. The API creates
 ```json
 {
   "event": "phone.verification",
-  "purpose": "verify",
   "phone": "919876543210",
   "phone_e164": "+919876543210",
   "otp": "123456",
@@ -182,7 +181,38 @@ The sign-up dialog calls `POST /api/v1/account/phone/send-code`. The API creates
 ```
 
 - Send `otp` with the WhatsApp authentication template (body + copy-code button parameter).
-- `purpose` is `verify` (sign-up phone check) or `login` (sign in with phone). Both use the same template, so the n8n workflow needs no change.
 - Header `X-ChanaX-Secret` carries `N8N_OTP_SECRET` (or `N8N_WHATSAPP_SECRET` when empty).
 - Reply with any 2xx when the message is accepted; a non-2xx tells the user it could not be sent.
 - `POST /api/v1/account/phone/verify` checks the code and sets `profiles.phone_verified_at`.
+
+## Phone sign-up / sign-in (Supabase phone auth + WhatsApp)
+
+Users can sign up or sign in with a phone number on the login page. Supabase
+generates the code and calls ChanaX's Send SMS hook, which forwards it to the
+same n8n OTP webhook (`purpose: "login"`), so n8n sends it on WhatsApp.
+
+One-time setup in the Supabase dashboard:
+
+1. Run migration `202611100002_supabase_phone_auth.sql`.
+2. Authentication → Sign In / Providers → **Phone**: enable it. Turn on phone
+   confirmations. Set the OTP expiry to 600 seconds and OTP length to 6.
+3. Authentication → Hooks → **Send SMS hook** → HTTPS, URL
+   `https://<api-domain>/api/v1/account/sms-hook`. Generate the secret.
+4. Put that secret (it starts with `v1,whsec_`) in the VPS `backend/.env` as
+   `SUPABASE_SMS_HOOK_SECRET`, then
+   `docker compose -f compose.production.yaml up -d --force-recreate`.
+
+Profile → Phone changes use ChanaX's own WhatsApp verification and update the
+sign-in phone. One number can be the sign-in phone of only one account.
+
+## Custom-quote payment links (Platform admin → Payment links)
+
+Admins price a custom quote (price + 18% GST, credits, months) and create a
+Razorpay Payment Link; Razorpay emails/texts it to the subscriber. When paid,
+the link becomes a normal `custom_quote` payment order and credits/months are
+applied like any plan purchase.
+
+1. Run migration `202611100003_admin_analytics_payment_links.sql`.
+2. Razorpay Dashboard → Webhooks → the existing ChanaX webhook
+   (`/api/v1/billing/webhook`): also tick **payment_link.paid**.
+3. If a payment ever doesn't show as paid, use **Check status** on the link.

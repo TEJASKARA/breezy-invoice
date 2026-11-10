@@ -52,7 +52,8 @@ def otp_webhook_payload(
     }
 
 
-async def _post_code(settings: Settings, payload: dict[str, Any]) -> None:
+async def post_code_to_n8n(settings: Settings, payload: dict[str, Any]) -> None:
+    """Hand a code to the n8n WhatsApp workflow."""
     headers = {"Content-Type": "application/json"}
     secret = settings.n8n_otp_secret or settings.n8n_whatsapp_secret
     if secret:
@@ -97,7 +98,7 @@ async def send_verification_code(
             "ttl_seconds": CODE_TTL_SECONDS,
         },
     )
-    await _post_code(
+    await post_code_to_n8n(
         settings,
         otp_webhook_payload(phone=phone, code=code, user_id=user_id, email=email),
     )
@@ -129,88 +130,3 @@ async def check_verification_code(
     if reason == "locked":
         raise PhoneVerificationError("Too many incorrect attempts. Request a new code.")
     raise PhoneVerificationError("This code has expired. Request a new code.")
-
-
-NO_PHONE_ACCOUNT_MESSAGE = (
-    "No ChanaX account has this number verified. Sign in with your email, "
-    "or check the number."
-)
-
-
-async def _login_account(settings: Settings, phone: str) -> dict[str, Any]:
-    result = await SupabaseGateway(settings).service_rpc(
-        "breezy_phone_login_account", {"target_phone": phone}
-    )
-    if not isinstance(result, dict):
-        raise PhoneVerificationUnavailable("Phone sign-in returned no result.")
-    matches = int(result.get("matches") or 0)
-    if matches > 1:
-        raise PhoneVerificationError(
-            "This number is linked to more than one account. Sign in with your email."
-        )
-    if matches == 0 or not result.get("user_id") or not result.get("email"):
-        raise PhoneVerificationError(NO_PHONE_ACCOUNT_MESSAGE)
-    return result
-
-
-async def send_login_code(settings: Settings, *, phone: str) -> None:
-    """WhatsApp a sign-in code to the account whose verified phone this is."""
-    if not settings.phone_otp_is_configured:
-        raise PhoneVerificationUnavailable(
-            "Phone sign-in is not available yet. Please sign in with your email."
-        )
-    account = await _login_account(settings, phone)
-    user_id = str(account["user_id"])
-    code = new_code()
-    await SupabaseGateway(settings).service_rpc(
-        "breezy_phone_login_otp_create",
-        {
-            "target_user_id": user_id,
-            "target_phone": phone,
-            "target_code_hash": code_hash(settings, user_id, phone, code),
-            "ttl_seconds": CODE_TTL_SECONDS,
-        },
-    )
-    await _post_code(
-        settings,
-        otp_webhook_payload(
-            phone=phone,
-            code=code,
-            user_id=user_id,
-            email=str(account["email"]),
-            purpose="login",
-        ),
-    )
-
-
-async def sign_in_with_code(settings: Settings, *, phone: str, code: str) -> str:
-    """Check the login code and return a one-time sign-in token hash."""
-    account = await _login_account(settings, phone)
-    user_id = str(account["user_id"])
-    gateway = SupabaseGateway(settings)
-    result = await gateway.service_rpc(
-        "breezy_phone_login_otp_verify",
-        {
-            "target_user_id": user_id,
-            "target_phone": phone,
-            "target_code_hash": code_hash(settings, user_id, phone, code),
-        },
-    )
-    if not isinstance(result, dict):
-        raise PhoneVerificationUnavailable("Phone sign-in returned no result.")
-    if not result.get("verified"):
-        reason = result.get("reason")
-        if reason == "mismatch":
-            left = int(result.get("attempts_left") or 0)
-            raise PhoneVerificationError(
-                f"That code is incorrect. {left} "
-                f"attempt{'s' if left != 1 else ''} left."
-                if left
-                else "That code is incorrect. Request a new code."
-            )
-        if reason == "locked":
-            raise PhoneVerificationError(
-                "Too many incorrect attempts. Request a new code."
-            )
-        raise PhoneVerificationError("This code has expired. Request a new code.")
-    return await gateway.create_sign_in_token(str(account["email"]))

@@ -619,6 +619,9 @@ class SupabaseGateway:
                 extras["setup_pending"] = await self._setup_pending_or_empty(
                     excluded_user_ids or []
                 )
+                extras["signup_methods"] = await self._optional_rpc_list(
+                    "breezy_admin_signup_methods", {"since_days": since_days}
+                )
         result = await self.service_rpc(
             "breezy_admin_usage_report",
             {
@@ -632,6 +635,97 @@ class SupabaseGateway:
         # Extra platform-wide metrics intentionally exclude a searched workspace/user.
         if extras is not None:
             result["extras"] = extras
+        scope = result.get("scope") if isinstance(result.get("scope"), dict) else {}
+        workspace_ids = (
+            [str(scope.get("workspace_id"))]
+            if scope.get("type") == "workspace" and scope.get("workspace_id")
+            else [
+                str(item.get("workspace_id"))
+                for item in scope.get("workspaces") or []
+                if isinstance(item, dict) and item.get("workspace_id")
+            ]
+            if scope.get("type") == "user"
+            else []
+        )
+        if workspace_ids:
+            result["workspace_overviews"] = await self._optional_rpc_list(
+                "breezy_admin_workspace_overview",
+                {"target_workspace_ids": workspace_ids, "since_days": since_days},
+            )
+        return result
+
+    async def _optional_rpc_list(
+        self, function_name: str, payload: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        # Optional analytics panels must not break the report (e.g. before a
+        # migration is applied).
+        try:
+            result = await self.service_rpc(function_name, payload)
+        except (SupabaseGatewayError, httpx.HTTPError):
+            logger.warning("Optional analytics %s unavailable", function_name)
+            return []
+        return [item for item in result if isinstance(item, dict)] if isinstance(
+            result, list
+        ) else []
+
+    async def create_payment_link_record(self, record: dict[str, Any]) -> None:
+        await self._request(
+            "POST",
+            "breezy_payment_links",
+            json=[record],
+            headers={"Prefer": "return=minimal"},
+        )
+
+    async def update_payment_link(self, link_id: str, changes: dict[str, Any]) -> None:
+        await self._request(
+            "PATCH",
+            "breezy_payment_links",
+            params={"id": f"eq.{link_id}"},
+            json={**changes, "updated_at": datetime.now(UTC).isoformat()},
+            headers={"Prefer": "return=minimal"},
+        )
+
+    async def payment_link_record(self, link_id: str) -> dict[str, Any]:
+        rows = await self._get(
+            "breezy_payment_links", {"select": "*", "id": f"eq.{link_id}", "limit": "1"}
+        )
+        if not rows:
+            raise SupabaseGatewayError("This payment link could not be found.")
+        return rows[0]
+
+    async def payment_link_records(self, limit: int = 50) -> list[dict[str, Any]]:
+        return await self._get(
+            "breezy_payment_links",
+            {
+                "select": "*,workspace:breezy_workspaces(name,subscription_code)",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+        )
+
+    async def settle_payment_link(
+        self,
+        *,
+        provider_link_id: str,
+        provider_order_id: str,
+        provider_payment_id: str,
+        amount_paise: int,
+        event_id: str | None = None,
+        event_type: str = "payment_link.paid",
+    ) -> dict[str, Any]:
+        result = await self.service_rpc(
+            "breezy_settle_payment_link",
+            {
+                "target_provider_link_id": provider_link_id,
+                "target_provider_order_id": provider_order_id,
+                "target_provider_payment_id": provider_payment_id,
+                "target_amount_paise": amount_paise,
+                "target_event_id": event_id,
+                "target_event_type": event_type,
+            },
+        )
+        if not isinstance(result, dict):
+            raise SupabaseGatewayError("Supabase returned an invalid settlement.")
         return result
 
     async def admin_setup_pending(
@@ -818,37 +912,6 @@ class SupabaseGateway:
             raise SupabaseGatewayError(
                 detail or "Supabase could not send the invitation email."
             )
-
-    async def create_sign_in_token(self, email: str) -> str:
-        """One-time magic-link token hash; the browser exchanges it for a session.
-
-        generate_link does not send an email.
-        """
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(
-                f"{self.settings.supabase_url.rstrip('/')}"
-                "/auth/v1/admin/generate_link",
-                json={"type": "magiclink", "email": email},
-                headers=self._service_headers(),
-            )
-        if response.is_error:
-            logger.error("generate_link failed with status %s", response.status_code)
-            raise SupabaseGatewayError("We couldn't sign you in. Please try again.")
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise SupabaseGatewayError(
-                "We couldn't sign you in. Please try again."
-            ) from exc
-        if not isinstance(payload, dict):
-            payload = {}
-        properties = payload.get("properties")
-        token = payload.get("hashed_token") or (
-            properties.get("hashed_token") if isinstance(properties, dict) else None
-        )
-        if not token:
-            raise SupabaseGatewayError("We couldn't sign you in. Please try again.")
-        return str(token)
 
     async def cached_gstin(self, gstin: str) -> dict[str, Any] | None:
         rows = await self._get(

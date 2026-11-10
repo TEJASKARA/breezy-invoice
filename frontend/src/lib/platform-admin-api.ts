@@ -89,6 +89,32 @@ export type UsageExtras = {
   page_features: { page: string; name: string; uses: number; users: number }[]
   /** Signed up but never saved workspace setup. Older backends omit it. */
   setup_pending?: SetupPendingUser[]
+  /** Daily sign-ups by method (IST days). */
+  signup_methods?: { day: string; phone: number; email: number }[]
+}
+
+export type WorkspaceOverview = {
+  workspace_id: string
+  name: string
+  subscription_code: string
+  status: string
+  business: {
+    firm_name: string | null
+    legal_name: string | null
+    trade_name: string | null
+    gstin: string | null
+    pan: string | null
+    gst_registration_status: string | null
+    has_gstin: boolean
+    industry: string | null
+    mailing_address: string | null
+    setup_completed: boolean
+  }
+  gst_status: string | null
+  verified_gstin: string | null
+  entities: { name: string | null; gstin: string | null; moved: boolean }[]
+  invoices: { total: number; generated: number; draft: number; cancelled: number; in_period: number }
+  quotations: { total: number; converted: number; in_period: number }
 }
 
 export type SetupPendingUser = {
@@ -125,6 +151,8 @@ export type UsageReport = {
   inactive_workspaces: { workspace_id: string; name: string; subscription_code: string; status: string; owner_email: string | null; created_at: string; last_activity_at: string | null }[]
   recent: { occurred_at: string; event_type: "page_view" | "action"; event_name: string; email: string | null; subscription_code: string | null }[]
   extras?: UsageExtras
+  /** Workspace / user views: company, GST and document counts. */
+  workspace_overviews?: WorkspaceOverview[]
 }
 
 /** Developer-only usage report: whole platform, one subscription code, or one user email. */
@@ -252,4 +280,51 @@ export function importMarketingLeads(input: {
     method: "POST",
     body: JSON.stringify(input),
   })
+}
+
+
+export type PaymentLink = {
+  id: string
+  workspace_id: string
+  workspace_name: string | null
+  subscription_code: string | null
+  short_url: string | null
+  description: string
+  base_amount_paise: number
+  gst_amount_paise: number
+  amount_paise: number
+  credits: number
+  duration_months: number
+  customer_name: string | null
+  customer_email: string | null
+  customer_phone: string | null
+  status: "creating" | "created" | "paid" | "cancelled" | "expired" | "failed"
+  paid_at: string | null
+  created_at: string
+}
+
+export function listPaymentLinks() {
+  return adminRequest<{ links: PaymentLink[] }>("/api/v1/admin/payment-links").then((result) => result.links)
+}
+
+export function createPaymentLink(input: { subscriptionCode: string; baseAmountPaise: number; credits: number; durationMonths: number; description: string; notifyCustomer: boolean }) {
+  return adminRequest<PaymentLink>("/api/v1/admin/payment-links", {
+    method: "POST",
+    body: JSON.stringify({
+      subscription_code: input.subscriptionCode.trim(),
+      base_amount_paise: input.baseAmountPaise,
+      credits: input.credits,
+      duration_months: input.durationMonths,
+      description: input.description.trim(),
+      notify_customer: input.notifyCustomer,
+    }),
+  })
+}
+
+export function refreshPaymentLink(id: string) {
+  return adminRequest<PaymentLink>(`/api/v1/admin/payment-links/${encodeURIComponent(id)}/refresh`, { method: "POST" })
+}
+
+export function cancelPaymentLink(id: string) {
+  return adminRequest<PaymentLink>(`/api/v1/admin/payment-links/${encodeURIComponent(id)}/cancel`, { method: "POST" })
 }

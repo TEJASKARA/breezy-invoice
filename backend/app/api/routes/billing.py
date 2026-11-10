@@ -36,6 +36,11 @@ def _order_entity(payload: dict[str, Any]) -> dict[str, Any]:
     return entity if isinstance(entity, dict) else {}
 
 
+def _payment_link_entity(payload: dict[str, Any]) -> dict[str, Any]:
+    entity = payload.get("payload", {}).get("payment_link", {}).get("entity", {})
+    return entity if isinstance(entity, dict) else {}
+
+
 def _refund_entity(payload: dict[str, Any]) -> dict[str, Any]:
     entity = payload.get("payload", {}).get("refund", {}).get("entity", {})
     return entity if isinstance(entity, dict) else {}
@@ -229,6 +234,24 @@ async def razorpay_webhook(
     provider_payment_id = str(payment.get("id") or refund.get("payment_id") or "")
     event_id = x_razorpay_event_id or str(payload.get("id") or "")
 
+    if event_type == "payment_link.paid":
+        link = _payment_link_entity(payload)
+        if not event_id or not link.get("id") or not provider_payment_id:
+            return {"accepted": True}
+        try:
+            await SupabaseGateway(settings).settle_payment_link(
+                provider_link_id=str(link["id"]),
+                provider_order_id=provider_order_id or str(link.get("order_id") or ""),
+                provider_payment_id=provider_payment_id,
+                amount_paise=int(payment.get("amount") or 0),
+                event_id=event_id,
+                event_type=event_type,
+            )
+        except SupabaseGatewayError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        return {"accepted": True}
     if event_type not in {
         "payment.captured",
         "order.paid",
@@ -257,7 +280,12 @@ async def razorpay_webhook(
         if event_type in {"payment.captured", "order.paid"}:
             if not provider_payment_id:
                 return {"accepted": True}
-            payment_order = await gateway.payment_order(provider_order_id)
+            try:
+                payment_order = await gateway.payment_order(provider_order_id)
+            except SupabaseGatewayError:
+                # Not a ChanaX checkout order (e.g. a payment link, which is
+                # fulfilled by its payment_link.paid event instead).
+                return {"accepted": True}
             if (
                 int(payment.get("amount") or 0) != int(payment_order["amount_paise"])
                 or payment.get("currency") != payment_order["currency"]

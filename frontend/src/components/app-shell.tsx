@@ -23,6 +23,7 @@ import {
   Settings2,
   ShieldCheck,
   Sun,
+  UserRound,
   Users,
   WalletCards,
 } from "lucide-react"
@@ -339,6 +340,10 @@ function WorkspaceShell() {
                 <DropdownMenuItem onClick={() => setTourOpen(true)}>
                   <CircleHelp />
                   Product tour
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/profile")}>
+                  <UserRound />
+                  Profile
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/settings/workspace")}>
                   <Settings2 />

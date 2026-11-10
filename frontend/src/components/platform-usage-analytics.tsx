@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
-import { Activity, BarChart3, Building2, Clock, EyeOff, FlaskConical, MousePointerClick, MoonStar, Phone, Plus, RefreshCw, Search, UserCog, Users, X } from "lucide-react"
+import { Activity, BarChart3, Building2, Clock, EyeOff, FilePlus2, FlaskConical, MousePointerClick, MoonStar, Phone, Plus, ReceiptText, RefreshCw, Search, UserCog, Users, X } from "lucide-react"
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,7 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { addAnalyticsTestAccount, adminErrorMessage, loadAnalyticsTestAccounts, loadUsageReport, removeAnalyticsTestAccount, type AnalyticsTestAccount, type SetupPendingUser, type UsageExtras, type UsageReport } from "@/lib/platform-admin-api"
+import { addAnalyticsTestAccount, adminErrorMessage, loadAnalyticsTestAccounts, loadUsageReport, removeAnalyticsTestAccount, type AnalyticsTestAccount, type SetupPendingUser, type UsageExtras, type UsageReport, type WorkspaceOverview } from "@/lib/platform-admin-api"
 import { cn } from "@/lib/utils"
 
 const PAGE_LABELS: Record<string, string> = {
@@ -64,6 +65,72 @@ const FEATURE_LABELS: Record<string, string> = {
   whatsapp_sent: "PDF sent on WhatsApp",
   email_sent: "Document emailed",
   gstin_verified: "GSTIN verified",
+}
+
+function SignupMethods({ days }: { days: NonNullable<UsageExtras["signup_methods"]> }) {
+  const phone = days.reduce((total, day) => total + day.phone, 0)
+  const email = days.reduce((total, day) => total + day.email, 0)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sign-ups by method</CardTitle>
+        <CardDescription>{number(phone)} with phone · {number(email)} with email or Google in this period (IST days).</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {days.length ? <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={days} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="day" tickLine={false} axisLine={false} />
+              <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+              <Tooltip formatter={(value, name) => [number(Number(value ?? 0)), name === "phone" ? "Phone" : "Email / Google"]} />
+              <Legend formatter={(value) => value === "phone" ? "Phone" : "Email / Google"} />
+              <Bar dataKey="phone" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="email" fill="#2563eb" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div> : <p className="text-sm text-muted-foreground">No sign-ups in this period.</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+function WorkspaceOverviewCard({ overview, days }: { overview: WorkspaceOverview; days: number }) {
+  const business = overview.business
+  const gstLabel = overview.gst_status === "verified" ? "GST verified" : overview.gst_status === "no_gst" ? "No GST" : overview.gst_status === "rejected" ? "GST rejected" : business.has_gstin ? "GST pending verification" : "No GST"
+  const field = (label: string, value: string | null | undefined, mono = false) => <div><dt className="text-xs text-muted-foreground">{label}</dt><dd className={cn("mt-1 font-medium", mono && "font-mono")}>{value || "—"}</dd></div>
+  return (
+    <Card>
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <CardTitle className="truncate">{business.firm_name || overview.name}</CardTitle>
+          <CardDescription className="font-mono">{overview.subscription_code}</CardDescription>
+        </div>
+        <Badge variant={overview.gst_status === "verified" ? "secondary" : "outline"}>{business.setup_completed ? gstLabel : "Setup pending"}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          {field("Legal name", business.legal_name)}
+          {field("Trade name", business.trade_name)}
+          {field("GSTIN", business.gstin, true)}
+          {field("PAN", business.pan, true)}
+          {field("GST registration status", business.gst_registration_status)}
+          {field("Industry", business.industry)}
+          <div className="sm:col-span-2 lg:col-span-3">{field("Address", business.mailing_address)}</div>
+        </dl>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Stat icon={ReceiptText} label="Invoices" value={number(overview.invoices.total)} detail={`${number(overview.invoices.generated)} issued · ${number(overview.invoices.draft)} draft · ${number(overview.invoices.cancelled)} cancelled · ${number(overview.invoices.in_period)} in last ${days} days`} />
+          <Stat icon={FilePlus2} label="Quotations" value={number(overview.quotations.total)} detail={`${number(overview.quotations.converted)} converted to invoices · ${number(overview.quotations.in_period)} in last ${days} days`} />
+        </div>
+        {overview.entities.length ? <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Entities ({overview.entities.length})</p>
+          <div className="flex flex-wrap gap-2">
+            {overview.entities.map((entity, index) => <span key={`${entity.name}-${index}`} className="rounded-lg border px-3 py-1.5 text-sm"><span className="font-medium">{entity.name || "Unnamed"}</span>{entity.gstin ? <span className="ml-2 font-mono text-xs text-muted-foreground">{entity.gstin}</span> : null}{entity.moved ? <span className="ml-2 text-xs text-muted-foreground">(moved)</span> : null}</span>)}
+          </div>
+        </div> : null}
+      </CardContent>
+    </Card>
+  )
 }
 
 function SetupPendingUsers({ users, onSetUp }: { users: SetupPendingUser[]; onSetUp?: (identifier: string) => void }) {
@@ -402,6 +469,8 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
             </CardContent></Card>
           ) : null}
 
+          {report.workspace_overviews?.length ? report.workspace_overviews.map((overview) => <WorkspaceOverviewCard key={overview.workspace_id} overview={overview} days={report.since_days} />) : null}
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Stat icon={Activity} label="Page views" value={number(totals.page_views)} />
             <Stat icon={MousePointerClick} label="Feature actions" value={number(totals.actions)} />
@@ -420,7 +489,7 @@ export function PlatformUsageAnalytics({ onSetUpUser }: { onSetUpUser?: (identif
             <CardContent><DailyActivity daily={report.daily} days={report.since_days} /></CardContent>
           </Card>
 
-          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} />{report.extras.setup_pending ? <SetupPendingUsers users={report.extras.setup_pending} onSetUp={onSetUpUser} /> : null}</> : null}
+          {scope.type === "platform" && report.extras ? <><div className="grid gap-3 sm:grid-cols-2"><Stat icon={Users} label="Anonymous site views" value={number(report.extras.anonymous_site_views)} detail="One browser per day across the whole site" /><Stat icon={Users} label="New users" value={number(report.extras.new_users.length)} detail="Includes signup email list below" /></div><NewUserSignups extras={report.extras} />{report.extras.signup_methods ? <SignupMethods days={report.extras.signup_methods} /> : null}{report.extras.setup_pending ? <SetupPendingUsers users={report.extras.setup_pending} onSetUp={onSetUpUser} /> : null}</> : null}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>

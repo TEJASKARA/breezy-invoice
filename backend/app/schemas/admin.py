@@ -179,3 +179,36 @@ class AdminCompleteSetupResponse(BaseModel):
     email: str | None = None
     gst_verified: bool = False
     email_sent: bool = False
+
+
+class PaymentLinkCreateRequest(BaseModel):
+    subscription_code: str = Field(min_length=3, max_length=40)
+    base_amount_paise: int = Field(ge=100, le=100_000_000)
+    credits: int = Field(ge=1, le=1_000_000)
+    duration_months: int = Field(ge=1, le=36)
+    description: str = Field(min_length=3, max_length=500)
+    notify_customer: bool = True
+
+
+class PaymentLinkResponse(BaseModel):
+    id: str
+    workspace_id: str
+    workspace_name: str | None = None
+    subscription_code: str | None = None
+    short_url: str | None = None
+    description: str
+    base_amount_paise: int
+    gst_amount_paise: int
+    amount_paise: int
+    credits: int
+    duration_months: int
+    customer_name: str | None = None
+    customer_email: str | None = None
+    customer_phone: str | None = None
+    status: str
+    paid_at: str | None = None
+    created_at: str
+
+
+class PaymentLinkListResponse(BaseModel):
+    links: list[PaymentLinkResponse]

@@ -1,7 +1,17 @@
+import json
+import logging
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+)
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.routes.gst import _bearer_token
@@ -11,14 +21,18 @@ from app.services.phone_verification import (
     PhoneVerificationError,
     PhoneVerificationUnavailable,
     check_verification_code,
-    send_login_code,
     send_verification_code,
-    sign_in_with_code,
 )
 from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
+from app.services.supabase_sms_hook import (
+    HookSignatureError,
+    deliver_auth_code,
+    verify_signature,
+)
 from app.services.welcome_email import deliver_welcome
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/welcome", status_code=202)
@@ -107,39 +121,38 @@ async def verify_phone_code(
     return {"phone": str(result.get("phone") or f"+{request.phone}")}
 
 
-@router.post("/phone-login/send-code")
-async def send_phone_login_code(
-    request: PhoneCodeRequest,
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> dict[str, str]:
-    """Signed-out: WhatsApp a sign-in code to a verified phone number."""
-    try:
-        await send_login_code(settings, phone=request.phone)
-    except PhoneVerificationUnavailable as exc:
-        raise HTTPException(503, str(exc)) from exc
-    except (PhoneVerificationError, SupabaseGatewayError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(503, "Phone sign-in is unavailable right now.") from exc
-    return {
-        "message": f"We sent a 6-digit sign-in code to +{request.phone} on WhatsApp."
-    }
+def _hook_error(status_code: int, message: str) -> JSONResponse:
+    # Supabase shows error.message to the user and treats non-2xx as failure.
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"http_code": status_code, "message": message}},
+    )
 
 
-@router.post("/phone-login/verify")
-async def verify_phone_login_code(
-    request: PhoneVerifyRequest,
+@router.post("/sms-hook", include_in_schema=False)
+async def supabase_send_sms_hook(
+    request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> dict[str, str]:
-    """Signed-out: exchange a correct code for a one-time sign-in token."""
+) -> JSONResponse:
+    """Supabase Auth Send SMS hook: forward phone sign-in codes to WhatsApp."""
+    body = await request.body()
     try:
-        token_hash = await sign_in_with_code(
-            settings, phone=request.phone, code=request.code.strip()
+        verify_signature(
+            settings.supabase_sms_hook_secret,
+            body,
+            {key.lower(): value for key, value in request.headers.items()},
         )
-    except PhoneVerificationUnavailable as exc:
-        raise HTTPException(503, str(exc)) from exc
-    except (PhoneVerificationError, SupabaseGatewayError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(503, "Phone sign-in is unavailable right now.") from exc
-    return {"token_hash": token_hash}
+    except HookSignatureError as exc:
+        logger.warning("Rejected SMS hook call: %s", exc)
+        return _hook_error(401, "Unauthorized.")
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return _hook_error(400, "Invalid request.")
+    if not settings.phone_otp_is_configured:
+        return _hook_error(503, "Phone sign-in is not available right now.")
+    try:
+        await deliver_auth_code(settings, payload if isinstance(payload, dict) else {})
+    except PhoneVerificationError as exc:
+        return _hook_error(502, str(exc))
+    return JSONResponse(status_code=200, content={})
