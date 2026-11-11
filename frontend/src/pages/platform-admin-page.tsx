@@ -180,7 +180,7 @@ export function PlatformAdminPage() {
           <div className="space-y-2">
             <Label htmlFor="admin-credit-amount">Credits to grant</Label>
             <Input id="admin-credit-amount" min="1" max="100000" step="1" type="number" value={creditAmount} onChange={(event) => { setCreditAmount(event.target.value); setConfirmed(false) }} placeholder="For example, 100" />
-            <p className="text-xs text-muted-foreground">The same amount is added to document and quotation balances.</p>
+            <p className="text-xs text-muted-foreground">Added to the single balance used for invoices, quotations and payslips.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="admin-credit-reason">Internal reason</Label>
@@ -194,7 +194,7 @@ export function PlatformAdminPage() {
         </label>
 
         <Button disabled={!canGrant || saving} onClick={() => void grantCredits()}>
-          {saving ? "Granting credits…" : `Grant ${Number.isInteger(amount) && amount > 0 ? amount : 0} + ${Number.isInteger(amount) && amount > 0 ? amount : 0} credits`}
+          {saving ? "Granting credits…" : `Grant ${Number.isInteger(amount) && amount > 0 ? amount : 0} credits`}
         </Button>
       </CardContent>
     </Card> : null}
