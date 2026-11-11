@@ -14,7 +14,7 @@ test("an employee's own policy overrides the workspace default", () => {
   const own = { period: "yearly", allowanceDays: 18, yearStartMonth: 4 }
   assert.equal(effectiveLeavePolicy({ leavePolicy: own }, workspace), own)
   assert.equal(effectiveLeavePolicy({}, workspace), workspace)
-  assert.equal(effectiveLeavePolicy(undefined, undefined), undefined)
+  assert.deepEqual(effectiveLeavePolicy(undefined, undefined), { period: "monthly", allowanceDays: 1 })
 })
 
 const slip = (id, month, paidLeaveDays) => ({ id, employeeId: "e1", month, attendance: { paidLeaveDays } })

@@ -154,9 +154,12 @@ export function leaveYearStart(month: string, startMonth = 1) {
   return `${monthNumber >= start ? year : year - 1}-${String(start).padStart(2, "0")}`
 }
 
-/** The employee's own policy when set, otherwise the workspace policy. */
-export function effectiveLeavePolicy(employee: { leavePolicy?: LeavePolicy } | undefined, workspacePolicy: LeavePolicy | undefined) {
-  return employee?.leavePolicy || workspacePolicy
+/** Used when neither the workspace nor the employee has a leave allowance saved. */
+export const DEFAULT_LEAVE_POLICY: LeavePolicy = { period: "monthly", allowanceDays: 1 }
+
+/** The employee's own policy when set, otherwise the workspace policy, otherwise 1 day a month. */
+export function effectiveLeavePolicy(employee: { leavePolicy?: LeavePolicy } | undefined, workspacePolicy: LeavePolicy | undefined): LeavePolicy {
+  return employee?.leavePolicy || workspacePolicy || DEFAULT_LEAVE_POLICY
 }
 
 /** Paid leave already taken in this month (monthly) or earlier in this leave year (yearly). */
@@ -169,8 +172,8 @@ export function leaveUsedBeforeMonth(payslips: Pick<Payslip, "id" | "employeeId"
     .reduce((total, payslip) => total + (payslip.attendance?.paidLeaveDays || 0), 0)
 }
 
-export function describeLeavePolicy(policy: LeavePolicy | undefined) {
-  if (!policy) return "Not set: all leave is paid"
+export function describeLeavePolicy(policy: LeavePolicy | undefined): string {
+  if (!policy) return `${describeLeavePolicy(DEFAULT_LEAVE_POLICY)} (default)`
   const days = `${policy.allowanceDays} paid leave day${policy.allowanceDays === 1 ? "" : "s"}`
   return policy.period === "monthly" ? `${days} per month` : `${days} per year (from ${leaveYearMonthNames[(policy.yearStartMonth || 1) - 1]})`
 }
