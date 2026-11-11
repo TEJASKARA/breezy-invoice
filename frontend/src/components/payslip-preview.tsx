@@ -22,7 +22,7 @@ export function PayslipPreview({
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
 
   return (
-    <article data-payslip-document className={`${fontClass} relative mx-auto flex min-h-[1160px] w-[820px] shrink-0 overflow-hidden border border-zinc-200 p-12 text-zinc-900 shadow-sm`} style={{ backgroundColor: template.pageColor }}>
+    <article data-payslip-document className={`${fontClass} relative mx-auto flex min-h-[1160px] w-[820px] flex-col shrink-0 overflow-hidden border border-zinc-200 p-12 text-zinc-900 shadow-sm`} style={{ backgroundColor: template.pageColor }}>
       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-2" style={{ backgroundColor: template.accentColor }} />
       {template.watermarkEnabled && template.watermarkText.trim() ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden"><span className="max-w-[85%] -rotate-[32deg] break-words text-center text-6xl font-bold uppercase tracking-[0.2em] text-zinc-700" style={{ opacity: watermarkOpacity }}>{template.watermarkText}</span></div> : null}
       <header data-pdf-keep-together className="flex items-start justify-between gap-6 border-b-2 pb-8 pt-3" style={{ borderColor: template.accentColor }}>
