@@ -20,7 +20,8 @@ import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-documen
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
 import { nextInvoiceNumberForEntity, type Customer, type Invoice, type InvoiceCorrectionMethod, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
-import { normalizeSpreadsheetDate, parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
+import { normalizeSpreadsheetDate, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
+import { bulkInvoiceTotals, existingInvoiceNumbers, invoiceNumberConflict, invoicePrefixWarning, parseBulkInvoiceRow, type SeenInvoiceNumbers } from "@/lib/bulk-invoice-import"
 import { downloadZip } from "@/lib/zip-download"
 import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -127,12 +128,9 @@ const emptyManualCustomer = (): ManualCustomer => ({
   premisesAddress: "",
   hsnSac: "",
 })
-const invoiceColumns = [
-  "Customer Name", "Billing Address", "GSTIN", "PAN", "Premises Address", "HSN/SAC",
-  "Invoice Number", "Invoice Date", "Description", "Taxable Amount", "CGST Amount",
-  "SGST Amount", "IGST Amount", "Invoice Total", "TDS Amount", "Other Deduction",
-  "Net Receivable", "Status",
-]
+const invoiceColumnsRequired = ["Customer Name", "Invoice Number", "Invoice Date", "Invoice Total or Taxable Amount"]
+const invoiceColumnsB2b = ["GSTIN", "Billing Address", "HSN/SAC"]
+const invoiceColumnsOptional = ["PAN", "Premises Address", "Description", "CGST", "SGST", "IGST", "TDS Amount", "Other Deduction", "Net Receivable", "Status"]
 
 export function CustomersPage() {
   return <InvoicesPage view="customers" />
@@ -180,6 +178,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const [bulkImportMessage, setBulkImportMessage] = useState("")
   const [bulkImportHasError, setBulkImportHasError] = useState(false)
   const [bulkInvoicesSaved, setBulkInvoicesSaved] = useState(false)
+  const [bulkRejections, setBulkRejections] = useState<{ row: number; reason: string }[]>([])
+  const [bulkPrefixWarning, setBulkPrefixWarning] = useState("")
   const [showDownloadChoices, setShowDownloadChoices] = useState(false)
   const [showManualCustomer, setShowManualCustomer] = useState(false)
   const [manualCustomer, setManualCustomer] = useState<ManualCustomer>(emptyManualCustomer)
@@ -784,6 +784,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setBulkImportHasError(false)
     setPreview([])
     setBulkNewCustomers([])
+    setBulkRejections([])
+    setBulkPrefixWarning("")
     setBulkInvoicesSaved(false)
     input.click()
   }
@@ -798,83 +800,31 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setBulkImportMessage(`Reading ${file.name}…`)
     setPreview([])
     setBulkNewCustomers([])
+    setBulkRejections([])
+    setBulkPrefixWarning("")
     setBulkInvoicesSaved(false)
     try {
-      const rows = await readSpreadsheet(file)
+      const rows = await readSpreadsheet(file, { isoDates: true })
       if (!rows.length) {
         setBulkImportHasError(true)
         setBulkImportMessage("The first worksheet has no invoice rows. Use the downloaded ChanaX template and keep Invoice Upload as the first sheet.")
         return
       }
       const newCustomersByName = new Map<string, ImportCustomer>()
-      const importedRows = rows.map((row) => {
-        const customerName = pickCell(row, "Customer Name", "Company Name")
-        const savedCustomer = bulkCustomers.find((customer) => customer.companyName.trim().toLowerCase() === customerName.trim().toLowerCase())
-        const suppliedGstin = pickCell(row, "GSTIN").toUpperCase()
-        const suppliedPan = pickCell(row, "PAN").toUpperCase()
-        const suppliedHsnSac = pickCell(row, "HSN/SAC", "HSN SAC")
-        const suppliedBillingAddress = pickCell(row, "Billing Address")
-        const suppliedPremisesAddress = pickCell(row, "Premises Address")
-        const requiresGstDetails = selectedBulkEntity?.hasGstin ?? Boolean(selectedBulkEntity?.gstin)
-        const newCustomerIsValid = Boolean(
-          customerName
-          && suppliedBillingAddress
-          && suppliedPremisesAddress
-          && (requiresGstDetails
-            ? gstinPattern.test(suppliedGstin) && panPattern.test(suppliedPan) && suppliedGstin.slice(2, 12) === suppliedPan && hsnSacPattern.test(suppliedHsnSac)
-            : (!suppliedGstin || gstinPattern.test(suppliedGstin)) && (!suppliedPan || panPattern.test(suppliedPan)) && (!suppliedGstin || !suppliedPan || suppliedGstin.slice(2, 12) === suppliedPan) && (!suppliedHsnSac || hsnSacPattern.test(suppliedHsnSac)))
-        )
-        if (!savedCustomer && newCustomerIsValid) {
-          newCustomersByName.set(customerName.trim().toLowerCase(), {
-            entityId: selectedBulkEntity?.id || "",
-            companyName: customerName,
-            billingAddress: suppliedBillingAddress,
-            gstin: suppliedGstin,
-            pan: suppliedPan,
-            premisesAddress: suppliedPremisesAddress,
-            hsnSac: suppliedHsnSac,
-          })
-        }
-        const hsnSac = suppliedHsnSac || savedCustomer?.hsnSac || ""
-        const taxableAmount = parseMoney(pickCell(row, "Taxable Amount"))
-        const cgstAmount = parseMoney(pickCell(row, "CGST Amount")) || 0
-        const sgstAmount = parseMoney(pickCell(row, "SGST Amount")) || 0
-        const igstAmount = parseMoney(pickCell(row, "IGST Amount")) || 0
-        const suppliedTotal = parseMoney(pickCell(row, "Invoice Total"))
-        const amount = suppliedTotal || taxableAmount + cgstAmount + sgstAmount + igstAmount
-        const tdsAmount = parseMoney(pickCell(row, "TDS Amount")) || 0
-        const otherDeduction = parseMoney(pickCell(row, "Other Deduction")) || 0
-        const suppliedNet = parseMoney(pickCell(row, "Net Receivable"))
-        return {
-          entityName: bulkEntityName,
-          customerId: savedCustomer?.id,
-          companyName: customerName,
-          sourceNumber: pickCell(row, "Invoice Number"),
-          date: normalizeSpreadsheetDate(pickCell(row, "Invoice Date")),
-          description: pickCell(row, "Description"),
-          hsnSac,
-          taxableAmount,
-          cgstAmount,
-          sgstAmount,
-          igstAmount,
-          amount,
-          tdsAmount,
-          otherDeduction,
-          netReceivable: suppliedNet || amount - tdsAmount - otherDeduction,
-          lineItems: [{
-            id: crypto.randomUUID(),
-            description: pickCell(row, "Description"),
-            hsnSac,
-            taxableAmount,
-            cgstAmount,
-            sgstAmount,
-            igstAmount,
-          }],
-          status: parseDocumentStatus(pickCell(row, "Status")),
-          valid: Boolean(savedCustomer || newCustomerIsValid) && (requiresGstDetails ? hsnSacPattern.test(hsnSac) : !hsnSac || hsnSacPattern.test(hsnSac)),
-        }
-      }).filter((row) => row.valid && row.companyName && row.sourceNumber && row.date && Number.isFinite(row.taxableAmount) && row.taxableAmount > 0 && row.amount > 0)
-        .map(({ valid: _valid, ...invoice }) => invoice)
+      const rejections: { row: number; reason: string }[] = []
+      const importedRows: ImportInvoice[] = []
+      const isGstEntity = selectedBulkEntity?.hasGstin ?? Boolean(selectedBulkEntity?.gstin)
+      const issuedNumbers = existingInvoiceNumbers(invoices, bulkEntityName)
+      const seenNumbers: SeenInvoiceNumbers = new Map()
+      rows.forEach((row, index) => {
+        const result = parseBulkInvoiceRow(row, index + 2, { entity: selectedBulkEntity, entityName: bulkEntityName, isGstEntity, savedCustomers: bulkCustomers })
+        if (!result.ok) { rejections.push(result); return }
+        const conflict = invoiceNumberConflict(result.invoice, index + 2, issuedNumbers, seenNumbers)
+        if (conflict) { rejections.push({ row: index + 2, reason: conflict }); return }
+        importedRows.push(result.invoice)
+        const key = result.invoice.companyName.trim().toLowerCase()
+        if (result.newCustomer && !newCustomersByName.has(key)) newCustomersByName.set(key, result.newCustomer)
+      })
       const groupedInvoices = new Map<string, ImportInvoice>()
       importedRows.forEach((row) => {
         const key = `${row.sourceNumber}::${row.companyName.toLowerCase()}::${row.date}`
@@ -905,16 +855,19 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       const imported = [...groupedInvoices.values()]
       const invalidTaxInvoice = imported.find((invoice) => invoiceTaxError(invoice))
       if (invalidTaxInvoice) throw new Error(`Invoice ${invalidTaxInvoice.sourceNumber || ""}: ${invoiceTaxError(invalidTaxInvoice)}`)
+      const rejectionSummary = rejections.slice(0, 5).map((item) => `Row ${item.row}: ${item.reason}.`).join(" ") + (rejections.length > 5 ? ` …and ${rejections.length - 5} more.` : "")
       if (!imported.length) {
         setBulkImportHasError(true)
-        setBulkImportMessage(`No valid invoices were found in ${file.name}. All ${rows.length} rows were rejected. Verify customer details, PAN/GSTIN matching, 4/6/8-digit HSN/SAC, invoice number, date, and taxable amount.`)
+        setBulkImportMessage(`No valid invoices were found in ${file.name}. ${rejectionSummary}`)
         return
       }
-      const rejectedRows = rows.length - importedRows.length
+      const rejectedRows = rejections.length
+      setBulkRejections(rejections)
+      setBulkPrefixWarning(invoicePrefixWarning(imported.map((invoice) => invoice.sourceNumber || "")))
       setBulkNewCustomers([...newCustomersByName.values()])
       setPreview(imported)
       setBulkInvoicesSaved(false)
-      setBulkImportMessage(`${imported.length} invoice${imported.length === 1 ? "" : "s"} loaded from ${file.name}.${rejectedRows ? ` ${rejectedRows} row${rejectedRows === 1 ? " was" : "s were"} skipped.` : ""} Review the preview below, then generate the invoices.`)
+      setBulkImportMessage(`${imported.length} invoice${imported.length === 1 ? "" : "s"} loaded from ${file.name}.${rejectedRows ? ` ${rejectedRows} row${rejectedRows === 1 ? " was" : "s were"} skipped. ${rejectionSummary}` : ""} Review the preview below, then generate the invoices.`)
       showNotice("")
     } catch (error) {
       setBulkImportHasError(true)
@@ -997,8 +950,11 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         : "Enter the new customer's company name, address, GSTIN, PAN, and HSN/SAC before entering invoice amounts."],
       ["2", "Enter amounts in the blank amount columns. Invoice Total and Net Receivable contain formulas."],
       ["3", "Edit the generated invoice number, date, description, and status when required."],
-      ["4", "Use either CGST + SGST or IGST for each invoice, not both."],
+      ["4", "Use either CGST + SGST or IGST for each invoice, not both. Enter tax as rupee amounts or as rates (2.5, 9%)."],
       ["5", "Repeat an invoice number on another row when one invoice needs multiple descriptions."],
+      ["6", "B2C (retail) customers: only Customer Name, Invoice Number, Invoice Date and Invoice Total (or Taxable Amount) are needed. Leave GSTIN, PAN and addresses blank."],
+      ["7", "B2B customers: fill GSTIN and Billing Address. PAN is taken from the GSTIN when left blank. HSN/SAC defaults to the entity's code."],
+      ["8", "When only Invoice Total is given, ChanaX calculates the taxable amount from the GST rates or amounts."],
     ])
     instructions["!cols"] = [{ wch: 18 }, { wch: 110 }]
 
@@ -1510,12 +1466,20 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
             </p>
           ) : null}
           <div>
-            <p className="mb-2 text-sm font-medium">Required table columns</p>
+            <p className="mb-2 text-sm font-medium">Required columns</p>
             <div className="flex flex-wrap gap-2">
-              {invoiceColumns.map((column) => <Badge key={column} variant="secondary">{column}</Badge>)}
+              {invoiceColumnsRequired.map((column) => <Badge key={column}>{column}</Badge>)}
+            </div>
+            <p className="mb-2 mt-3 text-sm font-medium">Also required for B2B customers (with a GSTIN)</p>
+            <div className="flex flex-wrap gap-2">
+              {invoiceColumnsB2b.map((column) => <Badge key={column} variant="outline">{column}</Badge>)}
+            </div>
+            <p className="mb-2 mt-3 text-sm font-medium">Optional</p>
+            <div className="flex flex-wrap gap-2">
+              {invoiceColumnsOptional.map((column) => <Badge key={column} variant="secondary">{column}</Badge>)}
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">For existing customers, the workbook includes the saved company details and only the amount inputs are blank. Choose the new-customer workbook when the customer has not yet been saved. Repeat an invoice number on multiple rows to add multiple descriptions to one invoice.</p>
+          <p className="text-xs text-muted-foreground">B2C (retail) rows need only the customer name, invoice number, date and amount. Give either the Invoice Total (GST included) or the Taxable Amount; CGST, SGST and IGST can be rates such as 2.5 or 9% or rupee amounts, and ChanaX works out the rest. HSN/SAC defaults to the entity's code. Your own sheet works too: columns are matched by name. Repeat an invoice number on multiple rows to add multiple descriptions to one invoice.</p>
           {bulkEntityName && !bulkCustomers.length ? <p className="text-sm text-destructive">This entity has no existing customers, but you can download and upload the new-customer workbook.</p> : null}
         </CardContent>
       </Card> : null}
@@ -1526,17 +1490,27 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
             <CardHeader>
               <CardTitle>Bulk invoice preview</CardTitle>
               <CardDescription>
-                {preview.length} valid invoices found for {bulkEntityName}.
+                {preview.length} invoice{preview.length === 1 ? "" : "s"} ready for {bulkEntityName}{bulkRejections.length ? `, ${bulkRejections.length} row${bulkRejections.length === 1 ? "" : "s"} rejected` : ""}. Nothing is saved until you generate.
                 {bulkNewCustomers.length ? ` ${bulkNewCustomers.length} new customer${bulkNewCustomers.length === 1 ? "" : "s"} will also be saved for this entity.` : ""}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {(() => {
+                const totals = bulkInvoiceTotals(preview)
+                const inr = (value: number) => `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                const tiles = [["Taxable", totals.taxableAmount], ["CGST", totals.cgstAmount], ["SGST", totals.sgstAmount], ["IGST", totals.igstAmount], ["Invoice total", totals.amount]] as const
+                return <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">{tiles.map(([label, value]) => <div key={label} className="rounded-lg border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{inr(value)}</p></div>)}</div>
+              })()}
+              {bulkPrefixWarning ? <p className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><TriangleAlert className="mt-0.5 size-4 shrink-0" />{bulkPrefixWarning}</p> : null}
+              {bulkRejections.length ? <details className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><summary className="cursor-pointer font-medium text-destructive">{bulkRejections.length} rejected row{bulkRejections.length === 1 ? "" : "s"} will not be imported</summary><ul className="mt-2 space-y-1 text-muted-foreground">{bulkRejections.map((item) => <li key={`${item.row}-${item.reason}`}>Row {item.row}: {item.reason}.</li>)}</ul></details> : null}
+              <div className="max-h-[28rem] overflow-auto rounded-lg border">
               <Table>
-                <TableHeader><TableRow><TableHead>Entity</TableHead><TableHead>Invoice</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                <TableBody>{preview.slice(0, 10).map((invoice, index) => <TableRow key={`${invoice.companyName}-${invoice.date}-${index}`}><TableCell>{invoice.entityName}</TableCell><TableCell>{invoice.sourceNumber}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant="secondary">{invoice.status}</Badge></TableCell></TableRow>)}</TableBody>
+                <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Taxable</TableHead><TableHead className="text-right">GST</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableBody>{preview.map((invoice, index) => <TableRow key={`${invoice.sourceNumber}-${invoice.companyName}-${invoice.date}-${index}`}><TableCell>{invoice.sourceNumber}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell className="text-right tabular-nums">₹{(invoice.taxableAmount || 0).toLocaleString("en-IN")}</TableCell><TableCell className="text-right tabular-nums">₹{((invoice.cgstAmount || 0) + (invoice.sgstAmount || 0) + (invoice.igstAmount || 0)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</TableCell><TableCell className="text-right tabular-nums">₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><Badge variant="secondary">{invoice.status}</Badge></TableCell></TableRow>)}</TableBody>
               </Table>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => { setPreview([]); setBulkNewCustomers([]); setBulkInvoicesSaved(false) }}>{bulkInvoicesSaved ? "Close" : "Cancel"}</Button>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="outline" onClick={() => { setPreview([]); setBulkNewCustomers([]); setBulkRejections([]); setBulkPrefixWarning(""); setBulkInvoicesSaved(false) }}>{bulkInvoicesSaved ? "Close" : "Cancel"}</Button>
                 <Button variant="outline" disabled={bulkDownloadPending} onClick={() => void downloadBulkInvoiceZip()}>
                   <Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${preview.length} PDFs (ZIP)`}
                 </Button>

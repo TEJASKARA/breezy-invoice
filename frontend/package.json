@@ -19,6 +19,7 @@
     "test:entities": "node --test tests/entity-selection.test.mjs",
     "test:marketing": "node --test tests/marketing-leads.test.mjs",
     "test:ca": "node --test tests/ca-invitation-session.test.mjs",
+    "test:bulk": "node --test tests/bulk-invoice-import.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -6,10 +6,22 @@ export const pickCell = (row: Record<string, unknown>, ...names: string[]) => {
   return String(match?.[1] ?? "").trim()
 }
 
-export async function readSpreadsheet(file: File) {
+export async function readSpreadsheet(file: File, options: { isoDates?: boolean } = {}) {
   const XLSX = await import("xlsx")
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" })
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellNF: Boolean(options.isoDates) })
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+  if (options.isoDates) {
+    // Excel shows dates in the sheet's own format ("10/1/26" in US style), which
+    // can't be read reliably. Use the stored date itself as YYYY-MM-DD instead.
+    const pad = (value: number) => String(value).padStart(2, "0")
+    for (const [address, cell] of Object.entries(firstSheet)) {
+      if (address.startsWith("!") || !cell || typeof cell !== "object") continue
+      const typed = cell as { t?: string; v?: unknown; z?: string | number; w?: string }
+      if (typed.t !== "n" || typeof typed.v !== "number" || !typed.z || !XLSX.SSF.is_date(typed.z)) continue
+      const parsed = XLSX.SSF.parse_date_code(typed.v)
+      if (parsed?.y) typed.w = `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`
+    }
+  }
   return XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: "", raw: false })
 }
 
