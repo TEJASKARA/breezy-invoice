@@ -32,6 +32,7 @@ import {
   type WorkspaceAuditEntry,
 } from "@/lib/workspace-access-service"
 import { sendWorkspaceInvitation } from "@/lib/team-api"
+import { leaveYearMonthNames } from "@/lib/payslip-calculations"
 
 type EditableRole = Exclude<WorkspaceRole, "owner">
 const editableRoles: { value: EditableRole; label: string }[] = [
@@ -77,6 +78,7 @@ export function WorkspaceSettingsPage() {
   const [mailingAddress, setMailingAddress] = useState(setup?.mailingAddress || "")
   const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">(setup?.leavePolicy?.period || "monthly")
   const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(setup?.leavePolicy?.allowanceDays ?? 1)
+  const [leaveYearStartMonth, setLeaveYearStartMonth] = useState(setup?.leavePolicy?.yearStartMonth ?? 1)
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<EditableRole>("viewer")
   const [invitePermissions, setInvitePermissions] = useState<WorkspacePermission[]>(permissionsForRole("viewer"))
@@ -111,6 +113,7 @@ export function WorkspaceSettingsPage() {
     setMailingAddress(setup?.mailingAddress || "")
     setLeavePeriod(setup?.leavePolicy?.period || "monthly")
     setLeaveAllowanceDays(setup?.leavePolicy?.allowanceDays ?? 1)
+    setLeaveYearStartMonth(setup?.leavePolicy?.yearStartMonth ?? 1)
   }, [setup, workspace?.id, workspace?.name])
 
   const loadPeople = useCallback(async () => {
@@ -161,7 +164,7 @@ export function WorkspaceSettingsPage() {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(customerErrorMessage(updateError))
       }
-      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays) } })
+      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays), ...(leavePeriod === "yearly" ? { yearStartMonth: leaveYearStartMonth } : {}) } })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -317,10 +320,11 @@ export function WorkspaceSettingsPage() {
             {hasGstin ? <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" placeholder="15-character GSTIN" /></div> : null}
             <div className="space-y-2 md:col-span-2"><Label htmlFor="settings-address">Mailing address</Label><textarea id="settings-address" required disabled={!canManageWorkspace} value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50" /></div>
             <section className="space-y-4 rounded-xl border bg-muted/20 p-4 md:col-span-2">
-              <div className="flex items-start gap-3"><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><div><h3 className="font-medium">Employee leave policy</h3><p className="text-sm text-muted-foreground">This allowance applies to every employee and can be changed by a workspace administrator.</p></div></div>
+              <div className="flex items-start gap-3"><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><div><h3 className="font-medium">Employee leave policy</h3><p className="text-sm text-muted-foreground">The default for every employee. You can set a different allowance on an employee’s profile.</p></div></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2"><Label htmlFor="settings-leave-period">Calculate paid leave</Label><select id="settings-leave-period" disabled={!canManageWorkspace} value={leavePeriod} onChange={(event) => setLeavePeriod(event.target.value as "monthly" | "yearly")} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="monthly">Monthly allowance</option><option value="yearly">Yearly allowance</option></select></div>
-                <div className="space-y-2"><Label htmlFor="settings-leave-days">Paid leave allowance</Label><Input id="settings-leave-days" disabled={!canManageWorkspace} type="number" min="0" step="0.5" value={leaveAllowanceDays} onChange={(event) => setLeaveAllowanceDays(Math.max(0, Number(event.target.value) || 0))} /><p className="text-xs text-muted-foreground">{leavePeriod === "monthly" ? "Days per employee each month." : "Days per employee each calendar year."}</p></div>
+                <div className="space-y-2"><Label htmlFor="settings-leave-days">Paid leave allowance</Label><Input id="settings-leave-days" disabled={!canManageWorkspace} type="number" min="0" step="0.5" value={leaveAllowanceDays} onChange={(event) => setLeaveAllowanceDays(Math.max(0, Number(event.target.value) || 0))} /><p className="text-xs text-muted-foreground">{leavePeriod === "monthly" ? "Days per employee each month." : "Days per employee each leave year."}</p></div>
+                {leavePeriod === "yearly" ? <div className="space-y-2"><Label htmlFor="settings-leave-year-start">Leave year starts in</Label><select id="settings-leave-year-start" disabled={!canManageWorkspace} value={leaveYearStartMonth} onChange={(event) => setLeaveYearStartMonth(Number(event.target.value))} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50">{leaveYearMonthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select><p className="text-xs text-muted-foreground">Choose April for an April–March leave year.</p></div> : null}
               </div>
               <p className="text-xs text-muted-foreground">Excess leave, unpaid leave and half-day loss are deducted using monthly gross salary ÷ calendar days.</p>
             </section>

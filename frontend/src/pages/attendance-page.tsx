@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { downloadAttendanceExcel, downloadAttendancePdf, type AttendanceExportInput } from "@/lib/attendance-export"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { type AttendanceDayRecord, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
-import { attendancePresentDays, calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
+import { attendancePresentDays, calculateLeaveAdjustedAttendance, describeLeavePolicy, effectiveLeavePolicy, leaveUsedBeforeMonth, calculatePayslipAttendance, cleanPayslipFileName, defaultPayslipAttendance, formatSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile } from "@/lib/payslip-pdf"
 import { downloadZip } from "@/lib/zip-download"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
@@ -90,7 +90,9 @@ function AttendancePageContent() {
   const visibleEmployees = useMemo(() => normalizedSearch
     ? entityEmployees.filter((employee) => [employee.employeeName, employee.employeeCode, employee.designation, employee.department].some((value) => value.toLowerCase().includes(normalizedSearch)))
     : entityEmployees, [entityEmployees, normalizedSearch])
-  const leavePolicy = setup?.leavePolicy
+  const workspaceLeavePolicy = setup?.leavePolicy
+  const leavePolicyFor = (employeeId: string) => effectiveLeavePolicy(employees.find((employee) => employee.id === employeeId), workspaceLeavePolicy)
+  const customLeaveCount = entityEmployees.filter((employee) => employee.leavePolicy).length
   const calendarSummary = useMemo(() => calculatePayslipAttendance(month, attendance), [attendance, month])
   const weeklyOffDates = useMemo(() => {
     const dates = new Set<string>()
@@ -105,12 +107,7 @@ function AttendancePageContent() {
 
   const clearMessages = () => { setNotice(""); setError("") }
   const resetPreview = () => { setPreview([]); setSaved(false) }
-  const leaveUsedBefore = (employeeId: string) => {
-    if (!leavePolicy) return 0
-    return payslips
-      .filter((payslip) => payslip.employeeId === employeeId && (leavePolicy.period === "monthly" ? payslip.month === month : payslip.month.startsWith(month.slice(0, 4)) && payslip.month < month))
-      .reduce((total, payslip) => total + (payslip.attendance?.paidLeaveDays || 0), 0)
-  }
+  const leaveUsedBefore = (employeeId: string) => leaveUsedBeforeMonth(payslips, employeeId, month, leavePolicyFor(employeeId))
   const changeEntity = (entityId: string) => {
     const draft = setup?.attendanceDrafts?.[`${entityId}:${month}`]
     setSelectedEntityId(entityId)
@@ -240,7 +237,7 @@ function AttendancePageContent() {
         deductionAmount: savedPayslip.attendance.leaveDeductionAmount || 0,
       }
       const grossPay = sumPayrollComponents(employee.defaultEarnings)
-      const estimate = calculateLeaveAdjustedAttendance({ month, attendance: attendanceForEmployee(employee.id), policy: leavePolicy, leaveUsedBefore: leaveUsedBefore(employee.id), grossPay })
+      const estimate = calculateLeaveAdjustedAttendance({ month, attendance: attendanceForEmployee(employee.id), policy: leavePolicyFor(employee.id), leaveUsedBefore: leaveUsedBefore(employee.id), grossPay })
       return {
         employeeName: employee.employeeName,
         employeeCode: employee.employeeCode,
@@ -321,7 +318,7 @@ function AttendancePageContent() {
         netPay: grossPay - sumPayrollComponents(deductions),
         status: "Generated" as const,
         generatedAt: new Date().toISOString(),
-      }, { ...attendance, ...exception }, leavePolicy, leaveUsedBefore(employee.id))]
+      }, { ...attendance, ...exception }, leavePolicyFor(employee.id), leaveUsedBefore(employee.id))]
     })
     if (!prepared.length) { setError("The selected employees do not have a valid saved salary. Add earnings to their employee profiles first."); return }
     setPreview(prepared)
@@ -389,7 +386,7 @@ function AttendancePageContent() {
         <CardContent className="grid gap-4 md:grid-cols-3 md:items-end">
           <div className="space-y-2"><Label htmlFor="attendance-entity">Entity</Label><select id="attendance-entity" className={selectClass} value={selectedEntityId} onChange={(event) => changeEntity(event.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
           <div className="space-y-2"><Label htmlFor="attendance-month">Month</Label><Input id="attendance-month" type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></div>
-          <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm"><p className="font-medium">Leave policy: <span className="capitalize">{leavePolicy?.period || "not configured"}</span>{leavePolicy ? ` · ${leavePolicy.allowanceDays} paid leave day${leavePolicy.allowanceDays === 1 ? "" : "s"}` : ""}</p><Button className="mt-1 h-auto p-0 text-xs" variant="link" asChild><Link to="/settings/workspace"><Settings2 />Change policy</Link></Button></div>
+          <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm"><p className="font-medium">Default leave: {describeLeavePolicy(workspaceLeavePolicy)}</p>{customLeaveCount ? <p className="text-xs text-muted-foreground">{customLeaveCount} employee{customLeaveCount === 1 ? " has" : "s have"} their own leave allowance.</p> : null}<Button className="mt-1 h-auto p-0 text-xs" variant="link" asChild><Link to="/settings/workspace"><Settings2 />Change policy</Link></Button></div>
         </CardContent>
       </Card>
 
@@ -435,12 +432,12 @@ function AttendancePageContent() {
                 const exception = employeeAttendance[employee.id] || blankAttendanceException(attendanceMode === "daily")
                 const grossPay = sumPayrollComponents(employee.defaultEarnings)
                 const standardDeductions = sumPayrollComponents(withoutLeaveDeduction(employee.defaultDeductions))
-                const estimate = calculateLeaveAdjustedAttendance({ month, attendance: attendanceForEmployee(employee.id), policy: leavePolicy, leaveUsedBefore: leaveUsedBefore(employee.id), grossPay })
+                const estimate = calculateLeaveAdjustedAttendance({ month, attendance: attendanceForEmployee(employee.id), policy: leavePolicyFor(employee.id), leaveUsedBefore: leaveUsedBefore(employee.id), grossPay })
                 const estimatedNet = grossPay - standardDeductions - estimate.leaveDeductionAmount
                 const unmarkedDays = Math.max(0, calendarSummary.workingDays - validDailyRecordCount(employee.id))
                 return <TableRow key={employee.id} className={alreadyExists ? "opacity-60" : undefined}>
                   <TableCell><input type="checkbox" aria-label={`Include ${employee.employeeName}`} disabled={!canManage || alreadyExists} checked={checked} onChange={(event) => { setExcludedEmployeeIds((current) => event.target.checked ? current.filter((id) => id !== employee.id) : [...new Set([...current, employee.id])]); resetPreview() }} /></TableCell>
-                  <TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}{employee.department ? ` · ${employee.department}` : ""}</p></TableCell>
+                  <TableCell><p className="font-medium">{employee.employeeName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}{employee.department ? ` · ${employee.department}` : ""}</p>{employee.leavePolicy ? <p className="text-xs text-primary">Own leave: {describeLeavePolicy(employee.leavePolicy)}</p> : null}</TableCell>
                   <TableCell><span className="inline-flex min-w-14 justify-center rounded-md bg-muted px-2 py-1 font-medium">{attendancePresentDays(estimate.attendance)}</span></TableCell>
                   <TableCell>{attendanceMode === "daily" ? estimate.attendance.halfDays : <Input className="w-24" aria-label={`Half days for ${employee.employeeName}`} disabled={!canManage || !checked} type="number" min="0" step="1" value={exception.halfDays || ""} onChange={(event) => updateEmployeeAttendance(employee.id, "halfDays", Number(event.target.value))} placeholder="0" />}</TableCell>
                   <TableCell>{attendanceMode === "daily" ? estimate.attendance.paidLeaveDays : <Input className="w-24" aria-label={`Leave taken for ${employee.employeeName}`} disabled={!canManage || !checked} type="number" min="0" step="0.5" value={exception.paidLeaveDays || ""} onChange={(event) => updateEmployeeAttendance(employee.id, "paidLeaveDays", Number(event.target.value))} placeholder="0" />}</TableCell>

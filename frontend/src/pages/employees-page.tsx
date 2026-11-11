@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { type Employee, type LeavePolicy, type PayrollComponent, type Payslip, type PayslipAttendance, useMvpStore } from "@/lib/mvp-store"
-import { calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultDeductions, defaultEarnings, defaultPayslipAttendance, formatSalaryMonth, indianNationalHolidays, nextSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
+import { calculateLeaveAdjustedAttendance, calculatePayslipAttendance, cleanPayslipFileName, defaultDeductions, defaultEarnings, defaultPayslipAttendance, describeLeavePolicy, effectiveLeavePolicy, formatSalaryMonth, indianNationalHolidays, leaveUsedBeforeMonth, leaveYearMonthNames, nextSalaryMonth, payrollId, sumPayrollComponents } from "@/lib/payslip-calculations"
 import { createPayslipPdfFile, downloadPayslipPdf as downloadPayslipPdfFile } from "@/lib/payslip-pdf"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { parseDocumentStatus, parseMoney, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
@@ -152,15 +152,12 @@ export function EmployeesPage() {
   const entityPayslips = useMemo(() => payslips.filter((payslip) => payslip.entityId === selectedEntityId), [payslips, selectedEntityId])
   const selectedEntity = companies.find((company) => company.id === selectedEntityId)
 
-  const leavePolicy = setup?.leavePolicy
-  const leaveUsedBefore = (employeeId: string, month: string, excludedPayslipId?: string | null) => {
-    if (!leavePolicy) return 0
-    return payslips
-      .filter((payslip) => payslip.employeeId === employeeId && payslip.id !== excludedPayslipId && (leavePolicy.period === "monthly" ? payslip.month === month : payslip.month.startsWith(month.slice(0, 4)) && payslip.month < month))
-      .reduce((total, payslip) => total + (payslip.attendance?.paidLeaveDays || 0), 0)
-  }
+  const workspaceLeavePolicy = setup?.leavePolicy
+  const leavePolicyFor = (employeeId: string) => effectiveLeavePolicy(employees.find((employee) => employee.id === employeeId), workspaceLeavePolicy)
+  const leaveUsedBefore = (employeeId: string, month: string, excludedPayslipId?: string | null) =>
+    leaveUsedBeforeMonth(payslips, employeeId, month, leavePolicyFor(employeeId), excludedPayslipId)
   const applyAttendance = <T extends { month: string; employeeId: string; earnings: PayrollComponent[]; deductions: PayrollComponent[] },>(draft: T, attendance: Partial<PayslipAttendance>, excludedPayslipId?: string | null) =>
-    withAttendance(draft, attendance, leavePolicy, leaveUsedBefore(draft.employeeId, draft.month, excludedPayslipId))
+    withAttendance(draft, attendance, leavePolicyFor(draft.employeeId), leaveUsedBefore(draft.employeeId, draft.month, excludedPayslipId))
 
   const clearMessages = () => {
     setNotice("")
@@ -505,6 +502,7 @@ export function EmployeesPage() {
       const earnings = previous?.earnings?.length ? previous.earnings : employee.defaultEarnings
       const deductions = previous?.deductions?.length ? previous.deductions : employee.defaultDeductions
       const attendance = defaultPayslipAttendance(bulkMonth)
+      const leavePolicy = leavePolicyFor(employee.id)
       const calculated = calculateLeaveAdjustedAttendance({ month: bulkMonth, attendance, policy: leavePolicy, leaveUsedBefore: leaveUsedBefore(employee.id, bulkMonth), grossPay: sumPayrollComponents(earnings) })
       return {
         "Employee Code": employee.employeeCode,
@@ -734,6 +732,7 @@ export function EmployeesPage() {
         <EmployeeForm
           draft={employeeDraft}
           setDraft={setEmployeeDraft}
+          workspaceLeavePolicy={workspaceLeavePolicy}
           editing={Boolean(editingEmployeeId)}
           saving={saving}
           onCancel={() => { setShowEmployeeForm(false); setEditingEmployeeId(null) }}
@@ -861,8 +860,10 @@ export function EmployeesPage() {
   )
 }
 
-function EmployeeForm({ draft, setDraft, editing, saving, onCancel, onSave }: { draft: Omit<Employee, "id">; setDraft: (employee: Omit<Employee, "id">) => void; editing: boolean; saving: boolean; onCancel: () => void; onSave: () => void }) {
+function EmployeeForm({ draft, setDraft, workspaceLeavePolicy, editing, saving, onCancel, onSave }: { draft: Omit<Employee, "id">; setDraft: (employee: Omit<Employee, "id">) => void; workspaceLeavePolicy?: LeavePolicy; editing: boolean; saving: boolean; onCancel: () => void; onSave: () => void }) {
   const field = (key: keyof Omit<Employee, "id">, value: string) => setDraft({ ...draft, [key]: value })
+  const customLeave = draft.leavePolicy
+  const setLeave = (changes: Partial<LeavePolicy>) => setDraft({ ...draft, leavePolicy: { period: "monthly", allowanceDays: 1, yearStartMonth: 1, ...customLeave, ...changes } })
   return (
     <Card>
       <CardHeader><CardTitle>{editing ? "Edit employee" : "Add employee"}</CardTitle><CardDescription>Save stable employee and bank details once. Monthly payslips will reuse them automatically.</CardDescription></CardHeader>
@@ -884,6 +885,17 @@ function EmployeeForm({ draft, setDraft, editing, saving, onCancel, onSave }: { 
           <div className="space-y-2"><Label htmlFor="overtime-mode">Default extra-work method</Label><select id="overtime-mode" className={selectClass} value={draft.overtimeMode || "hourly"} onChange={(event) => setDraft({ ...draft, overtimeMode: event.target.value as "hourly" | "daily" })}><option value="hourly">Hourly</option><option value="daily">Daily</option></select></div>
           <div className="space-y-2"><Label htmlFor="overtime-rate">Default {draft.overtimeMode === "daily" ? "daily" : "hourly"} rate (₹)</Label><Input id="overtime-rate" type="number" min="0" step="0.01" value={draft.overtimeRate || ""} onChange={(event) => setDraft({ ...draft, overtimeRate: Math.max(0, Number(event.target.value) || 0) })} /></div>
         </div>
+        <section className="space-y-3 rounded-xl border bg-muted/20 p-4">
+          <div><h3 className="font-medium">Paid leave</h3><p className="text-sm text-muted-foreground">Leave beyond the allowance is deducted from salary.</p></div>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2 md:col-span-2"><Label htmlFor="employee-leave-source">Leave allowance</Label><select id="employee-leave-source" className={selectClass} value={customLeave ? "custom" : "default"} onChange={(event) => event.target.value === "custom" ? setLeave({ ...(workspaceLeavePolicy || {}) }) : setDraft({ ...draft, leavePolicy: undefined })}><option value="default">Workspace default ({describeLeavePolicy(workspaceLeavePolicy)})</option><option value="custom">Set for this employee</option></select></div>
+            {customLeave ? <>
+              <div className="space-y-2"><Label htmlFor="employee-leave-period">Allowance per</Label><select id="employee-leave-period" className={selectClass} value={customLeave.period} onChange={(event) => setLeave({ period: event.target.value as LeavePolicy["period"] })}><option value="monthly">Month</option><option value="yearly">Year</option></select></div>
+              <div className="space-y-2"><Label htmlFor="employee-leave-days">Paid leave days</Label><Input id="employee-leave-days" type="number" min="0" step="0.5" value={customLeave.allowanceDays} onChange={(event) => setLeave({ allowanceDays: Math.max(0, Number(event.target.value) || 0) })} /></div>
+              {customLeave.period === "yearly" ? <div className="space-y-2 md:col-start-3"><Label htmlFor="employee-leave-year-start">Leave year starts in</Label><select id="employee-leave-year-start" className={selectClass} value={customLeave.yearStartMonth || 1} onChange={(event) => setLeave({ yearStartMonth: Number(event.target.value) })}>{leaveYearMonthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select></div> : null}
+            </> : null}
+          </div>
+        </section>
         <div className="flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button><Button disabled={saving} onClick={onSave}>{saving ? "Saving…" : editing ? "Save changes" : "Add employee"}</Button></div>
       </CardContent>
     </Card>

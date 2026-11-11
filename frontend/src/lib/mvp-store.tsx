@@ -143,6 +143,8 @@ export type Employee = {
   overtimeMode?: "hourly" | "daily"
   overtimeRate?: number
   tallyLedgerName?: string
+  /** Employee-specific paid leave; when absent the workspace policy applies. */
+  leavePolicy?: LeavePolicy
 }
 export type EmployeeLetter = {
   id: string
@@ -269,6 +271,8 @@ export type InvoiceNumbering = {
 export type LeavePolicy = {
   period: "monthly" | "yearly"
   allowanceDays: number
+  /** Month the leave year starts (1 = January, 4 = April). Yearly policies only. */
+  yearStartMonth?: number
 }
 export type AttendanceDraft = {
   entityId: string

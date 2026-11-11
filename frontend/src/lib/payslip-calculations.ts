@@ -1,4 +1,4 @@
-import type { AttendanceDayRecord, AttendanceDayStatus, AttendanceHoliday, LeavePolicy, PayrollComponent, PayslipAttendance } from "@/lib/mvp-store"
+import type { AttendanceDayRecord, AttendanceDayStatus, AttendanceHoliday, LeavePolicy, PayrollComponent, Payslip, PayslipAttendance } from "@/lib/mvp-store"
 
 export const payrollId = () => crypto.randomUUID()
 
@@ -143,6 +143,36 @@ export function calculateLeaveAdjustedAttendance({
     payableDays: Math.max(0, Math.round((base.payableDays - excessLeaveDays) * 100) / 100),
     leaveDeductionAmount,
   }
+}
+
+export const leaveYearMonthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const
+
+/** First month ("YYYY-MM") of the leave year that contains `month`. */
+export function leaveYearStart(month: string, startMonth = 1) {
+  const [year, monthNumber] = month.split("-").map(Number)
+  const start = Math.min(12, Math.max(1, Math.round(startMonth) || 1))
+  return `${monthNumber >= start ? year : year - 1}-${String(start).padStart(2, "0")}`
+}
+
+/** The employee's own policy when set, otherwise the workspace policy. */
+export function effectiveLeavePolicy(employee: { leavePolicy?: LeavePolicy } | undefined, workspacePolicy: LeavePolicy | undefined) {
+  return employee?.leavePolicy || workspacePolicy
+}
+
+/** Paid leave already taken in this month (monthly) or earlier in this leave year (yearly). */
+export function leaveUsedBeforeMonth(payslips: Pick<Payslip, "id" | "employeeId" | "month" | "attendance">[], employeeId: string, month: string, policy: LeavePolicy | undefined, excludedPayslipId?: string | null) {
+  if (!policy) return 0
+  const yearStart = leaveYearStart(month, policy.yearStartMonth || 1)
+  return payslips
+    .filter((payslip) => payslip.employeeId === employeeId && payslip.id !== excludedPayslipId
+      && (policy.period === "monthly" ? payslip.month === month : payslip.month >= yearStart && payslip.month < month))
+    .reduce((total, payslip) => total + (payslip.attendance?.paidLeaveDays || 0), 0)
+}
+
+export function describeLeavePolicy(policy: LeavePolicy | undefined) {
+  if (!policy) return "Not set: all leave is paid"
+  const days = `${policy.allowanceDays} paid leave day${policy.allowanceDays === 1 ? "" : "s"}`
+  return policy.period === "monthly" ? `${days} per month` : `${days} per year (from ${leaveYearMonthNames[(policy.yearStartMonth || 1) - 1]})`
 }
 
 export function formatSalaryMonth(month: string) {

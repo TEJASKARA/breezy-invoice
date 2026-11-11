@@ -20,7 +20,8 @@
     "test:marketing": "node --test tests/marketing-leads.test.mjs",
     "test:ca": "node --test tests/ca-invitation-session.test.mjs",
     "test:bulk": "node --test tests/bulk-invoice-import.test.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:leave": "node --test tests/leave-policy.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
