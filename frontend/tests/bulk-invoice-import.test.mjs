@@ -65,7 +65,6 @@ test("rejections explain the row's problem", () => {
   assert.match(parseBulkInvoiceRow({ "Customer Name": "A", "Invoice Date": "2026-10-01", "Invoice Total": "1" }, 7, ctx).reason, /invoice number/)
   assert.match(parseBulkInvoiceRow({ "Customer Name": "A", "Invoice Number": "1", "Invoice Date": "soon", "Invoice Total": "1" }, 7, ctx).reason, /date/)
   assert.match(parseBulkInvoiceRow({ "Customer Name": "A", "Invoice Number": "1", "Invoice Date": "2026-10-01" }, 7, ctx).reason, /Invoice Total or a Taxable Amount/)
-  assert.match(parseBulkInvoiceRow({ ...b2cRow }, 7, { ...ctx, isGstEntity: false }).reason, /no GSTIN/)
   assert.equal(parseBulkInvoiceRow({ "Invoice Number": "1" }, 7, ctx).row, 7)
 })
 
@@ -87,4 +86,12 @@ test("mixed invoice prefixes produce a warning", async () => {
   const { invoicePrefixWarning } = await import("../src/lib/bulk-invoice-import.ts")
   assert.equal(invoicePrefixWarning(["AVV/1", "AVV/2"]), "")
   assert.match(invoicePrefixWarning(["AVV/1", "AVV/2", "AAV/3"]), /AVV \(2\), AAV \(1\)/)
+})
+
+test("an entity without a saved GSTIN can still import GST invoices", () => {
+  const result = parseBulkInvoiceRow({ ...b2cRow }, 2, { ...ctx, entity: { ...entity, hasGstin: false, gstin: "" }, isGstEntity: false })
+  assert.equal(result.ok, true)
+  assert.equal(result.invoice.includesGst, true)
+  assert.equal(result.invoice.gstTaxMode, "split")
+  assert.equal(result.invoice.cgstAmount, 2071.43)
 })

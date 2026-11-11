@@ -119,9 +119,7 @@ export function parseBulkInvoiceRow(
   const amounts = resolveAmounts({ taxable, total, cgst, sgst, igst })
   if (!amounts) return fail("enter an Invoice Total or a Taxable Amount above zero")
   if (amounts.igstAmount > 0 && (amounts.cgstAmount > 0 || amounts.sgstAmount > 0)) return fail("use either CGST + SGST or IGST, not both")
-  if (!context.isGstEntity && (amounts.cgstAmount || amounts.sgstAmount || amounts.igstAmount)) {
-    return fail("this entity has no GSTIN, so its invoices can't include GST")
-  }
+  const hasGst = amounts.cgstAmount > 0 || amounts.sgstAmount > 0 || amounts.igstAmount > 0
 
   const tdsAmount = money(pickCell(row, "TDS Amount", "TDS")) || 0
   const otherDeduction = money(pickCell(row, "Other Deduction")) || 0
@@ -150,6 +148,8 @@ export function parseBulkInvoiceRow(
     netReceivable: Number.isFinite(suppliedNet) && suppliedNet > 0 ? suppliedNet : round2(amounts.amount - tdsAmount - otherDeduction),
     lineItems: [lineItem],
     status: parseDocumentStatus(pickCell(row, "Status")),
+    includesGst: hasGst,
+    ...(hasGst ? { gstTaxMode: amounts.igstAmount > 0 ? "igst" as const : "split" as const } : {}),
   }
   const newCustomer: ImportCustomer | undefined = saved ? undefined : {
     entityId: context.entity?.id || "",

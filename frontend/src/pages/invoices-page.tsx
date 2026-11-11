@@ -179,7 +179,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const [bulkImportHasError, setBulkImportHasError] = useState(false)
   const [bulkInvoicesSaved, setBulkInvoicesSaved] = useState(false)
   const [bulkRejections, setBulkRejections] = useState<{ row: number; reason: string }[]>([])
-  const [bulkPrefixWarning, setBulkPrefixWarning] = useState("")
+  const [bulkWarnings, setBulkWarnings] = useState<string[]>([])
   const [showDownloadChoices, setShowDownloadChoices] = useState(false)
   const [showManualCustomer, setShowManualCustomer] = useState(false)
   const [manualCustomer, setManualCustomer] = useState<ManualCustomer>(emptyManualCustomer)
@@ -785,7 +785,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setPreview([])
     setBulkNewCustomers([])
     setBulkRejections([])
-    setBulkPrefixWarning("")
+    setBulkWarnings([])
     setBulkInvoicesSaved(false)
     input.click()
   }
@@ -801,7 +801,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setPreview([])
     setBulkNewCustomers([])
     setBulkRejections([])
-    setBulkPrefixWarning("")
+    setBulkWarnings([])
     setBulkInvoicesSaved(false)
     try {
       const rows = await readSpreadsheet(file, { isoDates: true })
@@ -863,7 +863,9 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       }
       const rejectedRows = rejections.length
       setBulkRejections(rejections)
-      setBulkPrefixWarning(invoicePrefixWarning(imported.map((invoice) => invoice.sourceNumber || "")))
+      const warnings = [invoicePrefixWarning(imported.map((invoice) => invoice.sourceNumber || ""))]
+      if (!isGstEntity && imported.some((invoice) => invoice.includesGst)) warnings.push(`${bulkEntityName} has no GSTIN saved in ChanaX, but these invoices charge GST. Add the GSTIN under Entities so it prints on the invoices.`)
+      setBulkWarnings(warnings.filter(Boolean))
       setBulkNewCustomers([...newCustomersByName.values()])
       setPreview(imported)
       setBulkInvoicesSaved(false)
@@ -1501,7 +1503,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                 const tiles = [["Taxable", totals.taxableAmount], ["CGST", totals.cgstAmount], ["SGST", totals.sgstAmount], ["IGST", totals.igstAmount], ["Invoice total", totals.amount]] as const
                 return <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">{tiles.map(([label, value]) => <div key={label} className="rounded-lg border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{inr(value)}</p></div>)}</div>
               })()}
-              {bulkPrefixWarning ? <p className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><TriangleAlert className="mt-0.5 size-4 shrink-0" />{bulkPrefixWarning}</p> : null}
+              {bulkWarnings.map((warning) => <p key={warning} className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><TriangleAlert className="mt-0.5 size-4 shrink-0" />{warning}</p>)}
               {bulkRejections.length ? <details className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><summary className="cursor-pointer font-medium text-destructive">{bulkRejections.length} rejected row{bulkRejections.length === 1 ? "" : "s"} will not be imported</summary><ul className="mt-2 space-y-1 text-muted-foreground">{bulkRejections.map((item) => <li key={`${item.row}-${item.reason}`}>Row {item.row}: {item.reason}.</li>)}</ul></details> : null}
               <div className="max-h-[28rem] overflow-auto rounded-lg border">
               <Table>
@@ -1510,7 +1512,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
               </Table>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="outline" onClick={() => { setPreview([]); setBulkNewCustomers([]); setBulkRejections([]); setBulkPrefixWarning(""); setBulkInvoicesSaved(false) }}>{bulkInvoicesSaved ? "Close" : "Cancel"}</Button>
+                <Button variant="outline" onClick={() => { setPreview([]); setBulkNewCustomers([]); setBulkRejections([]); setBulkWarnings([]); setBulkInvoicesSaved(false) }}>{bulkInvoicesSaved ? "Close" : "Cancel"}</Button>
                 <Button variant="outline" disabled={bulkDownloadPending} onClick={() => void downloadBulkInvoiceZip()}>
                   <Download />{bulkDownloadPending ? "Preparing ZIP…" : `Download ${preview.length} PDFs (ZIP)`}
                 </Button>
