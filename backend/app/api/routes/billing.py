@@ -103,7 +103,7 @@ async def create_billing_order(
         plan_key=plan.key,  # type: ignore[arg-type]
         plan_name=plan.name,
         credits=plan.credits,
-        quotation_credits=plan.credits,
+        quotation_credits=0,
         duration_months=plan.duration_months,
         estimated_monthly_invoices=monthly_invoices,
         estimated_employees=employees,

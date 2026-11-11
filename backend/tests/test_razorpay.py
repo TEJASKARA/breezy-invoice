@@ -17,19 +17,19 @@ def test_billing_plan_prices_are_server_controlled() -> None:
     assert billing_plan("monthly").base_amount_paise == 19_900
     assert billing_plan("monthly").gst_amount_paise == 3_582
     assert billing_plan("monthly").amount_paise == 23_482
-    assert billing_plan("monthly").credits == 200
+    assert billing_plan("monthly").credits == 400
     assert billing_plan("quarterly").amount_paise == 58_882
-    assert billing_plan("quarterly").credits == 625
+    assert billing_plan("quarterly").credits == 1_250
     assert billing_plan("annual").amount_paise == 176_882
-    assert billing_plan("annual").credits == 2_600
+    assert billing_plan("annual").credits == 5_200
     assert billing_plan("three_year").amount_paise == 389_282
-    assert billing_plan("three_year").credits == 7_800
+    assert billing_plan("three_year").credits == 15_600
 
 
 def test_custom_plan_adds_twenty_percent_at_sixty_paise_rate() -> None:
     plan = billing_plan("custom_monthly", monthly_invoices=100, employees=100)
 
-    assert plan.credits == 240
+    assert plan.credits == 480
     assert plan.base_amount_paise == 12_000
     assert plan.gst_amount_paise == 2_160
     assert plan.amount_paise == 14_160
@@ -42,23 +42,23 @@ def test_custom_plan_uses_period_specific_credit_bonuses() -> None:
     )
     annual = billing_plan("custom_annual", monthly_invoices=100, employees=100)
 
-    assert quarterly.credits == 750
+    assert quarterly.credits == 1_500
     assert quarterly.amount_paise == 42_480
-    assert annual.credits == 3_120
+    assert annual.credits == 6_240
     assert annual.amount_paise == 169_920
 
 
 def test_custom_plan_uses_sixty_paise_rate_above_minimum() -> None:
     plan = billing_plan("custom_monthly", monthly_invoices=300, employees=0)
 
-    assert plan.credits == 360
+    assert plan.credits == 720
     assert plan.amount_paise == 21_240
 
 
 def test_custom_plan_keeps_one_hundred_rupee_monthly_minimum() -> None:
     plan = billing_plan("custom_monthly", monthly_invoices=100, employees=0)
 
-    assert plan.credits == 120
+    assert plan.credits == 240
     assert plan.amount_paise == 11_800
 
 

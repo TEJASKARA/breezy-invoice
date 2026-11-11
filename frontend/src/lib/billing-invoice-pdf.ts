@@ -91,7 +91,11 @@ export async function downloadBillingInvoice({ payment, workspaceName, customerE
   doc.text("Payment successful", margin + 5, tableY + 69)
   doc.setFont("helvetica", "normal")
   doc.setFontSize(8.5)
-  doc.text(`${payment.credits} document credits and ${payment.credits} quotation credits were added to this workspace.`, margin + 5, tableY + 76)
+  // Payments before 11 Nov 2026 added two balances; later ones add one combined balance.
+  const addedText = (payment.paid_at || payment.created_at) < "2026-11-11"
+    ? `${payment.credits} document credits and ${payment.credits} quotation credits were added to this workspace.`
+    : `${payment.credits} credits were added to this workspace.`
+  doc.text(addedText, margin + 5, tableY + 76)
 
   doc.setTextColor(100, 116, 139)
   doc.setFontSize(8)

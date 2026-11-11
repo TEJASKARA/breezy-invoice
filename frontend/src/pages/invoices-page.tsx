@@ -388,7 +388,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setSourceProforma({ id: record.id, number: record.number })
     setDraftFormError("")
     setShowForm(true)
-    showNotice(`${record.number} is ready to review. Saving the invoice will use one document credit.`)
+    showNotice(`${record.number} is ready to review. Saving the invoice will use one credit.`)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }, [companies, customers, loading, location.pathname, location.state, navigate, proformas])
 
@@ -1125,7 +1125,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         </div>
       ) : null}
 
-      {!customersOnly && invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Document credits:</strong> {invoiceAllowance.remaining} remaining for invoices or payslips. Quotations use a separate balance. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
+      {!customersOnly && invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Credits:</strong> {invoiceAllowance.remaining} remaining for invoices, quotations and payslips. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
 
       {!canManage ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">You have view-only access. Adding, importing or deleting records requires invoice management permission.</p> : null}
 
@@ -1137,8 +1137,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         <Card>
           <CardHeader><CardTitle>{editingInvoiceId ? "Edit draft invoice" : correctionSource ? `Replace invoice ${correctionSource.invoiceNumber}` : sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{editingInvoiceId ? "Update this draft in place. Its invoice number remains unchanged and no additional credit is used." : correctionSource ? "Review the corrected details carefully. Saving creates the next invoice number and permanently links it to the cancelled original." : sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
           <CardContent className="space-y-6" onKeyDown={moveToNextInvoiceField}>
-            {sourceProforma ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"><strong>Source quotation: {sourceProforma.number}</strong><p className="mt-1">The quotation remains saved. Previewing uses no credit. One document credit is used only when this invoice is saved.</p></div> : null}
-            {correctionSource ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><strong>Correction of {correctionSource.invoiceNumber}</strong><p className="mt-1">Original reason: {correctionSource.reason}</p><p className="mt-1">The original is not changed until this replacement is saved. One document credit is used for the new invoice.</p></div> : null}
+            {sourceProforma ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"><strong>Source quotation: {sourceProforma.number}</strong><p className="mt-1">The quotation remains saved. Previewing uses no credit. One credit is used only when this invoice is saved.</p></div> : null}
+            {correctionSource ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><strong>Correction of {correctionSource.invoiceNumber}</strong><p className="mt-1">Original reason: {correctionSource.reason}</p><p className="mt-1">The original is not changed until this replacement is saved. One credit is used for the new invoice.</p></div> : null}
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>

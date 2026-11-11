@@ -954,8 +954,7 @@ class SupabaseGateway:
                     "workspace_id": workspace_id,
                     "gst_status": "verified",
                     "verified_gstin": gstin,
-                    "free_credits_granted": 30,
-                    "free_quotation_credits_granted": 30,
+                    "free_credits_granted": 60,
                 }
             ],
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"},

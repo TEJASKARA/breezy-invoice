@@ -20,10 +20,10 @@ import { downloadBillingInvoice } from "@/lib/billing-invoice-pdf"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const fixedPlans = [
-  { key: "monthly" as const, name: "Monthly", price: 199, term: "1 month", credits: 200, bonus: 20, seats: "Owner + 2", description: "₹35.82 GST is added at checkout. Total payable: ₹234.82." },
-  { key: "quarterly" as const, name: "Quarterly", price: 499, term: "3 months", credits: 625, bonus: 25, seats: "Owner + 2", description: "₹89.82 GST is added at checkout. Total payable: ₹588.82." },
-  { key: "annual" as const, name: "Annual", price: 1499, term: "12 months", credits: 2600, bonus: 30, seats: "Owner + 2", description: "₹269.82 GST is added at checkout. Total payable: ₹1,768.82." },
-  { key: "three_year" as const, name: "3 Years", price: 3299, term: "36 months", credits: 7800, bonus: 30, seats: "Owner + 2", description: "₹593.82 GST is added at checkout. Total payable: ₹3,892.82." },
+  { key: "monthly" as const, name: "Monthly", price: 199, term: "1 month", credits: 400, bonus: 20, seats: "Owner + 2", description: "₹35.82 GST is added at checkout. Total payable: ₹234.82." },
+  { key: "quarterly" as const, name: "Quarterly", price: 499, term: "3 months", credits: 1250, bonus: 25, seats: "Owner + 2", description: "₹89.82 GST is added at checkout. Total payable: ₹588.82." },
+  { key: "annual" as const, name: "Annual", price: 1499, term: "12 months", credits: 5200, bonus: 30, seats: "Owner + 2", description: "₹269.82 GST is added at checkout. Total payable: ₹1,768.82." },
+  { key: "three_year" as const, name: "3 Years", price: 3299, term: "36 months", credits: 15600, bonus: 30, seats: "Owner + 2", description: "₹593.82 GST is added at checkout. Total payable: ₹3,892.82." },
 ]
 
 function currency(value: number) {
@@ -45,12 +45,7 @@ export function PricingPage() {
   const isOwner = membership?.role === "owner"
   const documentCreditsRemaining = creditAccount
     ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used) + creditAccount.monthly_credits_remaining + creditAccount.topup_credits_remaining
-    : 10
-  const quotationCreditsRemaining = creditAccount
-    ? Math.max(0, (creditAccount.free_quotation_credits_granted ?? creditAccount.free_credits_granted) - (creditAccount.free_quotation_credits_used ?? 0))
-      + (creditAccount.monthly_quotation_credits_remaining ?? creditAccount.monthly_credits_remaining)
-      + (creditAccount.topup_quotation_credits_remaining ?? creditAccount.topup_credits_remaining)
-    : 10
+    : 20
 
   const refreshBillingHistory = useCallback(async () => {
     if (!workspace || !isOwner) return
@@ -92,7 +87,7 @@ export function PricingPage() {
               await Promise.all([refresh(), refreshBillingHistory()])
               showSuccess(result.already_processed
                 ? "Payment was already confirmed. Your subscription is active."
-                : `Payment confirmed. ${result.credits_added} document credits and ${result.quotation_credits_added} quotation credits were added.`)
+                : `Payment confirmed. ${result.credits_added} credits were added.`)
               resolve()
             } catch (verificationError) {
               reject(verificationError)
@@ -127,10 +122,9 @@ export function PricingPage() {
       {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
       {!isOwner ? <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">You can review pricing and balances. Only the workspace owner can purchase a plan.</div> : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card><CardHeader><CardTitle>Current plan</CardTitle><CardDescription>Subscription status for {workspace.name}.</CardDescription></CardHeader><CardContent className="space-y-2"><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan</span><span className="font-semibold capitalize">{subscription?.plan_key?.replaceAll("_", " ") || "Free"}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className="capitalize">{subscription?.status || "Active"}</Badge></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Expires</span><span>{readableDate(subscription?.current_period_ends_at || subscription?.trial_ends_at || null)}</span></div></CardContent></Card>
-        <Card><CardHeader><CardTitle>Document credits</CardTitle><CardDescription>Shared by invoices and payslips.</CardDescription></CardHeader><CardContent><p className="text-4xl font-bold tabular-nums">{documentCreditsRemaining}</p><p className="mt-2 text-sm text-muted-foreground">credits remaining</p></CardContent></Card>
-        <Card><CardHeader><CardTitle>Quotation credits</CardTitle><CardDescription>Reserved for quotations and proformas.</CardDescription></CardHeader><CardContent><p className="text-4xl font-bold tabular-nums">{quotationCreditsRemaining}</p><p className="mt-2 text-sm text-muted-foreground">credits remaining</p></CardContent></Card>
+        <Card><CardHeader><CardTitle>Credits</CardTitle><CardDescription>One balance for invoices, quotations and payslips. Each document uses 1 credit.</CardDescription></CardHeader><CardContent><p className="text-4xl font-bold tabular-nums">{documentCreditsRemaining}</p><p className="mt-2 text-sm text-muted-foreground">credits remaining</p></CardContent></Card>
       </div>
 
       <Card>
@@ -150,18 +144,17 @@ export function PricingPage() {
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">{plan.description}</p>
                 <div className="mt-5 flex-1 space-y-2 text-sm">
-                  <p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> document credits for invoices or payslips</p>
-                  <p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits}</strong> separate quotation credits</p>
+                  <p className="flex items-center gap-2"><Coins className="size-4" /><strong>{plan.credits.toLocaleString("en-IN")}</strong> credits for invoices, quotations or payslips</p>
                   <p className="flex items-center gap-2"><Check className="size-4" /><strong>{plan.bonus}%</strong> additional credits included</p>
                   <p className="flex items-center gap-2"><Users className="size-4" /><strong>{plan.seats}</strong> included accounts</p>
-                  <p className="flex items-center gap-2"><Check className="size-4" />Quotation credits are only for proformas</p>
+                  <p className="flex items-center gap-2"><Check className="size-4" />Employee letters are free</p>
                   <p className="flex items-center gap-2"><Check className="size-4" />Attendance, expenses and exports</p>
                 </div>
                 <Button className="mt-5 w-full" variant="outline" disabled={!isOwner || purchasingPlan !== null} onClick={() => void purchasePlan(plan.key)}>{purchasingPlan === plan.key ? "Opening Razorpay…" : isOwner ? `Choose ${plan.name}` : "Owner payment only"}</Button>
               </div>
             ))}
           </div>
-          <div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Both paid credit balances expire at the end of the selected plan period. Quotation credits cannot be used for sales invoices or payslips.</p><p>Payments are processed by Razorpay. Credits are added only after secure server verification.</p><p>Additional team accounts will be available as a recurring monthly add-on after its price is finalised.</p></div>
+          <div className="mt-4 space-y-1 text-xs text-muted-foreground"><p>Paid credits expire at the end of the selected plan period.</p><p>Payments are processed by Razorpay. Credits are added only after secure server verification.</p><p>Additional team accounts will be available as a recurring monthly add-on after its price is finalised.</p></div>
         </CardContent>
       </Card>
 
@@ -176,7 +169,7 @@ export function PricingPage() {
         </CardContent>
       </Card>
 
-      {billingPayments.length ? <Card><CardHeader><CardTitle>Payment history</CardTitle><CardDescription>Your latest Razorpay plan purchases.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Plan</TableHead><TableHead>Document credits</TableHead><TableHead>Quotation credits</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Invoice</TableHead></TableRow></TableHeader><TableBody>{billingPayments.map((payment) => <TableRow key={payment.id}><TableCell>{readableDate(payment.paid_at || payment.created_at)}</TableCell><TableCell className="capitalize">{payment.plan_key.replaceAll("_", " ")}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{payment.credits}</TableCell><TableCell>{currency(payment.amount_paise / 100)}</TableCell><TableCell><Badge variant={payment.status === "paid" ? "secondary" : payment.status === "failed" ? "destructive" : "outline"} className="capitalize">{payment.status}</Badge></TableCell><TableCell className="text-right">{payment.status === "paid" ? <Button size="sm" variant="outline" onClick={() => void downloadPaymentInvoice(payment)}><Download />Download</Button> : <span className="text-xs text-muted-foreground">Available after payment</span>}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card> : null}
+      {billingPayments.length ? <Card><CardHeader><CardTitle>Payment history</CardTitle><CardDescription>Your latest Razorpay plan purchases.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Plan</TableHead><TableHead>Credits</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Invoice</TableHead></TableRow></TableHeader><TableBody>{billingPayments.map((payment) => <TableRow key={payment.id}><TableCell>{readableDate(payment.paid_at || payment.created_at)}</TableCell><TableCell className="capitalize">{payment.plan_key.replaceAll("_", " ")}</TableCell><TableCell>{(payment.paid_at || payment.created_at) < "2026-11-11" ? payment.credits * 2 : payment.credits}</TableCell><TableCell>{currency(payment.amount_paise / 100)}</TableCell><TableCell><Badge variant={payment.status === "paid" ? "secondary" : payment.status === "failed" ? "destructive" : "outline"} className="capitalize">{payment.status}</Badge></TableCell><TableCell className="text-right">{payment.status === "paid" ? <Button size="sm" variant="outline" onClick={() => void downloadPaymentInvoice(payment)}><Download />Download</Button> : <span className="text-xs text-muted-foreground">Available after payment</span>}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card> : null}
     </div>
   )
 }

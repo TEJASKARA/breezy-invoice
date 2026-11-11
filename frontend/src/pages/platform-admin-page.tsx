@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
-import { BarChart3, Coins, Link2, Mail, Search, ShieldCheck, Trash2, UserCog, Megaphone } from "lucide-react"
+import { BarChart3, Coins, Link2, Mail, Search, Trash2, UserCog, Megaphone } from "lucide-react"
 
 import { AdminMarketing } from "@/components/admin-marketing"
 import { PageHeader } from "@/components/page-header"
@@ -73,7 +73,7 @@ export function PlatformAdminPage() {
     setSuccess("")
     try {
       const result = await grantPlatformCredits(workspace.subscription_code, amount, reason)
-      setSuccess(`${result.credits_added} document credits and ${result.quotation_credits_added} quotation credits were granted to ${workspace.name}.`)
+      setSuccess(`${result.credits_added} credits were granted to ${workspace.name}.`)
       const refreshed = await findPlatformWorkspaces(workspace.subscription_code)
       setWorkspace(refreshed[0] || null)
       setSearchResults(refreshed)
@@ -171,12 +171,8 @@ export function PlatformAdminPage() {
       <CardContent className="space-y-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Coins className="size-4" />Document credits</div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Coins className="size-4" />Credits</div>
             <p className="mt-2 text-2xl font-semibold tabular-nums">{workspace.document_credits_remaining}</p>
-          </div>
-          <div className="rounded-xl border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="size-4" />Quotation credits</div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums">{workspace.quotation_credits_remaining}</p>
           </div>
         </div>
 

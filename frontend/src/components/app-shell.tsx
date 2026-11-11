@@ -150,12 +150,7 @@ function WorkspaceShell() {
     ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used)
       + creditAccount.monthly_credits_remaining
       + creditAccount.topup_credits_remaining
-    : Math.max(0, 10 - invoices.length - payslips.length)
-  const quotationCreditsRemaining = creditAccount
-    ? Math.max(0, (creditAccount.free_quotation_credits_granted ?? creditAccount.free_credits_granted) - (creditAccount.free_quotation_credits_used ?? 0))
-      + (creditAccount.monthly_quotation_credits_remaining ?? creditAccount.monthly_credits_remaining)
-      + (creditAccount.topup_quotation_credits_remaining ?? creditAccount.topup_credits_remaining)
-    : Math.max(0, 10 - proformas.length)
+    : Math.max(0, 20 - invoices.length - payslips.length - proformas.length)
   useEffect(() => {
     if (!user) return
     const storageKey = `breezyinvoice-product-tour:${user.id}`
@@ -275,24 +270,13 @@ function WorkspaceShell() {
             <Button
               variant="outline"
               className="h-9 gap-2 px-2.5 sm:px-3"
-              title={`${creditsRemaining} document credits remaining for invoices and payslips`}
-              aria-label={`${creditsRemaining} document credits remaining for invoices and payslips. Open pricing.`}
+              title={`${creditsRemaining} credits remaining for invoices, quotations and payslips`}
+              aria-label={`${creditsRemaining} credits remaining for invoices, quotations and payslips. Open pricing.`}
               onClick={() => navigate("/pricing")}
             >
               <Coins className="size-4" />
               <span className="font-semibold tabular-nums">{creditsRemaining}</span>
-              <span className="hidden text-muted-foreground sm:inline">document</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-9 gap-2 px-2.5 sm:px-3"
-              title={`${quotationCreditsRemaining} quotation credits remaining for proformas`}
-              aria-label={`${quotationCreditsRemaining} quotation credits remaining for proformas. Open pricing.`}
-              onClick={() => navigate("/pricing")}
-            >
-              <FilePlus2 className="size-4" />
-              <span className="font-semibold tabular-nums">{quotationCreditsRemaining}</span>
-              <span className="hidden text-muted-foreground sm:inline">quotation</span>
+              <span className="hidden text-muted-foreground sm:inline">credits</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

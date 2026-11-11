@@ -58,7 +58,7 @@ export function AdminPaymentLinks() {
   const gstPaise = gstFor(basePaise)
   const totalPaise = basePaise + gstPaise
   const creditCount = Number.parseInt(credits, 10) || 0
-  const autoDescription = useMemo(() => `ChanaX custom plan: ${creditCount || "—"} document credits (plus the same quotation credits) for ${months} month${months === 1 ? "" : "s"}${target?.workspace_name ? ` for ${target.workspace_name}` : ""}`, [creditCount, months, target])
+  const autoDescription = useMemo(() => `ChanaX custom plan: ${creditCount || "—"} credits for invoices, quotations and payslips for ${months} month${months === 1 ? "" : "s"}${target?.workspace_name ? ` for ${target.workspace_name}` : ""}`, [creditCount, months, target])
   const finalDescription = descriptionEdited ? description : autoDescription
 
   const loadLinks = useCallback(async () => {
@@ -145,7 +145,7 @@ export function AdminPaymentLinks() {
         {target ? <form onSubmit={generate} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2"><Label htmlFor="link-amount">Price (₹, before GST)</Label><Input id="link-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^\d.]/g, ""))} placeholder="5000" /></div>
-            <div className="space-y-2"><Label htmlFor="link-credits">Document credits</Label><Input id="link-credits" inputMode="numeric" value={credits} onChange={(event) => setCredits(event.target.value.replace(/\D/g, ""))} placeholder="1000" /><p className="text-xs text-muted-foreground">The same number of quotation credits is added too.</p></div>
+            <div className="space-y-2"><Label htmlFor="link-credits">Credits</Label><Input id="link-credits" inputMode="numeric" value={credits} onChange={(event) => setCredits(event.target.value.replace(/\D/g, ""))} placeholder="1000" /><p className="text-xs text-muted-foreground">One balance for invoices, quotations and payslips. Fixed plans give 2 credits per expected document.</p></div>
             <div className="space-y-2"><Label htmlFor="link-months">Validity</Label><select id="link-months" value={months} onChange={(event) => setMonths(Number(event.target.value))} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">{MONTH_OPTIONS.map((value) => <option key={value} value={value}>{value} month{value === 1 ? "" : "s"}</option>)}</select></div>
           </div>
 

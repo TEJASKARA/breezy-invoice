@@ -101,12 +101,7 @@ export function WorkspaceSettingsPage() {
   const reservedAdditionalSeats = members.filter((member) => member.role !== "owner" && ["active", "invited"].includes(member.status)).length + invitations.length
   const documentCreditsRemaining = creditAccount
     ? Math.max(0, creditAccount.free_credits_granted - creditAccount.free_credits_used) + creditAccount.monthly_credits_remaining + creditAccount.topup_credits_remaining
-    : 10
-  const quotationCreditsRemaining = creditAccount
-    ? Math.max(0, (creditAccount.free_quotation_credits_granted ?? creditAccount.free_credits_granted) - (creditAccount.free_quotation_credits_used ?? 0))
-      + (creditAccount.monthly_quotation_credits_remaining ?? creditAccount.monthly_credits_remaining)
-      + (creditAccount.topup_quotation_credits_remaining ?? creditAccount.topup_credits_remaining)
-    : 10
+    : 20
 
   useEffect(() => {
     setFirmName(setup?.firmName || workspace?.name || "")
@@ -308,7 +303,7 @@ export function WorkspaceSettingsPage() {
         </Card>
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4" />Subscription</CardTitle><CardDescription>Billing and product access for this workspace.</CardDescription></CardHeader>
-          <CardContent className="space-y-2"><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan</span><span className="font-semibold capitalize">{subscription?.plan_key || "Free"}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className="capitalize">{subscription?.status || "Active"}</Badge></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Document credits</span><span className="font-semibold">{documentCreditsRemaining}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Quotation credits</span><span className="font-semibold">{quotationCreditsRemaining}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan expires</span><span>{readableDate(subscription?.current_period_ends_at || subscription?.trial_ends_at || null)}</span></div></CardContent>
+          <CardContent className="space-y-2"><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan</span><span className="font-semibold capitalize">{subscription?.plan_key || "Free"}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className="capitalize">{subscription?.status || "Active"}</Badge></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Credits</span><span className="font-semibold">{documentCreditsRemaining}</span></div><div className="flex items-center justify-between"><span className="text-muted-foreground">Plan expires</span><span>{readableDate(subscription?.current_period_ends_at || subscription?.trial_ends_at || null)}</span></div></CardContent>
         </Card>
       </div>
 
@@ -318,7 +313,7 @@ export function WorkspaceSettingsPage() {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={saveWorkspaceDetails}>
             <div className="space-y-2"><Label htmlFor="settings-firm-name">Firm or business name</Label><Input id="settings-firm-name" required value={firmName} disabled={!isOwner} onChange={(event) => setFirmName(event.target.value)} /></div>
             <div className="space-y-2"><Label htmlFor="settings-industry">Industry</Label><Input id="settings-industry" required disabled={!canManageWorkspace} value={industry} onChange={(event) => setIndustry(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="settings-gst-status">GST registration</Label><select id="settings-gst-status" disabled={!canManageWorkspace} value={hasGstin ? "yes" : "no"} onChange={(event) => { const next = event.target.value === "yes"; setHasGstin(next); if (!next) setGstin("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="yes">I have a GSTIN</option><option value="no">I do not have a GSTIN</option></select><p className="text-xs text-muted-foreground">Free document credits are accompanied by an equal, separate quotation-credit allowance. A verified GSTIN unlocks the full allowance in both balances.</p></div>
+            <div className="space-y-2"><Label htmlFor="settings-gst-status">GST registration</Label><select id="settings-gst-status" disabled={!canManageWorkspace} value={hasGstin ? "yes" : "no"} onChange={(event) => { const next = event.target.value === "yes"; setHasGstin(next); if (!next) setGstin("") }} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"><option value="yes">I have a GSTIN</option><option value="no">I do not have a GSTIN</option></select><p className="text-xs text-muted-foreground">Free credits cover invoices, quotations and payslips. A verified GSTIN raises the free allowance from 20 to 60.</p></div>
             {hasGstin ? <div className="space-y-2"><Label htmlFor="settings-gstin">GSTIN</Label><Input id="settings-gstin" required minLength={15} maxLength={15} disabled={!canManageWorkspace} value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} className="font-mono uppercase" placeholder="15-character GSTIN" /></div> : null}
             <div className="space-y-2 md:col-span-2"><Label htmlFor="settings-address">Mailing address</Label><textarea id="settings-address" required disabled={!canManageWorkspace} value={mailingAddress} onChange={(event) => setMailingAddress(event.target.value)} className="flex min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50" /></div>
             <section className="space-y-4 rounded-xl border bg-muted/20 p-4 md:col-span-2">

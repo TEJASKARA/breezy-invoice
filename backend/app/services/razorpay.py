@@ -50,10 +50,10 @@ def _plan_with_gst(
 
 
 BILLING_PLANS = {
-    "monthly": _plan_with_gst("monthly", "Monthly", 19_900, 200, 1),
-    "quarterly": _plan_with_gst("quarterly", "Quarterly", 49_900, 625, 3),
-    "annual": _plan_with_gst("annual", "Annual", 149_900, 2_600, 12),
-    "three_year": _plan_with_gst("three_year", "Three year", 329_900, 7_800, 36),
+    "monthly": _plan_with_gst("monthly", "Monthly", 19_900, 400, 1),
+    "quarterly": _plan_with_gst("quarterly", "Quarterly", 49_900, 1_250, 3),
+    "annual": _plan_with_gst("annual", "Annual", 149_900, 5_200, 12),
+    "three_year": _plan_with_gst("three_year", "Three year", 329_900, 15_600, 36),
 }
 
 CUSTOM_PLAN_OPTIONS = {
@@ -90,9 +90,11 @@ def billing_plan(
 
     name, duration_months, bonus_percent = CUSTOM_PLAN_OPTIONS[plan_key]
     period_documents = expected_documents * duration_months
-    credits = (
-        period_documents * (100 + bonus_percent) + 99
-    ) // 100
+    # One balance covers invoices, payslips and quotations, so a plan grants
+    # twice the expected documents (previously N document + N quotation).
+    credits = 2 * (
+        (period_documents * (100 + bonus_percent) + 99) // 100
+    )
     monthly_amount_paise = max(10_000, expected_documents * 60)
     return _plan_with_gst(
         plan_key,

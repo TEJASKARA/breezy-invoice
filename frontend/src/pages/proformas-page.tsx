@@ -196,7 +196,7 @@ export function ProformasPage() {
       await refresh()
       if (draftStorageKey) localStorage.removeItem(draftStorageKey)
       setItems([line(entityHsnCodes[0])])
-      setNotice("Quotation generated. One quotation credit was used; your invoice and payslip credits were not affected.")
+      setNotice("Quotation generated. One credit was used.")
     } catch (saveError) { setError(customerErrorMessage(saveError, "The proforma could not be generated.")) }
   }
 
@@ -264,8 +264,8 @@ export function ProformasPage() {
     {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p> : null}
     {notice ? <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p> : null}
     <div className="rounded-xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100"><p className="font-semibold">A proforma is a quotation, not a sales or tax invoice.</p><p className="mt-1">It does not record a completed sale. Generated documents carry this notice clearly in both the preview and downloaded PDF.</p></div>
-    {quotationAllowance ? <p className={`rounded-lg border p-3 text-sm ${quotationAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Quotation credits:</strong> {quotationAllowance.remaining} remaining. These credits can only be used for proforma quotations.</p> : null}
-    <Card><CardHeader><CardTitle>New quotation / proforma</CardTitle><CardDescription>One quotation credit is used only after successful generation. Converting it later creates a final invoice and uses one document credit.</CardDescription></CardHeader><CardContent className="space-y-5">
+    {quotationAllowance ? <p className={`rounded-lg border p-3 text-sm ${quotationAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Credits:</strong> {quotationAllowance.remaining} remaining for invoices, quotations and payslips.</p> : null}
+    <Card><CardHeader><CardTitle>New quotation / proforma</CardTitle><CardDescription>One credit is used only after successful generation. Converting it later creates a final invoice and uses one more credit.</CardDescription></CardHeader><CardContent className="space-y-5">
       <div className="grid gap-4 md:grid-cols-4">
         <div className="space-y-2"><Label htmlFor="proforma-entity">Issuing entity</Label><select id="proforma-entity" className={selectClass} value={entityId} onChange={(event) => { const next = event.target.value; const nextHsnCodes = hsnCodesFor(companies.find((company) => company.id === next)); setEntityId(next); setCustomerId(customers.find((item) => item.entityId === next)?.id || ""); setItems((current) => current.map((item) => ({ ...item, hsnSac: nextHsnCodes.includes(item.hsnSac) ? item.hsnSac : nextHsnCodes[0] || "" }))) }}>{activeCompanies.map((company) => <option key={company.id} value={company.id}>{company.companyName}</option>)}</select></div>
         <div className="space-y-2"><Label htmlFor="proforma-customer">Customer</Label><select id="proforma-customer" className={selectClass} value={customerId} onChange={(event) => setCustomerId(event.target.value)}>{availableCustomers.map((item) => <option key={item.id} value={item.id}>{item.companyName}</option>)}</select></div>
