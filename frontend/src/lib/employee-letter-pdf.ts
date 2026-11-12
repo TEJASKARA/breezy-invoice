@@ -1,4 +1,5 @@
 import type { Company, Employee, EmployeeLetter, TemplateSettings } from "@/lib/mvp-store"
+import type { SalaryLine } from "@/lib/salary-structure"
 
 function safe(value: string) { return value.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || "employee" }
 
@@ -63,7 +64,7 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
   if (template.logoDataUrl) {
     try { doc.addImage(template.logoDataUrl, template.logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", margin, y, logoSize, logoSize); y += logoSize + 6 } catch { /* keep letter usable if an old image cannot be decoded */ }
   }
-  doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.text(entity?.companyName || "Company", margin, y)
+  doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.text(entity?.companyName || "Company", margin, y)
   y += 7; doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90)
   doc.text(doc.splitTextToSize(entity?.billingAddress || entity?.premisesAddress || "", 120), margin, y)
   y += 16; doc.setDrawColor(190); doc.line(margin, y, 190, y); y += 12
@@ -83,6 +84,11 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
     return 36
   }
   const paragraphs = printableLetterBody(letter.body, letter, employee).split(/\n{2,}/).filter(Boolean)
+  // Loaded only for letters that carry salary details.
+  const salaryHelpers = letter.salary && letter.salary.display !== "none" ? await import("@/lib/letter-salary") : null
+  // Salary sentence goes after the salutation and opening paragraph.
+  const salaryParagraph = salaryHelpers?.letterSalaryParagraph(letter.letterType, letter.salary, "INR ")
+  if (salaryParagraph) paragraphs.splice(Math.min(2, paragraphs.length), 0, salaryParagraph)
   for (const paragraph of paragraphs) {
     const lines = doc.splitTextToSize(paragraph, 170) as string[]
     let remaining = [...lines]
@@ -104,6 +110,48 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
   }
   doc.setFont("helvetica", "bold"); doc.text(letter.signatureName || `For ${entity?.companyName || "Company"}`, margin, y)
   y += 5; doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Authorised signatory", margin, y)
+
+  const structure = salaryHelpers?.letterSalaryStructure(letter.letterType, letter.salary)
+  if (structure && structure.earnings.length) {
+    doc.addPage(); paintPage()
+    let row = 24
+    doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(13)
+    doc.text(letter.letterType === "offer" ? "ANNEXURE A - SALARY STRUCTURE" : "ANNEXURE A - LAST DRAWN SALARY STRUCTURE", 105, row, { align: "center" })
+    row += 9; doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(70)
+    doc.text(`${employee.employeeName}${employee.designation ? ` - ${employee.designation}` : ""}`, margin, row)
+    doc.text(`Annual CTC: ${salaryHelpers?.formatRupees(structure.annualCtc, "INR ")}`, 190, row, { align: "right" })
+    row += 7
+    const amountX = 150, annualX = 190
+    const header = () => {
+      doc.setFillColor(235, 238, 243); doc.rect(margin, row - 5, 170, 8, "F")
+      doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5)
+      doc.text("Component", margin + 2, row); doc.text("Monthly (INR)", amountX, row, { align: "right" }); doc.text("Annual (INR)", annualX - 2, row, { align: "right" })
+      row += 8
+    }
+    const amount = (value: number) => Math.round(value).toLocaleString("en-IN")
+    const section = (title: string, lines: SalaryLine[]) => {
+      if (!lines.length) return
+      doc.setTextColor(100); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5)
+      doc.text(title.toUpperCase(), margin + 2, row); row += 6
+      doc.setTextColor(30); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5)
+      for (const item of lines) {
+        doc.text(item.label, margin + 2, row); doc.text(amount(item.monthly), amountX, row, { align: "right" }); doc.text(amount(item.annual), annualX - 2, row, { align: "right" })
+        row += 6
+      }
+    }
+    const total = (label: string, monthly: number) => {
+      doc.setDrawColor(200); doc.line(margin, row - 4, 190, row - 4)
+      doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5)
+      doc.text(label, margin + 2, row); doc.text(amount(monthly), amountX, row, { align: "right" }); doc.text(amount(monthly * 12), annualX - 2, row, { align: "right" })
+      row += 9
+    }
+    header()
+    section("Earnings", structure.earnings); total("Gross salary", structure.grossMonthly)
+    section("Employee deductions", structure.employeeDeductions); total("Net take-home salary", structure.netMonthly)
+    section("Employer contributions", structure.employerContributions); total("Total cost to company (CTC)", structure.monthlyCtc)
+    row += 2; doc.setTextColor(100); doc.setFont("helvetica", "normal"); doc.setFontSize(8)
+    doc.text(doc.splitTextToSize("PF, ESIC, Professional Tax and gratuity are calculated as per the rules applicable on the date of this letter and may change with law. Income tax, if any, is deducted as per the employee's declarations.", 170), margin, row)
+  }
   return doc
 }
 

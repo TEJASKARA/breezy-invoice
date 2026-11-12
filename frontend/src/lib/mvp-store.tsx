@@ -1,3 +1,4 @@
+import type { SalaryStructureSettings } from "@/lib/salary-structure"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { assertInvoiceTaxMode, type GstTaxMode } from "@/lib/invoice-gst"
 import { invoiceReplacementSaveOrder, localDateFromTimestamp, replacementInvoiceCompany } from "@/lib/invoice-replacement"
@@ -145,6 +146,9 @@ export type Employee = {
   tallyLedgerName?: string
   /** Employee-specific paid leave; when absent the workspace policy applies. */
   leavePolicy?: LeavePolicy
+  /** Annual CTC and the rules used to split it, set from an offer letter. */
+  annualCtc?: number
+  salaryStructure?: SalaryStructureSettings
 }
 export type EmployeeLetter = {
   id: string
@@ -159,6 +163,14 @@ export type EmployeeLetter = {
   status: "Draft" | "Issued"
   signatureName?: string
   issuedAt?: string
+  salary?: LetterSalary
+}
+/** Salary shown on a letter: nothing, one line, or a full annexure table. */
+export type LetterSalary = {
+  display: "none" | "line" | "breakdown"
+  annualCtc?: number
+  settings?: SalaryStructureSettings
+  monthlyStipend?: number
 }
 export type Payslip = {
   id: string
@@ -295,6 +307,8 @@ export type Setup = {
   premisesAddress?: string
   invoiceNumbering?: InvoiceNumbering
   leavePolicy?: LeavePolicy
+  /** Default rules for splitting CTC into salary components. */
+  salaryStructure?: SalaryStructureSettings
   attendanceDrafts?: Record<string, AttendanceDraft>
 }
 export type MvpState = { setup: Setup | null; companies: Company[]; customers: Customer[]; invoices: Invoice[]; proformas: Proforma[]; employees: Employee[]; employeeLetters: EmployeeLetter[]; payslips: Payslip[]; expenses: Expense[]; template: TemplateSettings }

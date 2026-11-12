@@ -33,6 +33,8 @@ import {
 } from "@/lib/workspace-access-service"
 import { sendWorkspaceInvitation } from "@/lib/team-api"
 import { leaveYearMonthNames } from "@/lib/payslip-calculations"
+import { normalizeSalarySettings } from "@/lib/salary-structure"
+import { SalaryStructureEditor } from "@/components/salary-structure-editor"
 
 type EditableRole = Exclude<WorkspaceRole, "owner">
 const editableRoles: { value: EditableRole; label: string }[] = [
@@ -79,6 +81,7 @@ export function WorkspaceSettingsPage() {
   const [leavePeriod, setLeavePeriod] = useState<"monthly" | "yearly">(setup?.leavePolicy?.period || "monthly")
   const [leaveAllowanceDays, setLeaveAllowanceDays] = useState(setup?.leavePolicy?.allowanceDays ?? 1)
   const [leaveYearStartMonth, setLeaveYearStartMonth] = useState(setup?.leavePolicy?.yearStartMonth ?? 1)
+  const [salaryDefaults, setSalaryDefaults] = useState(() => normalizeSalarySettings(setup?.salaryStructure))
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<EditableRole>("viewer")
   const [invitePermissions, setInvitePermissions] = useState<WorkspacePermission[]>(permissionsForRole("viewer"))
@@ -114,6 +117,7 @@ export function WorkspaceSettingsPage() {
     setLeavePeriod(setup?.leavePolicy?.period || "monthly")
     setLeaveAllowanceDays(setup?.leavePolicy?.allowanceDays ?? 1)
     setLeaveYearStartMonth(setup?.leavePolicy?.yearStartMonth ?? 1)
+    setSalaryDefaults(normalizeSalarySettings(setup?.salaryStructure))
   }, [setup, workspace?.id, workspace?.name])
 
   const loadPeople = useCallback(async () => {
@@ -164,7 +168,7 @@ export function WorkspaceSettingsPage() {
         const { error: updateError } = await supabase!.from("breezy_workspaces").update({ name: firmName.trim() }).eq("id", workspace.id)
         if (updateError) throw new Error(customerErrorMessage(updateError))
       }
-      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays), ...(leavePeriod === "yearly" ? { yearStartMonth: leaveYearStartMonth } : {}) } })
+      await completeSetup({ ...setup, firmName: firmName.trim(), industry: industry.trim(), hasGstin, gstin: hasGstin ? normalizedGstin : "", mailingAddress: mailingAddress.trim(), leavePolicy: { period: leavePeriod, allowanceDays: Math.max(0, leaveAllowanceDays), ...(leavePeriod === "yearly" ? { yearStartMonth: leaveYearStartMonth } : {}) }, salaryStructure: salaryDefaults })
       await refresh()
       showSuccess("Workspace details saved.")
     } catch (saveError) { showError(saveError) } finally { setSaving(false) }
@@ -328,6 +332,11 @@ export function WorkspaceSettingsPage() {
               </div>
               <p className="text-xs text-muted-foreground">Excess leave, unpaid leave and half-day loss are deducted using monthly gross salary ÷ calendar days.</p>
             </section>
+            <details className="rounded-xl border bg-muted/20 p-4 md:col-span-2">
+              <summary className="cursor-pointer font-medium">Salary structure defaults (offer letters)</summary>
+              <p className="mt-2 text-sm text-muted-foreground">How a CTC is split into salary components on offer and relieving letters. Each letter can change these for one person. Special allowance balances the total so it always equals the CTC.</p>
+              <div className="mt-4"><SalaryStructureEditor idPrefix="settings-salary" value={salaryDefaults} onChange={setSalaryDefaults} disabled={!canManageWorkspace} /></div>
+            </details>
             <div className="md:col-span-2 flex justify-end"><Button type="submit" disabled={saving || !canManageWorkspace}><Save />Save workspace settings</Button></div>
           </form>
         </CardContent>
