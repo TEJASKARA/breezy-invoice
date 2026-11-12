@@ -1,0 +1,296 @@
+{
+  "name": "ChanaX Outreach Emails",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "=0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "ee809865-f18d-427e-a099-681d944b890f",
+      "name": "Schedule Daily 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -576,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "breezy_marketing_leads",
+        "limit": 200,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "pending"
+            }
+          ]
+        }
+      },
+      "id": "3505f0fd-ea8a-453a-bbdf-50b3062c4e4a",
+      "name": "Get pending leads",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        96
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IdZNGGvWxsQGnxyf",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9e45e435-45d2-4dc9-baae-148d66f17b52",
+              "name": "id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "e70cb279-632c-4ee8-a43b-a35871f28806",
+              "name": "email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "8971e13c-d018-4874-8fb5-ecb69c3e65c2",
+              "name": "name",
+              "value": "={{ $json.contact_name || $json.business_name || 'there' }}",
+              "type": "string"
+            },
+            {
+              "id": "848936e8-eb8a-4b68-987c-be93b3fc7276",
+              "name": "business_name",
+              "value": "={{ $json.business_name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "8adca5ef-cdbf-497d-9fe4-d04682f4a31f",
+              "name": "source",
+              "value": "={{ $json.source }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cc565ef6-445a-4932-b452-0b59882ce1cb",
+      "name": "Prepare email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -96,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Simplify your business operations with Chanax",
+        "message": "=<div style=\"font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; color: #333333; line-height: 1.6;\">\n\n  <p style=\"font-size: 16px;\">\n    Hi {{ $json.name }},\n  </p>\n\n  <p style=\"font-size: 16px;\">\n    What if your invoices, quotations, employee records, attendance, and expenses\n    could all be managed from one simple workspace?\n  </p>\n\n  <p style=\"font-size: 16px;\">\n    <strong>That's ChanaX.</strong>\n  </p>\n\n  <p style=\"font-size: 16px;\">\n    One workspace. Less paperwork. Less switching between tools.\n  </p>\n\n  <div style=\"background-color: #f7f8fa; padding: 20px; border-radius: 8px; margin: 20px 0;\">\n    <p style=\"margin-top: 0; font-size: 16px;\">\n      With ChanaX, you can:\n    </p>\n\n    <p style=\"font-size: 15px; margin: 8px 0;\">\n      ✓ Create invoices and quotations\n    </p>\n\n    <p style=\"font-size: 15px; margin: 8px 0;\">\n      ✓ Manage employee records\n    </p>\n\n    <p style=\"font-size: 15px; margin: 8px 0;\">\n      ✓ Track attendance and expenses\n    </p>\n\n    <p style=\"font-size: 15px; margin: 8px 0;\">\n      ✓ Export your business data whenever you need it\n    </p>\n  </div>\n\n  <p style=\"font-size: 16px;\">\n    No complicated ERP. Just the essentials you need to run your business.\n  </p>\n\n  <div style=\"margin: 30px 0;\">\n    <a href=\"https://chanax.in\"\n       style=\"background-color: #2563eb; color: #ffffff; text-decoration: none;\n              padding: 12px 24px; border-radius: 6px; display: inline-block;\n              font-size: 15px; font-weight: bold;\">\n      Try ChanaX For Free →\n    </a>\n  </div>\n\n  <p style=\"font-size: 15px;\">\n    See how simple business management can be.\n  </p>\n\n  <p style=\"font-size: 15px; margin-top: 25px;\">\n    Best regards,<br>\n    <strong>Team ChanaX</strong><br>\n    <a href=\"https://chanax.in\" style=\"color: #2563eb; text-decoration: none;\">\n      chanaX.in\n    </a>\n  </p>\n\n  <p style=\"font-size: 12px; color: #888888; margin-top: 30px;\">\n    You received this because {{ $json.business_name ? $json.business_name + ' was' : 'your business was' }} recently registered in India.\n    Don't want these emails? Reply with \"unsubscribe\" and we'll stop.\n  </p>\n\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "fbe5d77b-e2dc-4583-9890-cbce8c92f3c7",
+      "name": "Send via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        144,
+        96
+      ],
+      "webhookId": "aa0498d6-9d6c-46ea-a546-454fdecf0345",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "TvWfN4k10RnfLcWg",
+          "name": "campaigns@info.chanax.in"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "breezy_marketing_leads",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare email').item.json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "sent"
+            },
+            {
+              "fieldId": "sent_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldId": "attempts",
+              "fieldValue": "1"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "42bf49be-d32e-4625-a5c0-071956c9d09d",
+      "name": "Mark as sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IdZNGGvWxsQGnxyf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "breezy_marketing_leads",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare email').item.json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "attempts",
+              "fieldValue": "1"
+            },
+            {
+              "fieldId": "last_error",
+              "fieldValue": "={{ ($json.error && ($json.error.message || $json.error)) || 'Gmail send failed' }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "efc6c867-cdd6-4270-89ba-d2d5464fc81a",
+      "name": "Mark as failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        208
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IdZNGGvWxsQGnxyf",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Daily 9AM": {
+      "main": [
+        [
+          {
+            "node": "Get pending leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get pending leads": {
+      "main": [
+        [
+          {
+            "node": "Prepare email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare email": {
+      "main": [
+        [
+          {
+            "node": "Send via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Gmail": {
+      "main": [
+        [
+          {
+            "node": "Mark as sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Kolkata",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aa1634e4000771f0fe49d98f6369a708640a1b1b76ad565183d4447277aae70f"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
