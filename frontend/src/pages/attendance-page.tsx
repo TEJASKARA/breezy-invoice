@@ -141,7 +141,7 @@ function AttendancePageContent() {
   // Clearing an entry saves immediately, like Quick entry, so it isn't lost
   // when the person leaves the page.
   const clearDailyStatus = (employeeId: string, date: string) => {
-    if (!canManage || savingAttendance || existingEmployeeIds.has(employeeId) || !entityEmployees.some((employee) => employee.id === employeeId) || !date.startsWith(`${month}-`) || weeklyOffDates.has(date) || holidayDates.has(date)) return
+    if (!canManage || savingAttendance || !entityEmployees.some((employee) => employee.id === employeeId) || !date.startsWith(`${month}-`) || weeklyOffDates.has(date) || holidayDates.has(date)) return
     const existing = employeeAttendance[employeeId] || blankAttendanceException(true)
     const next = { ...employeeAttendance, [employeeId]: { ...existing, dailyRecords: (existing.dailyRecords || []).filter((record) => record.date !== date) } }
     setEmployeeAttendance(next)
@@ -155,7 +155,6 @@ function AttendancePageContent() {
     const next = { ...employeeAttendance }
     let marked = 0
     for (const employee of visibleEmployees) {
-      if (existingEmployeeIds.has(employee.id)) continue
       const existing = next[employee.id] || blankAttendanceException(true)
       if (existing.dailyRecords?.some((record) => record.date === attendanceDate)) continue
       next[employee.id] = { ...existing, dailyRecords: [...(existing.dailyRecords || []), { date: attendanceDate, status: "present" as const }].sort((left, right) => left.date.localeCompare(right.date)) }
@@ -202,7 +201,8 @@ function AttendancePageContent() {
     const exceptions = period === month ? employeeAttendance : cached?.employeeAttendance || exceptionsFromRecords(draft?.employeeRecords)
     const records = Object.fromEntries(entityEmployees.map((employee) => {
       const savedPayslip = payslips.find((item) => item.entityId === selectedEntityId && item.employeeId === employee.id && item.month === period)
-      return [employee.id, savedPayslip?.attendance?.dailyRecords || exceptions[employee.id]?.dailyRecords || []]
+      const recorded = exceptions[employee.id]?.dailyRecords
+      return [employee.id, recorded?.length ? recorded : savedPayslip?.attendance?.dailyRecords || []]
     }))
     return { calendar, records }
   }
@@ -213,7 +213,7 @@ function AttendancePageContent() {
     clearMessages()
   }
   const saveQuickEntry = async (employeeId: string, record: AttendanceDayRecord) => {
-    if (!canManage || savingAttendance || !entityEmployees.some((employee) => employee.id === employeeId) || existingEmployeeIds.has(employeeId) || !record.date.startsWith(`${month}-`) || weeklyOffDates.has(record.date) || holidayDates.has(record.date)) throw new Error("This attendance entry cannot be changed.")
+    if (!canManage || savingAttendance || !entityEmployees.some((employee) => employee.id === employeeId) || !record.date.startsWith(`${month}-`) || weeklyOffDates.has(record.date) || holidayDates.has(record.date)) throw new Error("This attendance entry cannot be changed.")
     const existing = employeeAttendance[employeeId] || blankAttendanceException(true)
     const next = { ...employeeAttendance, [employeeId]: { ...existing, dailyRecords: [...(existing.dailyRecords || []).filter((item) => item.date !== record.date), record].sort((a, b) => a.date.localeCompare(b.date)) } }
     await saveDailyAttendance(next, true)
@@ -394,7 +394,7 @@ function AttendancePageContent() {
         employees={entityEmployees} month={month} date={attendanceDate} search={search}
         canManage={canManage} saving={savingAttendance} dataForMonth={dataForMonth}
         onMonth={changeMonth} onDate={changeDate} onSearch={setSearch}
-        isLocked={(employeeId) => existingEmployeeIds.has(employeeId)}
+        hasPayslip={(employeeId) => existingEmployeeIds.has(employeeId)}
         onSave={saveQuickEntry} onClear={clearDailyStatus}
         onSaveAll={() => void saveDailyAttendance()} onMarkAll={markShownPresent}
       />
