@@ -298,3 +298,33 @@ def test_usage_endpoint_returns_workspace_overviews(monkeypatch) -> None:
         app.dependency_overrides.clear()
     assert response.status_code == status.HTTP_200_OK, response.text
     assert response.json()["workspace_overviews"] == [{"workspace_id": WORKSPACE}]
+
+
+def test_create_link_without_gst_charges_the_price_only(
+    admin_client, monkeypatch
+) -> None:
+    create = AsyncMock(
+        return_value={"id": "plink_2", "short_url": "https://rzp.io/i/def"}
+    )
+    monkeypatch.setattr(
+        SupabaseGateway, "admin_setup_target", AsyncMock(return_value=TARGET)
+    )
+    monkeypatch.setattr(SupabaseGateway, "create_payment_link_record", AsyncMock())
+    monkeypatch.setattr(SupabaseGateway, "update_payment_link", AsyncMock())
+    monkeypatch.setattr(RazorpayClient, "create_payment_link", create)
+    response = admin_client.post(
+        "/api/v1/admin/payment-links",
+        json={
+            "subscription_code": "ABC123",
+            "base_amount_paise": 500_000,
+            "credits": 1000,
+            "duration_months": 12,
+            "description": "Custom annual plan for Acme",
+            "include_gst": False,
+        },
+        headers={"Authorization": "Bearer t"},
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert body["amount_paise"] == 500_000 and body["gst_amount_paise"] == 0
+    assert create.await_args.kwargs["amount_paise"] == 500_000

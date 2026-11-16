@@ -307,7 +307,7 @@ export function listPaymentLinks() {
   return adminRequest<{ links: PaymentLink[] }>("/api/v1/admin/payment-links").then((result) => result.links)
 }
 
-export function createPaymentLink(input: { subscriptionCode: string; baseAmountPaise: number; credits: number; durationMonths: number; description: string; notifyCustomer: boolean }) {
+export function createPaymentLink(input: { subscriptionCode: string; baseAmountPaise: number; credits: number; durationMonths: number; description: string; notifyCustomer: boolean; includeGst: boolean }) {
   return adminRequest<PaymentLink>("/api/v1/admin/payment-links", {
     method: "POST",
     body: JSON.stringify({
@@ -317,6 +317,7 @@ export function createPaymentLink(input: { subscriptionCode: string; baseAmountP
       duration_months: input.durationMonths,
       description: input.description.trim(),
       notify_customer: input.notifyCustomer,
+      include_gst: input.includeGst,
     }),
   })
 }

@@ -42,6 +42,7 @@ export function AdminPaymentLinks() {
   const [target, setTarget] = useState<SetupTarget | null>(null)
   const [finding, setFinding] = useState(false)
   const [amount, setAmount] = useState("")
+  const [includeGst, setIncludeGst] = useState(true)
   const [credits, setCredits] = useState("")
   const [months, setMonths] = useState(12)
   const [description, setDescription] = useState("")
@@ -55,7 +56,7 @@ export function AdminPaymentLinks() {
   const [rowBusy, setRowBusy] = useState("")
 
   const basePaise = Math.round((Number.parseFloat(amount) || 0) * 100)
-  const gstPaise = gstFor(basePaise)
+  const gstPaise = includeGst ? gstFor(basePaise) : 0
   const totalPaise = basePaise + gstPaise
   const creditCount = Number.parseInt(credits, 10) || 0
   const autoDescription = useMemo(() => `ChanaX custom plan: ${creditCount || "—"} credits for invoices, quotations and payslips for ${months} month${months === 1 ? "" : "s"}${target?.workspace_name ? ` for ${target.workspace_name}` : ""}`, [creditCount, months, target])
@@ -99,7 +100,7 @@ export function AdminPaymentLinks() {
     setCreating(true)
     setError("")
     try {
-      const link = await createPaymentLink({ subscriptionCode: target.subscription_code, baseAmountPaise: basePaise, credits: creditCount, durationMonths: months, description: finalDescription, notifyCustomer: notify })
+      const link = await createPaymentLink({ subscriptionCode: target.subscription_code, baseAmountPaise: basePaise, credits: creditCount, durationMonths: months, description: finalDescription, notifyCustomer: notify, includeGst })
       setCreated(link)
       void loadLinks()
     } catch (caught) {
@@ -144,15 +145,20 @@ export function AdminPaymentLinks() {
 
         {target ? <form onSubmit={generate} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2"><Label htmlFor="link-amount">Price (₹, before GST)</Label><Input id="link-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^\d.]/g, ""))} placeholder="5000" /></div>
+            <div className="space-y-2"><Label htmlFor="link-amount">{includeGst ? "Price (₹, before GST)" : "Price (₹)"}</Label><Input id="link-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^\d.]/g, ""))} placeholder="5000" /></div>
             <div className="space-y-2"><Label htmlFor="link-credits">Credits</Label><Input id="link-credits" inputMode="numeric" value={credits} onChange={(event) => setCredits(event.target.value.replace(/\D/g, ""))} placeholder="1000" /><p className="text-xs text-muted-foreground">One balance for invoices, quotations and payslips. Fixed plans give 2 credits per expected document.</p></div>
             <div className="space-y-2"><Label htmlFor="link-months">Validity</Label><select id="link-months" value={months} onChange={(event) => setMonths(Number(event.target.value))} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">{MONTH_OPTIONS.map((value) => <option key={value} value={value}>{value} month{value === 1 ? "" : "s"}</option>)}</select></div>
           </div>
 
+          <label className="flex cursor-pointer items-start gap-3">
+            <input type="checkbox" checked={includeGst} onChange={(event) => setIncludeGst(event.target.checked)} className="mt-0.5 size-4 accent-primary" />
+            <span><span className="block text-sm font-medium">Add {GST_RATE_PERCENT}% GST to the link amount</span><span className="block text-xs text-muted-foreground">{includeGst ? `The customer pays the price plus ${GST_RATE_PERCENT}% GST.` : "The customer pays exactly the price entered, with no GST added."}</span></span>
+          </label>
+
           <dl className="grid gap-2 rounded-xl border p-4 text-sm sm:grid-cols-4">
             <div><dt className="text-xs text-muted-foreground">Price</dt><dd className="mt-1 font-medium tabular-nums">{rupees(basePaise)}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">GST ({GST_RATE_PERCENT}%)</dt><dd className="mt-1 font-medium tabular-nums">{rupees(gstPaise)}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Total payable</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{rupees(totalPaise)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">GST ({includeGst ? `${GST_RATE_PERCENT}%` : "not added"})</dt><dd className="mt-1 font-medium tabular-nums">{rupees(gstPaise)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">{includeGst ? "Amount after GST (charged on Razorpay)" : "Amount charged on Razorpay"}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{rupees(totalPaise)}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Price per credit</dt><dd className="mt-1 font-medium tabular-nums">{creditCount ? rupees(Math.round(basePaise / creditCount)) : "—"}</dd></div>
           </dl>
 
@@ -194,7 +200,7 @@ export function AdminPaymentLinks() {
             <TableBody>
               {links.length ? links.map((link) => <TableRow key={link.id}>
                 <TableCell><p className="font-medium">{link.workspace_name || link.customer_name || "—"}</p><p className="font-mono text-xs text-muted-foreground">{link.subscription_code}</p></TableCell>
-                <TableCell className="tabular-nums"><p className="font-medium">{rupees(link.amount_paise)}</p><p className="text-xs text-muted-foreground">{rupees(link.base_amount_paise)} + GST</p></TableCell>
+                <TableCell className="tabular-nums"><p className="font-medium">{rupees(link.amount_paise)}</p><p className="text-xs text-muted-foreground">{link.gst_amount_paise ? `${rupees(link.base_amount_paise)} + ${rupees(link.gst_amount_paise)} GST` : "No GST added"}</p></TableCell>
                 <TableCell className="tabular-nums">{link.credits.toLocaleString("en-IN")}<p className="text-xs text-muted-foreground">{link.duration_months} mo</p></TableCell>
                 <TableCell><Badge variant="outline" className={statusStyle[link.status]}>{statusLabel[link.status]}</Badge>{link.paid_at ? <p className="mt-1 text-xs text-muted-foreground">{new Date(link.paid_at).toLocaleDateString("en-IN")}</p> : null}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{new Date(link.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</TableCell>

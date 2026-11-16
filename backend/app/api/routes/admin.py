@@ -659,11 +659,17 @@ async def create_payment_link(
     authorization: Annotated[str, Header()],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PaymentLinkResponse:
-    """Custom quote: price + 18% GST; when paid, credits/months apply automatically."""
+    """Custom quote: price, plus 18% GST unless include_gst is off.
+
+    When paid, the credits and months apply automatically.
+    """
     gateway = SupabaseGateway(settings)
     razorpay = RazorpayClient(settings)
     link_id = str(uuid.uuid4())
-    base, gst, total = custom_quote_amounts(request.base_amount_paise)
+    if request.include_gst:
+        base, gst, total = custom_quote_amounts(request.base_amount_paise)
+    else:
+        base, gst, total = request.base_amount_paise, 0, request.base_amount_paise
     try:
         user = await _admin(gateway, authorization, settings)
         target = await gateway.admin_setup_target(request.subscription_code)

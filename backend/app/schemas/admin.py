@@ -189,6 +189,7 @@ class PaymentLinkCreateRequest(BaseModel):
     duration_months: int = Field(ge=1, le=36)
     description: str = Field(min_length=3, max_length=500)
     notify_customer: bool = True
+    include_gst: bool = True
 
 
 class PaymentLinkResponse(BaseModel):
