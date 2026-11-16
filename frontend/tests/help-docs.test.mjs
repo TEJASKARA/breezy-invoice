@@ -31,3 +31,17 @@ test("help reflects the single credit balance", () => {
   assert.ok(!/quotation credit/i.test(text))
   assert.ok(text.includes("400"))
 })
+
+test("every figure points to a real article, section and image file", async () => {
+  const { helpFigures } = await import("../src/lib/help-docs.ts")
+  const { existsSync } = await import("node:fs")
+  for (const [id, figures] of Object.entries(helpFigures)) {
+    const article = helpArticles.find((item) => item.id === id)
+    assert.ok(article, `article ${id}`)
+    for (const figure of figures) {
+      if (figure.section) assert.ok(article.sections.some((section) => section.heading === figure.section), `${id}: ${figure.section}`)
+      assert.ok(existsSync(new URL(`../public${figure.src}`, import.meta.url)), figure.src)
+      assert.ok(figure.alt.length > 10)
+    }
+  }
+})

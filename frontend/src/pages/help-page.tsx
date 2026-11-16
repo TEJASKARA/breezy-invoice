@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Info, Search, X } from "
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { helpArticles, helpGroups, searchHelp, type HelpArticle, type HelpBlock } from "@/lib/help-docs"
+import { helpArticles, helpFigures, helpGroups, searchHelp, type HelpArticle, type HelpBlock, type HelpFigure } from "@/lib/help-docs"
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
@@ -15,6 +15,15 @@ function Block({ block }: { block: HelpBlock }) {
   if (block.kind === "steps") return <ol className="space-y-2">{block.items.map((item, index) => <li key={item} className="flex gap-3 leading-7"><span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums">{index + 1}</span><span>{item}</span></li>)}</ol>
   if (block.kind === "list") return <ul className="list-disc space-y-1.5 pl-5 leading-7 marker:text-muted-foreground">{block.items.map((item) => <li key={item}>{item}</li>)}</ul>
   return <div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow>{block.head.map((cell) => <TableHead key={cell}>{cell}</TableHead>)}</TableRow></TableHeader><TableBody>{block.rows.map((row) => <TableRow key={row.join("|")}>{row.map((cell, index) => <TableCell key={`${index}-${cell}`} className={`whitespace-normal align-top ${index === 0 ? "font-medium" : ""}`}>{cell}</TableCell>)}</TableRow>)}</TableBody></Table></div>
+}
+
+function Figure({ figure }: { figure: HelpFigure }) {
+  return <figure className="space-y-2">
+    <a href={figure.src} target="_blank" rel="noreferrer" title="Open full size" className="block overflow-hidden rounded-lg border bg-muted/30 shadow-sm transition-shadow hover:shadow-md">
+      <img src={figure.src} alt={figure.alt} loading="lazy" decoding="async" className="w-full" />
+    </a>
+    <figcaption className="text-center text-xs text-muted-foreground">{figure.alt}</figcaption>
+  </figure>
 }
 
 function Sidebar({ current, onPick }: { current?: string; onPick?: () => void }) {
@@ -33,6 +42,9 @@ function ArticleView({ article }: { article: HelpArticle }) {
   const previous = helpArticles[index - 1]
   const next = helpArticles[index + 1]
   const headings = article.sections.filter((section) => section.heading).map((section) => section.heading as string)
+  const figures = helpFigures[article.id] || []
+  // A figure goes under the section it names; unnamed ones go under the first section.
+  const figuresFor = (heading: string | undefined, sectionIndex: number) => figures.filter((item) => item.section ? item.section === heading : sectionIndex === 0)
   return <div className="flex gap-10">
     <article className="min-w-0 flex-1 space-y-6">
       <header className="space-y-2 border-b pb-5">
@@ -44,6 +56,7 @@ function ArticleView({ article }: { article: HelpArticle }) {
       {article.sections.map((section, sectionIndex) => <section key={section.heading || sectionIndex} id={section.heading ? slug(section.heading) : undefined} className="scroll-mt-24 space-y-3">
         {section.heading ? <h2 className="text-xl font-semibold">{section.heading}</h2> : null}
         {section.blocks.map((block, blockIndex) => <Block key={blockIndex} block={block} />)}
+        {figuresFor(section.heading, sectionIndex).map((item) => <Figure key={item.src} figure={item} />)}
       </section>)}
       <footer className="grid gap-3 border-t pt-6 sm:grid-cols-2">
         {previous ? <Link to={`/help/${previous.id}`} className="rounded-lg border p-4 transition-colors hover:bg-muted/50"><span className="flex items-center gap-1 text-xs text-muted-foreground"><ArrowLeft className="size-3" />Previous</span><span className="mt-1 block font-medium">{previous.title}</span></Link> : <span />}

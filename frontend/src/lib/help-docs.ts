@@ -23,6 +23,36 @@ export type HelpArticle = {
   sections: HelpSection[]
 }
 
+/** A screenshot or diagram shown under a section (heading, or the first section when omitted). */
+export type HelpFigure = { src: string; alt: string; section?: string }
+
+const figure = (name: string, alt: string, section?: string): HelpFigure => ({ src: `/help/${name}.webp`, alt, section })
+
+/** Pictures from the ChanaX user guide, by article id. */
+export const helpFigures: Record<string, HelpFigure[]> = {
+  "sign-in": [figure("login", "Sign-in screen with one field for email or phone, and Continue with Google")],
+  "first-setup": [figure("getting-started-flow", "Getting started: sign in, choose role, set up business, add entities, create documents"), figure("choose-role", "How will you use ChanaX: CA / accounting firm, Founder / owner, or Company employee")],
+  overview: [figure("overview", "Overview page with counts and recent activity"), figure("product-tour", "Product tour welcome screen", "Take the tour again")],
+  entities: [figure("entity-switcher", "Company switcher in the navbar with Add entity and Manage entities", "Switch the working company"), figure("add-company", "Add a company form with GSTIN verification, invoice numbering and HSN/SAC codes", "Add a company")],
+  customers: [figure("customers", "Customers page with the Add customer manually form", "Add a customer")],
+  "create-invoice": [figure("invoice-flow", "Creating a GST invoice: pick entity, pick customer, add line items, review totals, generate"), figure("invoices-page", "Invoices page with New invoice and the invoice register"), figure("invoice-preview", "Invoice preview with Share and Download PDF", "Statuses"), figure("invoice-register", "Invoice register search and filters", "Find an invoice")],
+  "correct-invoice": [figure("correction-flow", "Correcting an issued invoice: open invoice, choose method, give reason, save, replacement")],
+  quotations: [figure("quotation-register", "Quotation register with Convert to invoice", "Convert to invoice")],
+  "share-documents": [figure("share-invoice", "Share invoice dialog with Email and WhatsApp"), figure("share-quotation", "Share quotation dialog"), figure("share-letter", "Share offer letter on WhatsApp")],
+  employees: [figure("add-employee", "Add employee form", "Add one employee"), figure("bulk-employees", "Bulk add employees with the Excel template", "Import many"), figure("salary-components", "Earnings and deductions on an employee's salary", "Salary components")],
+  payslips: [figure("create-payslip", "Create individual payslip with salary month and attendance")],
+  attendance: [figure("attendance-to-payslips", "From attendance to payslips: add employees, set leave policy, mark attendance, review deductions, generate", "Generate payslips from attendance"), figure("attendance-register", "Employee attendance register with LOP deduction and Preview payslips", "Generate payslips from attendance")],
+  "employee-letters": [figure("letter-history", "Employee letter history with download, share and email", "Issue a letter")],
+  expenses: [figure("add-expense", "Add expense form with category, amount and bill attachment"), figure("expense-summary", "Expense summary with invoice, payroll and other expenses"), figure("expense-tabs", "Invoice, payroll and other expense tabs")],
+  "data-export": [figure("data-export", "Data Export: choose categories, company and dates, download ZIP")],
+  tally: [figure("tally-flow", "Exporting to Tally: settings, map ledgers, date range, download XML, import"), figure("tally-settings", "Tally company and ledger settings"), figure("tally-customer-mapping", "Customer ledger mapping"), figure("tally-employee-mapping", "Employee payroll ledger mapping"), figure("tally-download", "Download invoice and payslip Tally XML")],
+  templates: [figure("templates", "Templates page with template choices and live preview")],
+  team: [figure("team-access", "Add a team member with role and page access", "Invite a team member"), figure("team-members", "Team member list with Edit access", "Invite a team member")],
+  "ca-access": [figure("ca-flow", "How a CA gets access: CA signs up, requests access, owner approves, seat is used, CA works", "Business owners: approve a CA"), figure("ca-activity-log", "CA access and activity log", "Business owners: approve a CA")],
+  "delete-account": [figure("delete-account", "Delete this ChanaX account")],
+  support: [figure("feedback", "Share feedback dialog")],
+}
+
 export const helpGroups = [
   "Getting started",
   "Companies and customers",
@@ -70,7 +100,7 @@ export const helpArticles: HelpArticle[] = [
     keywords: ["onboarding", "setup", "gstin", "verify", "business", "ca", "industry", "numbering", "first login"],
     sections: [
       { blocks: [{ kind: "steps", items: [
-        "Choose how you will use ChanaX: Business (your own invoices and payroll) or CA (an accounting firm with client companies).",
+        "Choose how you will use ChanaX: Founder / owner (your own company), CA / accounting firm (client companies), or Company employee (access given by your company's admin).",
         "Answer Does your business have a GSTIN? Yes: enter the 15-character GSTIN and click Verify; ChanaX fills the legal name, trade name, PAN and address. No: enter your business name, optional PAN and address.",
         "Choose your industry.",
         "Set the employee leave policy: paid leave days per month or per year.",
