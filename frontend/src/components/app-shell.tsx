@@ -9,6 +9,7 @@ import {
   FileSignature,
   FilePlus2,
   FileOutput,
+  BookOpen,
   CircleHelp,
   Coins,
   LayoutDashboard,
@@ -324,6 +325,10 @@ function WorkspaceShell() {
                 <DropdownMenuItem onClick={() => setTourOpen(true)}>
                   <CircleHelp />
                   Product tour
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/help")}>
+                  <BookOpen />
+                  Help & guides
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/profile")}>
                   <UserRound />

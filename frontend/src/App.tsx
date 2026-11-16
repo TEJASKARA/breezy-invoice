@@ -29,6 +29,7 @@ const PricingPage = lazy(() => import("@/pages/pricing-page").then((module) => (
 const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then((module) => ({ default: module.PlatformAdminPage })))
 const CaPortalPage = lazy(() => import("@/pages/ca-portal-page").then((module) => ({ default: module.CaPortalPage })))
 const ProfilePage = lazy(() => import("@/pages/profile-page").then((module) => ({ default: module.ProfilePage })))
+const HelpPage = lazy(() => import("@/pages/help-page").then((module) => ({ default: module.HelpPage })))
 const CaInvitationPage = lazy(() => import("@/pages/ca-invitation-page").then((module) => ({ default: module.CaInvitationPage })))
 const TermsPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.TermsPage })))
 const PrivacyPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.PrivacyPage })))
@@ -109,6 +110,8 @@ function App() {
           <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />
           <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/help/:articleId" element={<HelpPage />} />
           <Route path="/platform-admin" element={<PlatformAdminPage />} />
         </Route>
       </Route>
