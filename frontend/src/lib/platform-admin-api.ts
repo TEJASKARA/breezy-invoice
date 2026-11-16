@@ -47,7 +47,7 @@ async function adminRequest<T>(path: string, init: RequestInit = {}): Promise<T>
       : String(raw || "")
     // Platform admins are developers: show the real reason, not sanitised customer copy.
     customerErrorMessage({ message: detail, status: response.status }, "The platform administration request failed.")
-    throw new Error(`${detail || "The platform administration request failed."} (HTTP ${response.status})`)
+    throw new Error(detail || `The platform administration request failed (HTTP ${response.status}).`)
   }
   return payload as T
 }
