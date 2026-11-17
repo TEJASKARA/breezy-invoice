@@ -4,6 +4,7 @@ import { Building2, Pencil, Plus, Trash2, X } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { EntityTransferForm, EntityTransferRequests } from "@/components/entity-transfers"
+import { EntityGstinDialog } from "@/components/entity-gstin-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,6 +54,7 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
   const continuesSignupSequence = companies.length === 0 && setup?.invoiceNumbering?.mode === "continue"
   const { user, can, workspace, membership, loading: accessLoading } = useWorkspaceAccess()
   const [transferCompany, setTransferCompany] = useState<Company | null>(null)
+  const [gstinCompany, setGstinCompany] = useState<Company | null>(null)
   const canManage = !accessLoading && !dataLoading && membership?.workspace_id === workspace?.id && can("entities.manage")
   const [showForm, setShowForm] = useState(initialAdd)
   const [form, setForm] = useState(blankForm)
@@ -400,13 +402,13 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
                       <div><p className="font-medium">{company.companyName}</p><p className="max-w-56 truncate text-xs text-muted-foreground">{company.billingAddress || "Address pending"}</p></div>
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{company.gstin}</TableCell>
+                  <TableCell className="font-mono text-xs">{company.gstin || <span className="font-sans text-muted-foreground">No GSTIN</span>}</TableCell>
                   <TableCell className="hidden font-mono text-xs md:table-cell">{company.pan}</TableCell>
                   <TableCell className="hidden lg:table-cell"><div className="flex max-w-64 flex-wrap gap-1">{entityHsnCodes(company).length ? entityHsnCodes(company).map((code, index) => <Badge key={code} variant={index === 0 ? "secondary" : "outline"}>{code}</Badge>) : "—"}</div></TableCell>
                   <TableCell><Badge variant="outline">{company.transferredAt ? "Moved · Read-only" : "Active"}</Badge></TableCell>
                   <TableCell className="text-right">
                     {!canManage || company.transferredAt ? <span className="text-xs text-muted-foreground">View only</span> : (
-                      <span className="inline-flex flex-wrap justify-end gap-1">{membership?.role === "owner" ? <Button size="sm" variant="outline" onClick={() => setTransferCompany(company)}>Move to separate account</Button> : null}<Button size="icon" variant="ghost" aria-label={`Manage HSN/SAC codes for ${company.companyName}`} onClick={() => openHsnManager(company)}><Pencil /></Button>{membership?.role === "owner" ? <Button size="icon" variant="ghost" disabled={deleting} aria-label={`Delete ${company.companyName} and its data`} onClick={() => { setPendingDelete(company.id); setDeleteConfirmation(""); window.setTimeout(() => document.getElementById("delete-entity-heading")?.scrollIntoView({ block: "center", behavior: "smooth" }), 0) }}><Trash2 /></Button> : null}</span>
+                      <span className="inline-flex flex-wrap justify-end gap-1">{!company.gstin ? <Button size="sm" variant="outline" onClick={() => setGstinCompany(company)}>Add GSTIN</Button> : null}{membership?.role === "owner" ? <Button size="sm" variant="outline" onClick={() => setTransferCompany(company)}>Move to separate account</Button> : null}<Button size="icon" variant="ghost" aria-label={`Manage HSN/SAC codes for ${company.companyName}`} onClick={() => openHsnManager(company)}><Pencil /></Button>{membership?.role === "owner" ? <Button size="icon" variant="ghost" disabled={deleting} aria-label={`Delete ${company.companyName} and its data`} onClick={() => { setPendingDelete(company.id); setDeleteConfirmation(""); window.setTimeout(() => document.getElementById("delete-entity-heading")?.scrollIntoView({ block: "center", behavior: "smooth" }), 0) }}><Trash2 /></Button> : null}</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -417,6 +419,7 @@ export function EntitiesPage({ initialAdd = false, onCreated }: { initialAdd?: b
           </Table>
         </CardContent>
       </Card>
+      {gstinCompany ? <EntityGstinDialog company={gstinCompany} onClose={() => setGstinCompany(null)} onSaved={(message) => { setNoticeIsError(false); setNotice(message) }} /> : null}
     </div>
   )
 }

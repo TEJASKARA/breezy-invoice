@@ -138,7 +138,7 @@ export const helpArticles: HelpArticle[] = [
     group: "Companies and customers",
     title: "Add and switch companies (entities)",
     summary: "An entity is a company that issues documents. One workspace can hold several.",
-    keywords: ["entity", "company", "add company", "switch company", "gstin", "billing address", "premises", "numbering", "financial year", "reset"],
+    keywords: ["entity", "company", "add company", "switch company", "gstin", "add gstin later", "missing gstin", "billing address", "premises", "numbering", "financial year", "reset"],
     sections: [
       { heading: "Switch the working company", blocks: [{ kind: "p", text: "Use the company switcher at the top left of the navbar. Customers, invoices, employees and attendance show only the selected company." }] },
       { heading: "Add a company", blocks: [{ kind: "steps", items: [
@@ -148,6 +148,7 @@ export const helpArticles: HelpArticle[] = [
         "Set invoice numbering: starting number, and whether it resets each financial year.",
         "Click Save company.",
       ] }] },
+      { heading: "Add a GSTIN later", blocks: [{ kind: "p", text: "If a company was saved without a GSTIN, open Workspace settings → Companies (entities), or Manage entities, and click Add GSTIN. Verify it, choose whether to use the GST-registered name and address, and save. Existing invoices are not changed." }] },
       { heading: "Rules", blocks: [{ kind: "list", items: [
         "A GSTIN can be registered in only one ChanaX workspace.",
         "The PAN must match the PAN inside the GSTIN.",
@@ -292,14 +293,15 @@ export const helpArticles: HelpArticle[] = [
     summary: "Send a quotation, then convert it into a tax invoice when the sale is confirmed.",
     path: "/proformas",
     pathLabel: "Open Quotations",
-    keywords: ["quotation", "proforma", "estimate", "quote", "convert to invoice", "valid until"],
+    keywords: ["quotation", "proforma", "estimate", "quote", "convert to invoice", "valid until", "without gst", "include gst", "igst"],
     sections: [
       { blocks: [{ kind: "p", text: "A quotation is not a tax invoice; the PDF says so clearly." }] },
       { heading: "Create a quotation", blocks: [{ kind: "steps", items: [
         "Open Quotations and click New quotation / proforma.",
         "Choose the issuing company and customer.",
         "Set Issue date and Valid until.",
-        "Add description lines with taxable amounts. Adding IGST clears CGST/SGST, and the other way round.",
+        "Tick or untick Include GST amounts. With GST, choose CGST + SGST or IGST for the whole quotation.",
+        "Add description lines with taxable amounts and a GST rate per line.",
         "Click Generate quotation. 1 credit is used.",
       ] }] },
       { heading: "Convert to invoice", blocks: [{ kind: "p", text: "Open the quotation in the register and click Convert to invoice. Review and generate; this uses 1 more credit. The quotation shows Converted." }] },

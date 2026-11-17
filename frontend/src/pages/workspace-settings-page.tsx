@@ -35,6 +35,9 @@ import { sendWorkspaceInvitation } from "@/lib/team-api"
 import { leaveYearMonthNames } from "@/lib/payslip-calculations"
 import { normalizeSalarySettings } from "@/lib/salary-structure"
 import { SalaryStructureEditor } from "@/components/salary-structure-editor"
+import { EntityGstinDialog } from "@/components/entity-gstin-dialog"
+import { useEntitySelection } from "@/lib/entity-selection"
+import type { Company } from "@/lib/mvp-store"
 
 type EditableRole = Exclude<WorkspaceRole, "owner">
 const editableRoles: { value: EditableRole; label: string }[] = [
@@ -67,7 +70,9 @@ function PermissionChecklist({ selected, onChange, disabled = false }: { selecte
 }
 
 export function WorkspaceSettingsPage() {
-  const { setup, completeSetup } = useMvpStore()
+  const { setup, completeSetup, companies } = useMvpStore()
+  const { openEntityManager } = useEntitySelection()
+  const [gstinCompany, setGstinCompany] = useState<Company | null>(null)
   const { user, workspace, membership, subscription, creditAccount, can, refresh } = useWorkspaceAccess()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
@@ -341,6 +346,22 @@ export function WorkspaceSettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Companies (entities)</CardTitle><CardDescription>Each company's GST number prints on its invoices and quotations. Add one here if it was skipped when the company was created.</CardDescription></CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader><TableRow><TableHead>Company</TableHead><TableHead>GSTIN</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+            <TableBody>{companies.length ? companies.map((company) => <TableRow key={company.id}>
+              <TableCell className="font-medium">{company.companyName}</TableCell>
+              <TableCell className="font-mono text-xs">{company.gstin || <span className="font-sans text-muted-foreground">No GSTIN</span>}</TableCell>
+              <TableCell className="text-right">{!company.gstin && can("entities.manage") && !company.transferredAt ? <Button size="sm" variant="outline" onClick={() => setGstinCompany(company)}>Add GSTIN</Button> : <span className="text-xs text-muted-foreground">{company.gstin ? "Saved" : "View only"}</span>}</TableCell>
+            </TableRow>) : <TableRow><TableCell colSpan={3} className="h-20 text-center text-muted-foreground">No companies yet.</TableCell></TableRow>}</TableBody>
+          </Table>
+          {can("entities.read") ? <div className="border-t p-4"><Button size="sm" variant="ghost" onClick={() => openEntityManager("manage")}>Manage entities</Button></div> : null}
+        </CardContent>
+      </Card>
+      {gstinCompany ? <EntityGstinDialog company={gstinCompany} onClose={() => setGstinCompany(null)} onSaved={showSuccess} /> : null}
 
 
       {isOwner ? <Card className="ring-red-200 dark:ring-red-900"><CardHeader><CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-300"><AlertTriangle className="size-4" />Account and data</CardTitle><CardDescription>Deletion has a 30-day recovery period. It affects this entire workspace and every team member.</CardDescription></CardHeader><CardContent>{deletionRequest ? <div className="flex flex-col gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold">Deletion scheduled</p><p className="mt-1 text-sm">Permanent deletion is scheduled after {readableDate(deletionRequest.purge_after)}. Credits are frozen until this request is cancelled.</p></div><Button variant="outline" disabled={saving} onClick={() => void cancelDeletion()}>Cancel deletion</Button></div> : <div className="flex flex-col gap-4 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-medium">Delete this ChanaX account</p><p className="mt-1 text-sm text-muted-foreground">Access is disabled immediately. After 30 days, workspace data is deleted or anonymised and unused credits are permanently forfeited.</p><p className="mt-1 text-xs text-muted-foreground">Only records required for tax, fraud prevention, security or accounting may be retained. Encrypted backups expire on their normal rotation schedule.</p></div><Button variant="destructive" onClick={() => setDeletionStage(1)}><Trash2 />Delete account</Button></div>}</CardContent></Card> : null}
