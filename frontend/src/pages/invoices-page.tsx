@@ -207,7 +207,6 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const individualCustomers = customers.filter((customer) => customer.entityId === selectedEntity?.id).sort(favouriteFirst)
   const bulkCustomers = customers.filter((customer) => customer.entityId === selectedBulkEntity?.id)
   const visibleCustomers = customers.filter((customer) => customer.entityId === customerEntityId).sort(favouriteFirst)
-  const customerMasterEntity = companies.find((company) => company.id === customerEntityId)
   const isGstInvoice = includesGst
   const normalizedInvoiceSearch = invoiceSearch.trim().toLowerCase()
   const minimumInvoiceAmount = invoiceAmountMin === "" ? null : Number(invoiceAmountMin)
@@ -985,27 +984,27 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     }
     try {
       const rows = await readSpreadsheet(file)
-      const requiresGstDetails = customerMasterEntity?.hasGstin ?? Boolean(customerMasterEntity?.gstin)
+      // GSTIN is optional: customers without one are B2C. With a GSTIN, a billing address is required.
       const imported = rows.map((row) => {
         const gstin = pickCell(row, "GSTIN").toUpperCase()
-        const pan = pickCell(row, "PAN").toUpperCase()
+        const pan = pickCell(row, "PAN").toUpperCase() || (gstinPattern.test(gstin) ? gstin.slice(2, 12) : "")
         const hsnSac = pickCell(row, "HSN/SAC", "HSN SAC")
+        const billingAddress = pickCell(row, "Billing Address")
         return {
           entityId: customerEntityId,
-          companyName: pickCell(row, "Company Name"),
-          billingAddress: pickCell(row, "Billing Address"),
+          companyName: pickCell(row, "Company / Customer Name", "Company Name", "Customer Name", "Name"),
+          billingAddress,
           gstin,
           pan,
-          premisesAddress: pickCell(row, "Premises Address"),
+          hasGstin: Boolean(gstin),
+          premisesAddress: pickCell(row, "Premises Address") || billingAddress,
           hsnSac,
-          valid: requiresGstDetails
-            ? gstinPattern.test(gstin) && panPattern.test(pan) && gstin.slice(2, 12) === pan && hsnSacPattern.test(hsnSac)
-            : (!gstin || gstinPattern.test(gstin)) && (!pan || panPattern.test(pan)) && (!gstin || !pan || gstin.slice(2, 12) === pan) && (!hsnSac || hsnSacPattern.test(hsnSac)),
+          valid: (!gstin || gstinPattern.test(gstin) && Boolean(billingAddress)) && (!pan || panPattern.test(pan)) && (!gstin || !pan || gstin.slice(2, 12) === pan) && (!hsnSac || hsnSacPattern.test(hsnSac)),
         }
       }).filter((row) => row.companyName && row.valid)
         .map(({ valid: _valid, ...customer }) => customer)
       if (!imported.length) {
-        showNotice("No valid invoice customers found. Check the headings and validate GSTIN, PAN, and HSN/SAC.", true)
+        showNotice("No valid customers found. Each row needs a company or customer name; rows with a GSTIN also need a billing address. Check GSTIN, PAN and HSN/SAC formats.", true)
         return
       }
       setCustomerPreview(imported)
@@ -1034,24 +1033,30 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       pan: manualCustomer.pan.trim().toUpperCase(),
       hsnSac: manualCustomer.hsnSac.trim(),
     }
-    if (!customer.companyName || !customer.billingAddress || !customer.premisesAddress) {
-      setManualCustomerError("Company name, billing address, and premises address are required.")
+    // GSTIN is optional (B2C customers). With a GSTIN, the billing address is required and PAN comes from it.
+    if (!customer.companyName) {
+      setManualCustomerError("Enter the company or customer name.")
       return
     }
-    const requiresGstDetails = customerMasterEntity?.hasGstin ?? Boolean(customerMasterEntity?.gstin)
-    if (requiresGstDetails && !gstinPattern.test(customer.gstin) || !requiresGstDetails && customer.gstin && !gstinPattern.test(customer.gstin)) {
-      setManualCustomerError("Enter a valid 15-character GSTIN.")
+    if (customer.gstin && !gstinPattern.test(customer.gstin)) {
+      setManualCustomerError("Enter a valid 15-character GSTIN, or leave it blank.")
       return
     }
-    if (requiresGstDetails && !panPattern.test(customer.pan) || !requiresGstDetails && customer.pan && !panPattern.test(customer.pan)) {
-      setManualCustomerError("Enter a valid 10-character PAN.")
+    if (customer.gstin && !customer.billingAddress) {
+      setManualCustomerError("Enter the billing address for a customer with a GSTIN.")
+      return
+    }
+    if (!customer.pan && customer.gstin) customer.pan = customer.gstin.slice(2, 12)
+    if (!customer.premisesAddress) customer.premisesAddress = customer.billingAddress
+    if (customer.pan && !panPattern.test(customer.pan)) {
+      setManualCustomerError("Enter a valid 10-character PAN, or leave it blank.")
       return
     }
     if (customer.gstin && customer.pan && customer.gstin.slice(2, 12) !== customer.pan) {
       setManualCustomerError("The PAN does not match the PAN embedded in the GSTIN.")
       return
     }
-    if (requiresGstDetails && !hsnSacPattern.test(customer.hsnSac) || !requiresGstDetails && customer.hsnSac && !hsnSacPattern.test(customer.hsnSac)) {
+    if (customer.hsnSac && !hsnSacPattern.test(customer.hsnSac)) {
       setManualCustomerError("HSN/SAC must contain 4, 6, or 8 digits.")
       return
     }
@@ -1063,7 +1068,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       return
     }
     try {
-      await addCustomers([{ ...customer, entityId: customerEntityId }])
+      await addCustomers([{ ...customer, hasGstin: Boolean(customer.gstin), entityId: customerEntityId }])
       setManualCustomer(emptyManualCustomer())
       setManualCustomerError("")
       setShowManualCustomer(false)
@@ -1235,12 +1240,12 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
           <CardHeader>
             <CardTitle>Invoice customer import preview</CardTitle>
             <CardDescription>
-              {customerPreview.length} customers ready for {companies.find((company) => company.id === customerEntityId)?.companyName || "the selected entity"}. Headings: Company Name, Billing Address, GSTIN, PAN, Premises Address, HSN/SAC.
+              {customerPreview.length} customers ready for {companies.find((company) => company.id === customerEntityId)?.companyName || "the selected entity"}. Headings: Company / Customer Name, Billing Address, GSTIN, PAN, Premises Address, HSN/SAC. Only the name is required; rows with a GSTIN also need a billing address.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
-              <TableHeader><TableRow><TableHead>Company</TableHead><TableHead>GSTIN</TableHead><TableHead>PAN</TableHead><TableHead>HSN/SAC</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Company / customer name</TableHead><TableHead>GSTIN</TableHead><TableHead>PAN</TableHead><TableHead>HSN/SAC</TableHead></TableRow></TableHeader>
               <TableBody>{customerPreview.slice(0, 10).map((customer, index) => <TableRow key={`${customer.gstin}-${index}`}><TableCell>{customer.companyName}</TableCell><TableCell className="font-mono text-xs">{customer.gstin}</TableCell><TableCell className="font-mono text-xs">{customer.pan || "Auto-derived"}</TableCell><TableCell>{customer.hsnSac || "—"}</TableCell></TableRow>)}</TableBody>
             </Table>
             <div className="mt-4 flex justify-end gap-2">
@@ -1287,11 +1292,11 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-name">Company name</Label>
-                  <Input id="manual-customer-name" value={manualCustomer.companyName} onChange={(event) => updateManualCustomer("companyName", event.target.value)} placeholder="ABC Customer Private Limited" />
+                  <Label htmlFor="manual-customer-name">Company / customer name</Label>
+                  <Input id="manual-customer-name" value={manualCustomer.companyName} onChange={(event) => updateManualCustomer("companyName", event.target.value)} placeholder="ABC Private Limited or Ravi Kumar" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-gstin">GSTIN {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
+                  <Label htmlFor="manual-customer-gstin">GSTIN (optional)</Label>
                   <div className="flex gap-2">
                     <Input id="manual-customer-gstin" value={manualCustomer.gstin} onChange={(event) => updateManualCustomer("gstin", event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={15} placeholder="36ABCDE1234F1Z5" className="font-mono uppercase" />
                     <Button type="button" variant="outline" disabled={manualCustomerVerifying || manualCustomer.gstin.length !== 15} onClick={() => void verifyManualCustomerGstin()}>
@@ -1300,19 +1305,19 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-pan">PAN {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
+                  <Label htmlFor="manual-customer-pan">PAN (optional)</Label>
                   <Input id="manual-customer-pan" value={manualCustomer.pan} onChange={(event) => updateManualCustomer("pan", event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={10} placeholder="ABCDE1234F" className="font-mono uppercase" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="manual-customer-hsn">Default HSN/SAC {customerMasterEntity?.hasGstin === false ? "(optional)" : ""}</Label>
+                  <Label htmlFor="manual-customer-hsn">Default HSN/SAC (optional)</Label>
                   <Input id="manual-customer-hsn" value={manualCustomer.hsnSac} onChange={(event) => updateManualCustomer("hsnSac", event.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={8} placeholder="998222" />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="manual-customer-billing-address">Billing address</Label>
+                  <Label htmlFor="manual-customer-billing-address">Billing address{manualCustomer.gstin ? "" : " (optional)"}</Label>
                   <Input id="manual-customer-billing-address" value={manualCustomer.billingAddress} onChange={(event) => updateManualCustomer("billingAddress", event.target.value)} placeholder="Billing address shown on the invoice" />
                 </div>
                 <div className="space-y-2 md:col-span-2 lg:col-span-3">
-                  <Label htmlFor="manual-customer-premises-address">Premises address</Label>
+                  <Label htmlFor="manual-customer-premises-address">Premises address (optional)</Label>
                   <Input id="manual-customer-premises-address" value={manualCustomer.premisesAddress} onChange={(event) => updateManualCustomer("premisesAddress", event.target.value)} placeholder="Registered or principal place of business" />
                 </div>
               </div>
@@ -1334,7 +1339,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
           )}
           {customerEntityId && <p className="text-sm text-muted-foreground">{visibleCustomers.length} customer{visibleCustomers.length === 1 ? "" : "s"} saved for {companies.find((company) => company.id === customerEntityId)?.companyName}.</p>}
           <Table>
-            <TableHeader><TableRow><TableHead>Company</TableHead><TableHead>GSTIN</TableHead><TableHead className="hidden md:table-cell">PAN</TableHead><TableHead className="hidden lg:table-cell">Billing address</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Company / customer name</TableHead><TableHead>GSTIN</TableHead><TableHead className="hidden md:table-cell">PAN</TableHead><TableHead className="hidden lg:table-cell">Billing address</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {visibleCustomers.length ? visibleCustomers.map((customer) => (
                 <TableRow key={customer.id}>

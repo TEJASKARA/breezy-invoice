@@ -183,7 +183,7 @@ export const helpArticles: HelpArticle[] = [
       { heading: "Add a customer", blocks: [{ kind: "steps", items: [
         "Select the right company in the navbar.",
         "Open Customers and click Add customer manually.",
-        "Enter the company name, GSTIN, PAN, HSN/SAC, billing address and premises address. Click Verify next to the GSTIN to fill details automatically.",
+        "Enter the company or customer name. GSTIN, PAN, HSN/SAC and addresses are optional; with a GSTIN, add the billing address. Click Verify next to the GSTIN to fill details automatically.",
         "Click Save customer.",
       ] }] },
       { heading: "B2B and B2C customers", blocks: [
