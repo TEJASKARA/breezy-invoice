@@ -36,10 +36,28 @@ function isMissingOptionalTable(error: { code?: string; message: string } | null
 
 export type WorkspaceLoadResult = Partial<MvpState> & { workspaceId: string; hasData: boolean }
 
+/** All of a workspace's data, fetched in parallel. */
+function loadWorkspaceRows(db: ReturnType<typeof client>, workspaceId: string) {
+  return Promise.all([
+    db.from("breezy_workspace_settings").select("setup, template").eq("workspace_id", workspaceId).maybeSingle(),
+    db.from("breezy_entities").select("id, payload, transferred_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_customers").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_invoices").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_proformas").select("id, entity_id, customer_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_employees").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_payslips").select("id, entity_id, employee_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_expenses").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_employee_letters").select("id, entity_id, employee_id, letter_type, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+  ])
+}
+
 export async function loadWorkspace(userId: string, preferredWorkspaceId?: string | null): Promise<WorkspaceLoadResult | null> {
   const db = client()
   let membershipQuery = db.from("breezy_workspace_members").select("workspace_id, role").eq("user_id", userId).eq("status", "active")
   if (preferredWorkspaceId) membershipQuery = membershipQuery.eq("workspace_id", preferredWorkspaceId)
+  // With a known workspace, start the data queries alongside the membership
+  // check; row-level security already limits them to workspaces the user belongs to.
+  const preloaded = preferredWorkspaceId ? loadWorkspaceRows(db, preferredWorkspaceId) : null
   let membershipResult = await membershipQuery.order("created_at").limit(1).maybeSingle()
   throwIfError(membershipResult.error)
   if (!membershipResult.data?.workspace_id) {
@@ -56,17 +74,7 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
   }
   const workspaceId = String(membershipResult.data?.workspace_id || "")
   if (!workspaceId) return null
-  const [settingsResult, entitiesResult, customersResult, invoicesResult, proformasResult, employeesResult, payslipsResult, expensesResult, lettersResult] = await Promise.all([
-    db.from("breezy_workspace_settings").select("setup, template").eq("workspace_id", workspaceId).maybeSingle(),
-    db.from("breezy_entities").select("id, payload, transferred_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_customers").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_invoices").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_proformas").select("id, entity_id, customer_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_employees").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_payslips").select("id, entity_id, employee_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_expenses").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_employee_letters").select("id, entity_id, employee_id, letter_type, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-  ])
+  const [settingsResult, entitiesResult, customersResult, invoicesResult, proformasResult, employeesResult, payslipsResult, expensesResult, lettersResult] = await (preloaded && workspaceId === preferredWorkspaceId ? preloaded : loadWorkspaceRows(db, workspaceId))
   ;[settingsResult, entitiesResult, customersResult, invoicesResult, employeesResult, payslipsResult].forEach((result) => throwIfError(result.error))
   if (!isMissingOptionalTable(proformasResult.error)) throwIfError(proformasResult.error)
   if (!isMissingOptionalTable(lettersResult.error)) throwIfError(lettersResult.error)

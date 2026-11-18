@@ -56,6 +56,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   const [error, setError] = useState<string | null>(null)
   const loadGuard = useRef(createWorkspaceLoadGuard())
   const identity = useRef<string | null>(null)
+  const loadedWorkspaceId = useRef<string | null>(null)
 
   const hydrate = useCallback(async (nextUser: User | null, preferredWorkspaceId?: string | null) => {
     const isCurrent = loadGuard.current.begin()
@@ -63,6 +64,7 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       identity.current = nextUser?.id ?? null
       setWorkspace(null); setMembership(null); setSubscription(null)
       setCreditAccount(null); setWorkspaceOptions([]); setUserProfile(null)
+      loadedWorkspaceId.current = null
     }
     setUser(nextUser)
     if (!nextUser) {
@@ -77,7 +79,11 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setLoading(false)
       return
     }
-    setLoading(true)
+    // A refresh after saving (same user, same workspace) updates credits and
+    // access in the background. Showing the loading screen here would unmount
+    // the page the user is working on and look like a full page reload.
+    const background = Boolean(loadedWorkspaceId.current) && (!preferredWorkspaceId || preferredWorkspaceId === loadedWorkspaceId.current)
+    if (!background) setLoading(true)
     try {
       const storageKey = `chanax-active-workspace:${nextUser.id}`
       let preferred = preferredWorkspaceId
@@ -92,10 +98,11 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
       setCreditAccount(next.creditAccount)
       setWorkspaceOptions(next.workspaceOptions)
       setUserProfile(next.userProfile)
+      loadedWorkspaceId.current = next.workspace?.id ?? null
       if (next.workspace?.id) { try { window.localStorage.setItem(storageKey, next.workspace.id) } catch { /* The selected workspace remains valid in memory. */ } }
       setError(null)
     } catch (accessError) {
-      if (!isCurrent()) return
+      if (!isCurrent() || background) return
       setError(customerErrorMessage(accessError, "Workspace access could not be loaded."))
     } finally {
       if (isCurrent()) setLoading(false)
@@ -104,7 +111,9 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!supabase) { setLoading(false); setError("Your account connection is temporarily unavailable. Please try again later."); return }
-    void supabase.auth.getUser().then(({ data }) => hydrate(data.user))
+    // The stored session is read locally (no network round trip); every data
+    // request is still checked by the database's row-level security.
+    void supabase.auth.getSession().then(({ data }) => hydrate(data.session?.user ?? null))
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       // Token refreshes commonly occur when the browser regains focus. They do
       // not change workspace access, and rehydrating here unmounts the page.

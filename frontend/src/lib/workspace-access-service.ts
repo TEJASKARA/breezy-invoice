@@ -101,11 +101,17 @@ export function allowsWorkspacePermission(membership: WorkspaceMembership | null
 
 export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: string | null) {
   if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
-  const profileResult = await supabase
-    .from("profiles")
-    .select("id, email, full_name, account_type, ca_firm_name")
-    .eq("id", user.id)
-    .maybeSingle()
+  // Profile and memberships don't depend on each other: load them together.
+  const membershipsQuery = () => supabase!
+    .from("breezy_workspace_members")
+    .select("id, workspace_id, user_id, role, permissions, status, joined_at")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .order("created_at", { ascending: true })
+  const [profileResult, firstMembershipsResult] = await Promise.all([
+    supabase.from("profiles").select("id, email, full_name, account_type, ca_firm_name").eq("id", user.id).maybeSingle(),
+    membershipsQuery(),
+  ])
   if (profileResult.error) throw new Error(customerErrorMessage(profileResult.error))
   const userProfile = (profileResult.data || {
     id: user.id,
@@ -114,34 +120,26 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     account_type: "unselected",
     ca_firm_name: null,
   }) as UserWorkspaceProfile
-  let membershipsResult = await supabase
-    .from("breezy_workspace_members")
-    .select("id, workspace_id, user_id, role, permissions, status, joined_at")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
+  let membershipsResult = firstMembershipsResult
   if (membershipsResult.error) throw new Error(customerErrorMessage(membershipsResult.error))
   if (!membershipsResult.data?.length && userProfile.account_type !== "ca") {
     const ensured = await supabase.rpc("breezy_ensure_my_workspace")
     if (ensured.error) {
       throw new Error(friendlyWorkspaceError(ensured.error))
     }
-    membershipsResult = await supabase
-      .from("breezy_workspace_members")
-      .select("id, workspace_id, user_id, role, permissions, status, joined_at")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: true })
+    membershipsResult = await membershipsQuery()
     if (membershipsResult.error) throw new Error(customerErrorMessage(membershipsResult.error))
   }
   const memberships = (membershipsResult.data || []) as WorkspaceMembership[]
   if (!memberships.length) return { membership: null, workspace: null, subscription: null, creditAccount: null, workspaceOptions: [], userProfile }
   const membership = selectWorkspaceMembership(memberships, preferredWorkspaceId)!
 
-  const workspacesResult = await supabase
-    .from("breezy_workspaces")
-    .select("id, owner_user_id, name, subscription_code, status, created_at")
-    .in("id", memberships.map((item) => item.workspace_id))
+  // Workspaces, subscription and credits all key off the selected membership: load them together.
+  const [workspacesResult, subscriptionResult, initialCreditResult] = await Promise.all([
+    supabase.from("breezy_workspaces").select("id, owner_user_id, name, subscription_code, status, created_at").in("id", memberships.map((item) => item.workspace_id)),
+    supabase.from("breezy_subscriptions").select("id, workspace_id, plan_key, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, limits, included_seats, extra_seats").eq("workspace_id", membership.workspace_id).maybeSingle(),
+    supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at, free_quotation_credits_granted, free_quotation_credits_used, monthly_quotation_credits_remaining, topup_quotation_credits_remaining").eq("workspace_id", membership.workspace_id).maybeSingle(),
+  ])
   if (workspacesResult.error) throw new Error(customerErrorMessage(workspacesResult.error))
   const workspaceById = new Map((workspacesResult.data || []).map((item) => [item.id, item as Workspace]))
   const workspace = workspaceById.get(membership.workspace_id) || null
@@ -151,10 +149,6 @@ export async function loadWorkspaceAccess(user: User, preferredWorkspaceId?: str
     return optionWorkspace ? [{ workspace: optionWorkspace, membership: item }] : []
   })
 
-  const [subscriptionResult, initialCreditResult] = await Promise.all([
-    supabase.from("breezy_subscriptions").select("id, workspace_id, plan_key, status, trial_ends_at, current_period_ends_at, cancel_at_period_end, limits, included_seats, extra_seats").eq("workspace_id", membership.workspace_id).maybeSingle(),
-    supabase.from("breezy_credit_accounts").select("workspace_id, gst_status, verified_gstin, free_credits_granted, free_credits_used, monthly_credits_remaining, topup_credits_remaining, monthly_credits_reset_at, free_quotation_credits_granted, free_quotation_credits_used, monthly_quotation_credits_remaining, topup_quotation_credits_remaining").eq("workspace_id", membership.workspace_id).maybeSingle(),
-  ])
   let creditResult = initialCreditResult
   if (creditResult.error?.message?.includes("quotation_credits")) {
     // Keep the workspace usable while the quotation-credit migration is being
