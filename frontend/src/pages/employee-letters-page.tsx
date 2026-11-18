@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { createEmployeeLetterPdf, employeeLetterFileName } from "@/lib/employee-letter-pdf"
-import { sendDocumentWhatsApp, sendEmployeeLetterEmail } from "@/lib/document-email-api"
+import { createDocumentLink, sendDocumentWhatsApp, sendEmployeeLetterEmail } from "@/lib/document-email-api"
 import { useMvpStore, type Employee, type EmployeeLetter, type LetterSalary } from "@/lib/mvp-store"
 import { SalaryBreakdownTable, SalaryStructureEditor } from "@/components/salary-structure-editor"
 import { letterSalaryDisplayOptions, letterSalaryParagraph } from "@/lib/letter-salary"
@@ -231,6 +231,19 @@ export function EmployeeLettersPage() {
         if (!shareLetterTarget) return
         await sendOnWhatsApp(shareLetterTarget, number)
         setShareLetterTarget(null)
+      }}
+      onShareLink={async () => {
+        if (!shareLetterTarget || !workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
+        const { doc, employee: target } = await documentFor(shareLetterTarget)
+        return createDocumentLink({
+          workspaceId: workspace.id,
+          documentId: shareLetterTarget.id,
+          documentType: "employee_letter",
+          documentNumber: `${shareLetterTarget.title} · ${target.employeeName}`,
+          senderCompanyName: companies.find((item) => item.id === shareLetterTarget.entityId)?.companyName || "",
+          filename: employeeLetterFileName(shareLetterTarget, target),
+          pdf: new Uint8Array(doc.output("arraybuffer")),
+        })
       }}
     />
   </div>

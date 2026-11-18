@@ -1,6 +1,8 @@
 import logging
+import secrets
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -20,6 +22,8 @@ class GstVerificationUnavailable(SupabaseGatewayError):
 
 
 logger = logging.getLogger(__name__)
+
+DOCUMENT_LINK_BUCKET = "document-links"
 
 
 GSTIN_ALREADY_REGISTERED_MESSAGE = (
@@ -245,6 +249,120 @@ class SupabaseGateway:
             raise SupabaseGatewayError(
                 "This employee letter is not saved in the selected workspace."
             )
+
+    async def save_document_link(
+        self,
+        *,
+        workspace_id: str,
+        document_type: str,
+        document_id: str,
+        document_number: str,
+        sender_company_name: str,
+        filename: str,
+        pdf: bytes,
+        created_by: str,
+    ) -> str:
+        """Store the PDF privately and return the document's share token.
+
+        Sharing the same document again replaces its PDF and keeps its link.
+        """
+        existing = await self._get(
+            "breezy_document_links",
+            {
+                "select": "token",
+                "workspace_id": f"eq.{workspace_id}",
+                "document_type": f"eq.{document_type}",
+                "document_id": f"eq.{document_id}",
+                "limit": "1",
+            },
+        )
+        token = (
+            str(existing[0]["token"]) if existing else secrets.token_urlsafe(24)
+        )
+        storage_path = f"{workspace_id}/{token}.pdf"
+        headers = self._service_headers()
+        headers.update({"Content-Type": "application/pdf", "x-upsert": "true"})
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/"
+                f"{DOCUMENT_LINK_BUCKET}/{storage_path}",
+                content=pdf,
+                headers=headers,
+            )
+        if response.is_error:
+            raise SupabaseGatewayError("The PDF could not be saved for sharing.")
+        await self._request(
+            "POST",
+            "breezy_document_links",
+            params={"on_conflict": "workspace_id,document_type,document_id"},
+            json=[
+                {
+                    "token": token,
+                    "workspace_id": workspace_id,
+                    "document_type": document_type,
+                    "document_id": document_id,
+                    "document_number": document_number,
+                    "sender_company_name": sender_company_name,
+                    "filename": filename,
+                    "storage_path": storage_path,
+                    "created_by": created_by or None,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            ],
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+        )
+        return token
+
+    async def shared_document(self, token: str) -> dict[str, Any] | None:
+        """Look up a share link; None if it or its document no longer exists."""
+        rows = await self._get(
+            "breezy_document_links",
+            {
+                "select": (
+                    "workspace_id,document_type,document_id,document_number,"
+                    "sender_company_name,filename,storage_path,updated_at"
+                ),
+                "token": f"eq.{token}",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            return None
+        link = rows[0]
+        try:
+            if link["document_type"] == "employee_letter":
+                await self.assert_workspace_employee_letter_exists(
+                    str(link["workspace_id"]), str(link["document_id"])
+                )
+            else:
+                await self.assert_workspace_document(
+                    str(link["workspace_id"]),
+                    str(link["document_id"]),
+                    str(link["document_type"]),
+                )
+        except SupabaseGatewayError:
+            return None
+        return link
+
+    async def signed_document_url(
+        self, storage_path: str, *, expires_in: int, download_name: str | None = None
+    ) -> str:
+        base = self.settings.supabase_url.rstrip("/")
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                f"{base}/storage/v1/object/sign/{DOCUMENT_LINK_BUCKET}/{storage_path}",
+                json={"expiresIn": expires_in},
+                headers=self._service_headers(),
+            )
+        if response.is_error:
+            raise SupabaseGatewayError("The shared PDF could not be opened.")
+        signed = str(response.json().get("signedURL") or "")
+        if not signed:
+            raise SupabaseGatewayError("The shared PDF could not be opened.")
+        url = f"{base}/storage/v1{signed}"
+        if download_name is not None:
+            url += f"&download={quote(download_name)}"
+        return url
 
     async def assert_workspace_document(
         self, workspace_id: str, document_id: str, document_type: str
@@ -1056,6 +1174,7 @@ class SupabaseGateway:
             "expense-bills",
             [path for path in expense_bill_paths if path not in protected_paths],
         )
+        await self._delete_storage_prefix(DOCUMENT_LINK_BUCKET, workspace_id)
         # Also clean older uploads created before expenses were workspace-scoped.
         await self._delete_storage_prefix(
             "expense-bills", owner_user_id, protected_paths=protected_paths

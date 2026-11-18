@@ -1,3 +1,6 @@
+import base64
+import binascii
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -7,12 +10,15 @@ from app.core.config import Settings, get_settings
 from app.schemas.documents import (
     DocumentEmailRequest,
     DocumentEmailResponse,
+    DocumentLinkRequest,
+    DocumentLinkResponse,
     DocumentWhatsAppRequest,
     DocumentWhatsAppResponse,
     EmployeeLetterEmailRequest,
     EmployeeLetterEmailResponse,
     PayslipEmailRequest,
     PayslipEmailResponse,
+    SharedDocumentResponse,
 )
 from app.services.email_sender import (
     EmailConfigurationError,
@@ -196,4 +202,104 @@ async def email_payslips(
     noun = "payslip was" if count == 1 else f"{count} payslips were"
     return PayslipEmailResponse(
         message=f"{noun[0].upper()}{noun[1:]} emailed to {request.to_email}."
+    )
+
+
+SHARE_TOKEN = re.compile(r"^[A-Za-z0-9_-]{24,64}$")
+SHARED_LINK_EXPIRY_SECONDS = 60 * 60
+
+
+@router.post("/document-link", response_model=DocumentLinkResponse)
+async def create_document_link(
+    request: DocumentLinkRequest,
+    authorization: Annotated[str, Header()],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DocumentLinkResponse:
+    """Save the document's PDF; anyone with the returned link can view it."""
+    gateway = SupabaseGateway(settings)
+    access_token = _bearer_token(authorization)
+    permission = (
+        "payslips.read"
+        if request.document_type == "employee_letter"
+        else "invoices.read"
+    )
+    try:
+        pdf = base64.b64decode(request.pdf_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The PDF could not be read.",
+        ) from exc
+    if not pdf.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF documents can be shared.",
+        )
+    try:
+        user = await gateway.authenticated_user(access_token)
+        await gateway.assert_workspace_permission(
+            access_token, request.workspace_id, permission
+        )
+        if request.document_type == "employee_letter":
+            await gateway.assert_workspace_employee_letter_exists(
+                request.workspace_id, request.document_id
+            )
+        else:
+            await gateway.assert_workspace_document(
+                request.workspace_id, request.document_id, request.document_type
+            )
+        token = await gateway.save_document_link(
+            workspace_id=request.workspace_id,
+            document_type=request.document_type,
+            document_id=request.document_id,
+            document_number=request.document_number.strip(),
+            sender_company_name=request.sender_company_name.strip(),
+            filename=request.filename,
+            pdf=pdf,
+            created_by=str(user.get("id") or ""),
+        )
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return DocumentLinkResponse(token=token)
+
+
+@router.get("/shared/{token}", response_model=SharedDocumentResponse)
+async def shared_document(
+    token: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SharedDocumentResponse:
+    """Public: anyone with the link can view and download this one PDF."""
+    not_found = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="This document link is not available. Ask the sender for a new link.",
+    )
+    if not SHARE_TOKEN.fullmatch(token):
+        raise not_found
+    gateway = SupabaseGateway(settings)
+    try:
+        link = await gateway.shared_document(token)
+        if not link:
+            raise not_found
+        path = str(link["storage_path"])
+        filename = str(link["filename"])
+        view_url = await gateway.signed_document_url(
+            path, expires_in=SHARED_LINK_EXPIRY_SECONDS
+        )
+        download_url = await gateway.signed_document_url(
+            path, expires_in=SHARED_LINK_EXPIRY_SECONDS, download_name=filename
+        )
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The document could not be opened right now. Please try again.",
+        ) from exc
+    return SharedDocumentResponse(
+        document_type=str(link["document_type"]),
+        document_number=str(link.get("document_number") or ""),
+        sender_company_name=str(link.get("sender_company_name") or ""),
+        filename=filename,
+        view_url=view_url,
+        download_url=download_url,
     )

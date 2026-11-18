@@ -39,11 +39,13 @@ async def test_source_purge_preserves_transferred_bills() -> None:
     gateway._delete_storage_objects.assert_awaited_once_with(
         "expense-bills", ["source/local.pdf"]
     )
-    gateway._delete_storage_prefix.assert_awaited_once_with(
+    gateway._delete_storage_prefix.assert_any_await(
         "expense-bills",
         "source",
         protected_paths={"source/moved.pdf", "third-owner/shared.pdf"},
     )
+    # Shared PDF links of the deleted workspace are removed too.
+    gateway._delete_storage_prefix.assert_any_await("document-links", "workspace")
     assert gateway._get.call_args_list[1].args[1]["workspace_id"] == "neq.workspace"
 
 

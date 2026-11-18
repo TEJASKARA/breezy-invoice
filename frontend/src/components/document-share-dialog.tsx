@@ -1,6 +1,6 @@
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useState } from "react"
-import { LoaderCircle, Mail, MessageCircle, Send, X } from "lucide-react"
+import { Check, Copy, ExternalLink, Link2, LoaderCircle, Mail, MessageCircle, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +17,7 @@ export function DocumentShareDialog({
   onEmail,
   onWhatsApp,
   onWhatsAppSend,
+  onShareLink,
 }: {
   title: string
   open: boolean
@@ -26,11 +27,15 @@ export function DocumentShareDialog({
   onWhatsApp: () => Promise<void>
   /** Sends the PDF straight to the recipient's WhatsApp number. When omitted, only onWhatsApp is offered. */
   onWhatsAppSend?: (number: string) => Promise<void>
+  /** Saves the PDF online and resolves with a link that opens it in the browser with a download option. */
+  onShareLink?: () => Promise<string>
 }) {
-  const [mode, setMode] = useState<"choose" | "email" | "whatsapp">("choose")
+  const [mode, setMode] = useState<"choose" | "email" | "whatsapp" | "link">("choose")
+  const [link, setLink] = useState("")
+  const [copied, setCopied] = useState(false)
   const [email, setEmail] = useState("")
   const [whatsAppNumber, setWhatsAppNumber] = useState("")
-  const [pending, setPending] = useState<"email" | "whatsapp" | null>(null)
+  const [pending, setPending] = useState<"email" | "whatsapp" | "link" | null>(null)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -38,6 +43,8 @@ export function DocumentShareDialog({
     setMode("choose")
     setEmail("")
     setWhatsAppNumber("")
+    setLink("")
+    setCopied(false)
     setPending(null)
     setError("")
   }, [open])
@@ -83,6 +90,29 @@ export function DocumentShareDialog({
     }
   }
 
+  const createLink = async () => {
+    if (!onShareLink) return
+    setPending("link")
+    setError("")
+    try {
+      setLink(await onShareLink())
+      setMode("link")
+    } catch (linkError) {
+      setError(customerErrorMessage(linkError, "The share link could not be created."))
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+    } catch {
+      setError("Copy the link from the box above.")
+    }
+  }
+
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="document-share-title">
     <Card className="w-full max-w-md shadow-2xl">
       <CardHeader className="relative pr-14">
@@ -94,6 +124,12 @@ export function DocumentShareDialog({
         {mode === "choose" ? <div className={`grid gap-3 ${onEmail ? "sm:grid-cols-2" : ""}`}>
           {onEmail ? <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => setMode("email")}><Mail className="size-5" /><span className="text-left"><span className="block font-medium">Email</span><span className="block text-xs font-normal text-muted-foreground">Send the PDF attachment</span></span></Button> : null}
           <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => { if (onWhatsAppSend) { setMode("whatsapp"); setError("") } else void shareWhatsApp() }}>{pending === "whatsapp" ? <LoaderCircle className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}<span className="text-left"><span className="block font-medium">WhatsApp</span><span className="block text-xs font-normal text-muted-foreground">{onWhatsAppSend ? "Send the PDF to a number" : "Open app or WhatsApp Web"}</span></span></Button>
+          {onShareLink ? <div className={onEmail ? "sm:col-span-2" : ""}><Button variant="ghost" size="sm" className="text-muted-foreground" disabled={pending !== null} onClick={() => void createLink()}>{pending === "link" ? <LoaderCircle className="animate-spin" /> : <Link2 />}{pending === "link" ? "Creating link" : "Share a link"}</Button></div> : null}
+        </div> : mode === "link" ? <div className="space-y-3">
+          <Label htmlFor="document-share-link">Link to this PDF</Label>
+          <div className="flex gap-2"><Input id="document-share-link" readOnly value={link} onFocus={(event) => event.currentTarget.select()} /><Button variant="outline" onClick={() => void copyLink()}>{copied ? <Check /> : <Copy />}{copied ? "Copied" : "Copy"}</Button></div>
+          <p className="text-xs text-muted-foreground">Anyone with this link can view and download the PDF. Sharing this document again updates the PDF and keeps the same link; deleting the document turns the link off.</p>
+          <div className="flex flex-wrap justify-between gap-2"><Button variant="outline" onClick={() => { setMode("choose"); setError("") }}>Back</Button><Button variant="ghost" asChild><a href={link} target="_blank" rel="noreferrer"><ExternalLink />Open link</a></Button></div>
         </div> : mode === "whatsapp" ? <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="document-share-whatsapp">Recipient WhatsApp number</Label>

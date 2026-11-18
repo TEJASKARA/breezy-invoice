@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { calculateInvoiceTotals } from "@/lib/invoice-calculations"
 import { applyInvoiceTaxMode, gstRateOptions, inferInvoiceTaxMode, invoiceTaxError, recalculateDraftLineFromTaxable, recalculateDraftLineFromTotal, recalculateGstDraftLine, unitPriceFromTaxable, updateDraftQuantity, updateDraftUnitPrice, type GstTaxMode } from "@/lib/invoice-gst"
-import { sendDocumentEmail, sendDocumentWhatsApp } from "@/lib/document-email-api"
+import { createDocumentLink, sendDocumentEmail, sendDocumentWhatsApp } from "@/lib/document-email-api"
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
@@ -795,6 +795,23 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       pdf: file.data,
     })
     showNotice(message)
+  }
+
+  const shareInvoiceLink = async (invoice: Invoice) => {
+    if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
+    const invoiceEntity = documentEntity(invoice)
+    const customer = customers.find((item) => item.id === invoice.customerId)
+      || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
+    const file = await pdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
+    return createDocumentLink({
+      workspaceId: workspace.id,
+      documentId: invoice.id,
+      documentType: isQuotation ? "quotation" : "invoice",
+      documentNumber: invoice.sourceNumber || invoice.number,
+      senderCompanyName: invoiceEntity?.companyName || invoice.entityName || "",
+      filename: file.name,
+      pdf: file.data,
+    })
   }
 
   const downloadBulkInvoiceZip = async () => {
@@ -1672,6 +1689,10 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
           if (!shareTarget) return
           await sendInvoiceOnWhatsApp(shareTarget, number)
           setShareTarget(null)
+        }}
+        onShareLink={async () => {
+          if (!shareTarget) throw new Error(`Choose the ${docWord} to share.`)
+          return shareInvoiceLink(shareTarget)
         }}
       />
 

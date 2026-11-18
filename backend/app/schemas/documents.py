@@ -153,3 +153,33 @@ class PayslipEmailRequest(BaseModel):
 
 class PayslipEmailResponse(BaseModel):
     message: str
+
+
+class DocumentLinkRequest(BaseModel):
+    workspace_id: str = Field(min_length=36, max_length=36)
+    document_id: str = Field(min_length=36, max_length=36)
+    document_type: Literal["invoice", "quotation", "employee_letter"]
+    document_number: str = Field(default="", max_length=200)
+    sender_company_name: str = Field(default="", max_length=300)
+    filename: str = Field(min_length=1, max_length=240)
+    pdf_base64: str = Field(min_length=4, max_length=20_000_000)
+
+    @field_validator("filename")
+    @classmethod
+    def safe_filename(cls, value: str) -> str:
+        cleaned = re.sub(r"[^A-Za-z0-9._ -]", "_", value.strip()).strip(". ")
+        cleaned = cleaned or "document"
+        return cleaned if cleaned.lower().endswith(".pdf") else f"{cleaned}.pdf"
+
+
+class DocumentLinkResponse(BaseModel):
+    token: str
+
+
+class SharedDocumentResponse(BaseModel):
+    document_type: str
+    document_number: str
+    sender_company_name: str
+    filename: str
+    view_url: str
+    download_url: str

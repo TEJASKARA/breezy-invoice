@@ -179,3 +179,56 @@ export async function sendDocumentWhatsApp(input: {
   trackAction("whatsapp_sent", { document: input.documentType })
   return payload.message
 }
+
+/** Saves the PDF online and returns a link anyone can open to view or download it. */
+export async function createDocumentLink(input: {
+  workspaceId: string
+  documentId: string
+  documentType: "invoice" | "quotation" | "employee_letter"
+  documentNumber: string
+  senderCompanyName?: string
+  filename: string
+  pdf: Uint8Array
+}) {
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  if (!supabase) throw new Error("Your account connection is temporarily unavailable. Please try again later.")
+  const { data, error } = await supabase.auth.getSession()
+  if (error || !data.session?.access_token) throw new Error("Sign in again before sharing this document.")
+  const response = await fetch(`${apiUrl}/api/v1/documents/document-link`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspace_id: input.workspaceId,
+      document_id: input.documentId,
+      document_type: input.documentType,
+      document_number: input.documentNumber,
+      sender_company_name: input.senderCompanyName || "",
+      filename: input.filename,
+      pdf_base64: base64Bytes(input.pdf),
+    }),
+  })
+  let payload: { token?: string; detail?: string } = {}
+  try { payload = await response.json() as typeof payload } catch { /* Empty response. */ }
+  if (!response.ok || !payload.token) throw new Error(customerErrorMessage({ message: payload.detail, status: response.status }, "The share link could not be created. Please try again."))
+  trackAction("share_link_created", { document: input.documentType })
+  return `${window.location.origin}/d/${payload.token}`
+}
+
+export type SharedDocument = {
+  document_type: "invoice" | "quotation" | "employee_letter"
+  document_number: string
+  sender_company_name: string
+  filename: string
+  view_url: string
+  download_url: string
+}
+
+/** Public: opens a shared document link (no sign-in). */
+export async function fetchSharedDocument(token: string): Promise<SharedDocument> {
+  if (!apiUrl) throw new Error("This service is temporarily unavailable. Please try again later.")
+  const response = await fetch(`${apiUrl}/api/v1/documents/shared/${encodeURIComponent(token)}`)
+  let payload: Partial<SharedDocument> & { detail?: string } = {}
+  try { payload = await response.json() as typeof payload } catch { /* Empty response. */ }
+  if (!response.ok || !payload.view_url) throw new Error(payload.detail || "This document link is not available. Ask the sender for a new link.")
+  return payload as SharedDocument
+}
