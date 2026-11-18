@@ -29,16 +29,41 @@ const plusDays = (days: number) => { const value = new Date(); value.setDate(val
 type DraftProformaLine = Omit<InvoiceLineItem, "quantity" | "unitPrice"> & {
   quantity: string
   unitPrice: string
+  totalAmount: string
   cgstRate: number
   sgstRate: number
   igstRate: number
 }
 type ProformaDraft = { entityId: string; customerId: string; date: string; validUntil: string; items: DraftProformaLine[]; includesGst?: boolean; taxMode?: GstTaxMode }
-const line = (hsnSac = ""): DraftProformaLine => ({ id: crypto.randomUUID(), description: "", hsnSac, quantity: "1", unitPrice: "", taxableAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, cgstRate: 0, sgstRate: 0, igstRate: 0 })
+const line = (hsnSac = ""): DraftProformaLine => ({ id: crypto.randomUUID(), description: "", hsnSac, quantity: "1", unitPrice: "", totalAmount: "", taxableAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, cgstRate: 0, sgstRate: 0, igstRate: 0 })
 const selectClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
 const hsnCodesFor = (company: { hsnSac: string; hsnSacCodes?: string[] } | undefined) => [...new Set([...(company?.hsnSacCodes || []), company?.hsnSac || ""].filter(Boolean))]
 const roundMoney = (value: number) => Math.round(value * 100) / 100
 const rateFromAmount = (amount: number, taxableAmount: number) => taxableAmount > 0 ? roundMoney(amount * 100 / taxableAmount) : 0
+const moneyInput = (value: number) => value > 0 ? String(roundMoney(value)) : ""
+
+/** Recalculates tax amounts and the inclusive total from a taxable amount. */
+function withTaxable(item: DraftProformaLine, suppliedTaxable: number): DraftProformaLine {
+  const taxableAmount = roundMoney(Math.max(0, suppliedTaxable))
+  const cgstAmount = roundMoney(taxableAmount * item.cgstRate / 100)
+  const sgstAmount = roundMoney(taxableAmount * item.sgstRate / 100)
+  const igstAmount = roundMoney(taxableAmount * item.igstRate / 100)
+  return { ...item, taxableAmount, cgstAmount, sgstAmount, igstAmount, totalAmount: moneyInput(taxableAmount + cgstAmount + sgstAmount + igstAmount) }
+}
+
+/** Works back from a GST-inclusive total to the taxable amount, unit price and tax amounts. */
+function withTotal(item: DraftProformaLine, totalAmount: string): DraftProformaLine {
+  const total = roundMoney(Math.max(0, Number(totalAmount) || 0))
+  const rate = item.igstRate || item.cgstRate + item.sgstRate
+  const base = total / (1 + rate / 100)
+  const cgstAmount = roundMoney(base * item.cgstRate / 100)
+  const sgstAmount = roundMoney(base * item.sgstRate / 100)
+  const igstAmount = roundMoney(base * item.igstRate / 100)
+  // Keep the entered total exact after rounding tax to paise.
+  const taxableAmount = roundMoney(Math.max(0, total - cgstAmount - sgstAmount - igstAmount))
+  const quantity = Number(item.quantity) || 0
+  return { ...item, totalAmount, taxableAmount, cgstAmount, sgstAmount, igstAmount, unitPrice: quantity > 0 && taxableAmount > 0 ? String(unitPriceFromTaxable(taxableAmount, quantity)) : item.unitPrice }
+}
 
 function restoreLine(value: Partial<DraftProformaLine>): DraftProformaLine {
   const taxableAmount = Math.max(0, Number(value.taxableAmount) || 0)
@@ -59,11 +84,12 @@ function restoreLine(value: Partial<DraftProformaLine>): DraftProformaLine {
     cgstRate: Math.max(0, Number(value.cgstRate) || rateFromAmount(cgstAmount, taxableAmount)),
     sgstRate: Math.max(0, Number(value.sgstRate) || rateFromAmount(sgstAmount, taxableAmount)),
     igstRate: Math.max(0, Number(value.igstRate) || rateFromAmount(igstAmount, taxableAmount)),
+    totalAmount: value.totalAmount !== undefined ? String(value.totalAmount) : moneyInput(taxableAmount + cgstAmount + sgstAmount + igstAmount),
   }
 }
 
 export function ProformasPage() {
-  const { setup, companies, activeCompanies, customers, proformas, templateFor, addProforma, deleteProforma } = useMvpStore()
+  const { setup, companies, activeCompanies, customers, proformas, templateFor, addProforma, deleteProforma, loading } = useMvpStore()
   const navigate = useNavigate()
   const { can, refresh, workspace, subscription, creditAccount } = useWorkspaceAccess()
   const { selectedEntityId: entityId, selectEntity: setEntityId } = useEntitySelection()
@@ -81,7 +107,7 @@ export function ProformasPage() {
   const [notice, setNotice] = useState("")
   const [preview, setPreview] = useState<Proforma | null>(null)
   const [shareTarget, setShareTarget] = useState<Proforma | null>(null)
-  const invoiceItems = useMemo<InvoiceLineItem[]>(() => items.map(({ cgstRate: _cgstRate, sgstRate: _sgstRate, igstRate: _igstRate, quantity, unitPrice, ...item }) => ({
+  const invoiceItems = useMemo<InvoiceLineItem[]>(() => items.map(({ cgstRate: _cgstRate, sgstRate: _sgstRate, igstRate: _igstRate, totalAmount: _totalAmount, quantity, unitPrice, ...item }) => ({
     ...item,
     quantity: Number(quantity),
     unitPrice: Number(unitPrice),
@@ -90,12 +116,16 @@ export function ProformasPage() {
   const entity = companies.find((company) => company.id === entityId)
   const customer = customers.find((item) => item.id === customerId)
   const entityHsnCodes = hsnCodesFor(entity)
-  const draftStorageKey = workspace?.id ? `chanax.proforma-draft.${workspace.id}.${entityId}` : ""
+  const lineGrid = includesGst ? "grid-cols-[2fr_110px_90px_120px_120px_repeat(3,100px)_120px_130px_44px]" : "grid-cols-[2fr_120px_90px_120px_160px_44px]"
+  // Wait until the workspace data and selected company are loaded, so a page refresh restores the draft instead of overwriting it.
+  const draftStorageKey = workspace?.id && entityId && !loading ? `chanax.proforma-draft.${workspace.id}.${entityId}` : ""
   const loadedDraftKey = useRef("")
+  const [readyDraftKey, setReadyDraftKey] = useState("")
 
   useEffect(() => {
     if (!draftStorageKey || loadedDraftKey.current === draftStorageKey) return
     loadedDraftKey.current = draftStorageKey
+    setReadyDraftKey(draftStorageKey)
     try {
       const saved = localStorage.getItem(draftStorageKey) || localStorage.getItem(`chanax.proforma-draft.${workspace?.id}`)
       if (!saved) return
@@ -117,73 +147,53 @@ export function ProformasPage() {
   }, [draftStorageKey, entityId, workspace?.id, setEntityId])
 
   useEffect(() => {
-    if (!draftStorageKey || loadedDraftKey.current !== draftStorageKey) return
+    if (!draftStorageKey || readyDraftKey !== draftStorageKey) return
     localStorage.setItem(draftStorageKey, JSON.stringify({ entityId, customerId, date, validUntil, items, includesGst, taxMode } satisfies ProformaDraft))
-  }, [customerId, date, draftStorageKey, entityId, includesGst, items, taxMode, validUntil])
+  }, [customerId, date, draftStorageKey, entityId, includesGst, items, readyDraftKey, taxMode, validUntil])
 
   useEffect(() => {
-    if (companies.some((company) => company.id === entityId)) return
+    if (loading || companies.some((company) => company.id === entityId)) return
     setEntityId(activeCompanies[0]?.id || "")
-  }, [activeCompanies, entityId, companies, setEntityId])
+  }, [activeCompanies, entityId, companies, loading, setEntityId])
 
   useEffect(() => {
-    if (!entityId || availableCustomers.some((available) => available.id === customerId)) return
+    if (loading || !entityId || availableCustomers.some((available) => available.id === customerId)) return
     setCustomerId(availableCustomers[0]?.id || "")
-  }, [availableCustomers, customerId, entityId])
+  }, [availableCustomers, customerId, entityId, loading])
 
   const updateLine = (id: string, changes: Partial<DraftProformaLine>) => setItems((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
-  const updateTaxableAmount = (id: string, taxableAmount: number) => setItems((current) => current.map((item) => {
-    if (item.id !== id) return item
-    const quantity = Number(item.quantity) || 0
-    return {
-      ...item,
-      taxableAmount,
-      unitPrice: quantity > 0 ? String(unitPriceFromTaxable(taxableAmount, quantity)) : item.unitPrice,
-      cgstAmount: roundMoney(taxableAmount * item.cgstRate / 100),
-      sgstAmount: roundMoney(taxableAmount * item.sgstRate / 100),
-      igstAmount: roundMoney(taxableAmount * item.igstRate / 100),
-    }
-  }))
   const updateQuantity = (id: string, quantity: string) => setItems((current) => current.map((item) => {
     if (item.id !== id) return item
     const unitPrice = Number(item.unitPrice) || unitPriceFromTaxable(item.taxableAmount, Number(item.quantity) || 1)
-    const taxableAmount = roundMoney(Math.max(0, Number(quantity) || 0) * Math.max(0, unitPrice))
-    return {
-      ...item,
-      quantity,
-      unitPrice: item.unitPrice || (unitPrice ? String(unitPrice) : ""),
-      taxableAmount,
-      cgstAmount: roundMoney(taxableAmount * item.cgstRate / 100),
-      sgstAmount: roundMoney(taxableAmount * item.sgstRate / 100),
-      igstAmount: roundMoney(taxableAmount * item.igstRate / 100),
-    }
+    const updated = withTaxable(item, Math.max(0, Number(quantity) || 0) * Math.max(0, unitPrice))
+    return { ...updated, quantity, unitPrice: item.unitPrice || (unitPrice ? String(unitPrice) : "") }
   }))
   const updateUnitPrice = (id: string, unitPrice: string) => setItems((current) => current.map((item) => {
     if (item.id !== id) return item
-    const taxableAmount = roundMoney(Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(unitPrice) || 0))
-    return {
-      ...item,
-      unitPrice,
-      taxableAmount,
-      cgstAmount: roundMoney(taxableAmount * item.cgstRate / 100),
-      sgstAmount: roundMoney(taxableAmount * item.sgstRate / 100),
-      igstAmount: roundMoney(taxableAmount * item.igstRate / 100),
-    }
+    return { ...withTaxable(item, Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(unitPrice) || 0)), unitPrice }
   }))
+  const updateTaxableAmount = (id: string, taxableAmount: number) => setItems((current) => current.map((item) => {
+    if (item.id !== id) return item
+    const quantity = Number(item.quantity) || 0
+    const updated = withTaxable(item, taxableAmount)
+    return { ...updated, unitPrice: quantity > 0 ? String(unitPriceFromTaxable(updated.taxableAmount, quantity)) : item.unitPrice }
+  }))
+  const updateTotalAmount = (id: string, totalAmount: string) => setItems((current) => current.map((item) => item.id === id ? withTotal(item, totalAmount) : item))
   const updateTaxRate = (id: string, field: "cgstRate" | "sgstRate" | "igstRate", suppliedRate: number) => {
     const rate = Math.min(100, Math.max(0, suppliedRate))
     setItems((current) => current.map((item) => {
       if (item.id !== id) return item
-      if (field === "igstRate") return { ...item, igstRate: rate, igstAmount: roundMoney(item.taxableAmount * rate / 100), ...(rate > 0 ? { cgstRate: 0, cgstAmount: 0, sgstRate: 0, sgstAmount: 0 } : {}) }
-      return { ...item, [field]: rate, [field === "cgstRate" ? "cgstAmount" : "sgstAmount"]: roundMoney(item.taxableAmount * rate / 100), ...(rate > 0 ? { igstRate: 0, igstAmount: 0 } : {}) }
+      const rates = field === "igstRate"
+        ? { igstRate: rate, ...(rate > 0 ? { cgstRate: 0, sgstRate: 0 } : {}) }
+        : { [field]: rate, ...(rate > 0 ? { igstRate: 0 } : {}) }
+      return withTaxable({ ...item, ...rates }, item.taxableAmount)
     }))
   }
   /** Puts a line's total GST rate on IGST, or splits it equally as CGST + SGST. */
   const withTaxMode = (item: DraftProformaLine, mode: GstTaxMode, suppliedRate = item.igstRate || item.cgstRate + item.sgstRate): DraftProformaLine => {
     const rate = Math.min(100, Math.max(0, suppliedRate))
-    if (mode === "igst") return { ...item, igstRate: rate, igstAmount: roundMoney(item.taxableAmount * rate / 100), cgstRate: 0, cgstAmount: 0, sgstRate: 0, sgstAmount: 0 }
-    const splitRate = rate / 2
-    return { ...item, cgstRate: splitRate, sgstRate: splitRate, cgstAmount: roundMoney(item.taxableAmount * splitRate / 100), sgstAmount: roundMoney(item.taxableAmount * splitRate / 100), igstRate: 0, igstAmount: 0 }
+    const rates = mode === "igst" ? { igstRate: rate, cgstRate: 0, sgstRate: 0 } : { cgstRate: rate / 2, sgstRate: rate / 2, igstRate: 0 }
+    return withTaxable({ ...item, ...rates }, item.taxableAmount)
   }
   const applyGstRateOption = (id: string, suppliedRate: number) => setItems((current) => current.map((item) => item.id === id ? withTaxMode(item, taxMode, suppliedRate) : item))
   const changeTaxMode = (mode: GstTaxMode) => { setTaxMode(mode); setItems((current) => current.map((item) => withTaxMode(item, mode))) }
@@ -296,17 +306,22 @@ export function ProformasPage() {
           <p className="text-xs text-muted-foreground">All lines use this tax type; each line can have its own GST rate.</p>
         </div> : null}
       </div>
-      <div className="space-y-3 overflow-x-auto"><div className={`${includesGst ? "min-w-[1180px]" : "min-w-[760px]"} space-y-3`}>{items.map((item, index) => <div key={item.id} className={`grid gap-3 rounded-lg border p-3 ${includesGst ? "md:grid-cols-[2fr_1fr_repeat(7,1fr)_auto]" : "md:grid-cols-[2fr_1fr_repeat(3,1fr)_auto]"}`}>
-        <Input aria-label={`Description ${index + 1}`} placeholder="Description" value={item.description} onChange={(event) => updateLine(item.id, { description: event.target.value })} />
-        {entityHsnCodes.length ? <select aria-label={`HSN or SAC ${index + 1}`} className={selectClass} value={item.hsnSac} onChange={(event) => updateLine(item.id, { hsnSac: event.target.value })}><option value="">Select HSN/SAC</option>{entityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN or SAC ${index + 1}`} placeholder="HSN/SAC (optional)" value={item.hsnSac} onChange={(event) => updateLine(item.id, { hsnSac: event.target.value })} />}
-        <Input aria-label={`Quantity ${index + 1}`} type="number" min="0.000001" step="any" placeholder="Qty" value={item.quantity} onChange={(event) => updateQuantity(item.id, event.target.value)} />
-        <Input aria-label={`Unit price ${index + 1}`} type="number" min="0" step="any" placeholder="Unit price" value={item.unitPrice} onChange={(event) => updateUnitPrice(item.id, event.target.value)} />
-        <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" placeholder="TAXABLE" value={item.taxableAmount || ""} onChange={(event) => updateTaxableAmount(item.id, Math.max(0, Number(event.target.value) || 0))} />
-        {includesGst ? <>{(["cgstRate", "sgstRate", "igstRate"] as const).map((field) => <Input key={field} aria-label={`${field.replace("Rate", "").toUpperCase()} percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" disabled={field === "igstRate" ? taxMode !== "igst" : taxMode !== "split"} placeholder={`${field.replace("Rate", "").toUpperCase()} %`} value={item[field] || ""} onChange={(event) => updateTaxRate(item.id, field, Number(event.target.value) || 0)} />)}
-        <select aria-label={`GST rate ${index + 1}`} className={selectClass} value={roundMoney(item.igstRate || item.cgstRate + item.sgstRate)} onChange={(event) => applyGstRateOption(item.id, Number(event.target.value))}>{gstRateOptions.map((rate) => <option key={rate} value={rate}>{rate}% GST</option>)}{!gstRateOptions.some((rate) => rate === roundMoney(item.igstRate || item.cgstRate + item.sgstRate)) ? <option value={roundMoney(item.igstRate || item.cgstRate + item.sgstRate)}>Custom: {roundMoney(item.igstRate || item.cgstRate + item.sgstRate)}%</option> : null}</select></> : null}
+      <div className="overflow-x-auto rounded-lg border"><div className={includesGst ? "min-w-[1320px]" : "min-w-[820px]"}>
+        <div className={`grid gap-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground ${lineGrid}`}>
+          <span>Description</span><span>HSN/SAC</span><span>Quantity</span><span>Unit price (₹)</span><span>{includesGst ? "Taxable amount" : "Line amount"}</span>{includesGst ? <><span>CGST %</span><span>SGST %</span><span>IGST %</span><span>GST rate</span><span>Total amount</span></> : null}<span />
+        </div>
+        {items.map((item, index) => <div key={item.id} className={`grid items-start gap-2 border-t p-3 ${lineGrid}`}>
+        <Input aria-label={`Description ${index + 1}`} placeholder="Service or item description" value={item.description} onChange={(event) => updateLine(item.id, { description: event.target.value })} />
+        {entityHsnCodes.length ? <select aria-label={`HSN or SAC ${index + 1}`} className={selectClass} value={item.hsnSac} onChange={(event) => updateLine(item.id, { hsnSac: event.target.value })}><option value="">Select code</option>{entityHsnCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select> : <Input aria-label={`HSN or SAC ${index + 1}`} placeholder="Optional" value={item.hsnSac} onChange={(event) => updateLine(item.id, { hsnSac: event.target.value })} />}
+        <Input aria-label={`Quantity ${index + 1}`} type="number" min="0.000001" step="any" placeholder="1" value={item.quantity} onChange={(event) => updateQuantity(item.id, event.target.value)} />
+        <Input aria-label={`Unit price ${index + 1}`} type="number" min="0" step="any" placeholder="0.00" value={item.unitPrice} onChange={(event) => updateUnitPrice(item.id, event.target.value)} />
+        <Input aria-label={`Taxable amount ${index + 1}`} type="number" min="0" step="0.01" placeholder="0.00" value={item.taxableAmount || ""} onChange={(event) => updateTaxableAmount(item.id, Math.max(0, Number(event.target.value) || 0))} />
+        {includesGst ? <>{(["cgstRate", "sgstRate", "igstRate"] as const).map((field) => { const amountField = field.replace("Rate", "Amount") as "cgstAmount" | "sgstAmount" | "igstAmount"; return <div key={field}><Input aria-label={`${field.replace("Rate", "").toUpperCase()} percentage ${index + 1}`} type="number" min="0" max="100" step="0.01" disabled={field === "igstRate" ? taxMode !== "igst" : taxMode !== "split"} placeholder={`${field.replace("Rate", "").toUpperCase()} %`} value={item[field] || ""} onChange={(event) => updateTaxRate(item.id, field, Number(event.target.value) || 0)} /><p className="mt-1 text-right text-[11px] text-muted-foreground">₹{(item[amountField] || 0).toLocaleString("en-IN")}</p></div> })}
+        <select aria-label={`GST rate ${index + 1}`} className={selectClass} value={roundMoney(item.igstRate || item.cgstRate + item.sgstRate)} onChange={(event) => applyGstRateOption(item.id, Number(event.target.value))}>{gstRateOptions.map((rate) => <option key={rate} value={rate}>{rate}% GST</option>)}{!gstRateOptions.some((rate) => rate === roundMoney(item.igstRate || item.cgstRate + item.sgstRate)) ? <option value={roundMoney(item.igstRate || item.cgstRate + item.sgstRate)}>Custom: {roundMoney(item.igstRate || item.cgstRate + item.sgstRate)}%</option> : null}</select>
+        <Input aria-label={`Total amount ${index + 1}`} type="number" min="0" step="0.01" placeholder="0.00" value={item.totalAmount} onChange={(event) => updateTotalAmount(item.id, event.target.value)} /></> : null}
         <Button size="icon" variant="ghost" aria-label="Remove line" disabled={items.length === 1} onClick={() => setItems((current) => current.filter((candidate) => candidate.id !== item.id))}><Trash2 /></Button>
       </div>)}</div></div>
-      <p className="text-xs text-muted-foreground">Quantity × unit price calculates the taxable amount. You can also enter a taxable amount to calculate the unit price. Choose 0%, 5%, 12%, 18%, or 28% GST from the quick selector, or enter a custom rate. Your unfinished proforma is saved on this device.</p>
+      <p className="text-xs text-muted-foreground">Quantity × unit price calculates the taxable amount. You can also enter the taxable amount, or the total amount including GST, and the other values are calculated. Choose 0%, 5%, 12%, 18%, or 28% GST from the quick selector, or enter a custom rate. Your unfinished proforma is saved on this device.</p>
       <div className="flex flex-wrap items-center justify-between gap-3"><Button variant="outline" onClick={() => setItems((current) => [...current, line(entityHsnCodes[0])])}><FilePlus2 />Add description</Button><div className="text-right"><p className="text-sm text-muted-foreground">Taxable ₹{totals.taxableAmount.toLocaleString("en-IN")}</p>{includesGst ? <p className="text-sm text-muted-foreground">GST ₹{(totals.cgstAmount + totals.sgstAmount + totals.igstAmount).toLocaleString("en-IN")}</p> : null}<p className="text-lg font-semibold">Total ₹{totals.amount.toLocaleString("en-IN")}</p></div></div>
       <div className="flex justify-end"><Button disabled={!canManage || !companies.length || !availableCustomers.length || quotationAllowance?.remaining === 0} onClick={() => void save()}><ReceiptText />Generate quotation</Button></div>
     </CardContent></Card>

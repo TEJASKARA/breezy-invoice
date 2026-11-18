@@ -17,6 +17,18 @@ configureErrorReporting(async (report) => {
 window.addEventListener('error', (event) => {
   if (event.error) reportUnexpectedError(event.error, "An unexpected problem occurred. Please try again.")
 })
+// After a new deploy, an open tab still asks for the old page files, which no longer exist.
+// Reload once to pick up the new version instead of showing an error that needs a manual refresh.
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'chanax.stale-build-reload'
+  try {
+    const last = Number(sessionStorage.getItem(key) || 0)
+    if (Date.now() - last < 10_000) return
+    sessionStorage.setItem(key, String(Date.now()))
+  } catch { /* Reload anyway when session storage is unavailable. */ }
+  event.preventDefault()
+  window.location.reload()
+})
 window.addEventListener('unhandledrejection', (event) => {
   reportUnexpectedError(event.reason, "An unexpected problem occurred. Please try again.")
 })
