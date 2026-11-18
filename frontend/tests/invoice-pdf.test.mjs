@@ -9,9 +9,11 @@ import ts from "typescript"
 const require = createRequire(import.meta.url)
 const moduleUrl = (source) => `data:text/javascript;base64,${Buffer.from(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText).toString("base64")}`
 const gstUrl = moduleUrl(await readFile(new URL("../src/lib/invoice-gst.ts", import.meta.url), "utf8"))
+const quotationPaymentUrl = moduleUrl(await readFile(new URL("../src/lib/quotation-payment.ts", import.meta.url), "utf8"))
 const calculationsUrl = moduleUrl((await readFile(new URL("../src/lib/invoice-calculations.ts", import.meta.url), "utf8")).replace('"./invoice-gst"', JSON.stringify(gstUrl)))
 const renderer = (await readFile(new URL("../src/lib/invoice-pdf.ts", import.meta.url), "utf8"))
   .replace('"@/lib/invoice-calculations"', JSON.stringify(calculationsUrl))
+  .replace('"@/lib/quotation-payment"', JSON.stringify(quotationPaymentUrl))
   .replace('import { trackAction } from "@/lib/usage-tracking"', 'const trackAction = () => {}')
   .replace('import("jspdf")', `import(${JSON.stringify(pathToFileURL(require.resolve("jspdf")).href)})`)
 const { createInvoicePdf } = await import(moduleUrl(renderer))
@@ -59,6 +61,14 @@ test("quotation shows terms and payment details without adding payment details t
   assert(text(quotation).includes(template.termsText))
   assert(!text(finalInvoice).includes("PAYMENT DETAILS"))
   assert(!text(finalInvoice).includes("business@upi"))
+})
+
+test("a quotation's own payment details print even when the template has them switched off", async () => {
+  const quotation = await createInvoicePdf({ ...input, invoice: { ...input.invoice, paymentDetails: "UPI: quote@upi" }, documentType: "quotation" })
+  assert(text(quotation).includes("PAYMENT DETAILS"))
+  assert(text(quotation).includes("quote@upi"))
+  const cleared = await createInvoicePdf({ ...input, invoice: { ...input.invoice, paymentDetails: "" }, template: { ...template, showQuotationPaymentDetails: true, quotationPaymentDetails: "UPI: template@upi" }, documentType: "quotation" })
+  assert(!text(cleared).includes("template@upi"))
 })
 
 test("the largest supported logo size keeps the PDF renderable", async () => {

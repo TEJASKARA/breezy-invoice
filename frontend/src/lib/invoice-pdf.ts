@@ -3,6 +3,7 @@ import type { jsPDF as JsPdfDocument } from "jspdf"
 import { calculateInvoiceTotals, getInvoiceLineItems } from "@/lib/invoice-calculations"
 import type { Company, Customer, Invoice, TemplateElementId, TemplateSettings } from "@/lib/mvp-store"
 import { trackAction } from "@/lib/usage-tracking"
+import { quotationPayment } from "@/lib/quotation-payment"
 
 const pageWidth = 210
 const pageHeight = 297
@@ -425,7 +426,8 @@ export async function createInvoicePdf({
       }
   }
 
-  const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
+  const payment = quotationPayment(invoice, template)
+  const showQuotationPaymentDetails = isQuotation && payment.show
   const showTerms = template.showTerms && element("terms").visible
   // Keep the footer clear of the permanent ChanaX mark at the bottom of the
   // page. Payment details and terms share the footer horizontally, so a
@@ -443,12 +445,12 @@ export async function createInvoicePdf({
     doc.setFont(baseFont, "normal")
     doc.setFontSize(7.5)
     doc.setTextColor(...muted)
-    const paymentLines = (doc.splitTextToSize(template.quotationPaymentDetails.trim(), 52) as string[]).slice(0, 5)
+    const paymentLines = (doc.splitTextToSize(payment.text, 52) as string[]).slice(0, 5)
     if (paymentLines.length) doc.text(paymentLines, paymentX, paymentY + 6)
-    if (template.quotationPaymentQrDataUrl) {
+    if (payment.qr) {
       const qrSize = 22
       const qrX = margin + 56
-      if (addLogo(doc, template.quotationPaymentQrDataUrl, qrX, footerY + 4, qrSize, qrSize)) {
+      if (addLogo(doc, payment.qr, qrX, footerY + 4, qrSize, qrSize)) {
         doc.setFontSize(6.2)
         doc.text("Scan to pay", qrX + qrSize / 2, footerY + 29, { align: "center" })
       }

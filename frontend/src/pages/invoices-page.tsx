@@ -19,7 +19,7 @@ import { sendDocumentEmail, sendDocumentWhatsApp } from "@/lib/document-email-ap
 import { freeAllowanceError, getFreeDocumentAllowance } from "@/lib/free-document-allowance"
 import { verifyGstin } from "@/lib/gst-api"
 import { cleanInvoiceFileName, createInvoicePdfFile, downloadInvoicePdf } from "@/lib/invoice-pdf"
-import { nextInvoiceNumberForEntity, type Customer, type Invoice, type InvoiceCorrectionMethod, type InvoiceLineItem, useMvpStore } from "@/lib/mvp-store"
+import { nextInvoiceNumberForEntity, type Customer, type Invoice, type InvoiceCorrectionMethod, type InvoiceLineItem, type Proforma, useMvpStore } from "@/lib/mvp-store"
 import { normalizeSpreadsheetDate, pickCell, readSpreadsheet } from "@/lib/spreadsheet"
 import { bulkInvoiceTotals, existingInvoiceNumbers, invoiceNumberConflict, invoicePrefixWarning, parseBulkInvoiceRow, type SeenInvoiceNumbers } from "@/lib/bulk-invoice-import"
 import { downloadZip } from "@/lib/zip-download"
@@ -57,6 +57,8 @@ type InvoiceDraft = {
   sourceProforma: { id: string; number: string } | null
   editingInvoiceId: string | null
   correctionSource: CorrectionSource | null
+  validUntil?: string
+  paymentDetails?: string
 }
 type CorrectionSource = {
   invoiceId: string
@@ -119,6 +121,7 @@ const restoreDraftLine = (value: Partial<DraftLineItem>): DraftLineItem => {
 const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const hsnSacPattern = /^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/
+const plusDays = (days: number) => { const value = new Date(); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10) }
 const entityHsnCodes = (company: { hsnSac: string; hsnSacCodes?: string[] } | undefined) => [...new Set([...(company?.hsnSacCodes || []), company?.hsnSac || ""].filter(Boolean))]
 const emptyManualCustomer = (): ManualCustomer => ({
   companyName: "",
@@ -136,16 +139,22 @@ export function CustomersPage() {
   return <InvoicesPage view="customers" />
 }
 
-export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "customers" } = {}) {
+export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "customers" | "quotations" } = {}) {
   const customersOnly = view === "customers"
+  /** Quotations use the same form, register and sharing as invoices. */
+  const isQuotation = view === "quotations"
+  const docLabel = isQuotation ? "Quotation" : "Invoice"
+  const docWord = docLabel.toLowerCase()
   const { selectedEntityId, selectedEntity: workingEntity } = useEntitySelection()
-  const { loading, setup, companies, customers, invoices, proformas, payslips, templateFor, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, updateInvoice, replaceInvoice, deleteInvoice } = useMvpStore()
+  const { loading, setup, companies, customers, invoices, proformas, payslips, templateFor, addCustomers, updateCustomer, deleteCustomer, addInvoice, addInvoices, updateInvoice, replaceInvoice, deleteInvoice, addProforma, updateProforma, deleteProforma } = useMvpStore()
   const location = useLocation()
   const navigate = useNavigate()
   const { can, subscription, creditAccount, workspace, refresh } = useWorkspaceAccess()
   const canManage = can("invoices.manage") && !workingEntity?.transferredAt
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
-  const invoiceAllowance = getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
+  const invoiceAllowance = isQuotation
+    ? getFreeDocumentAllowance(setup, subscription, creditAccount, "quotation", proformas.length)
+    : getFreeDocumentAllowance(setup, subscription, creditAccount, "invoice", invoices.length + payslips.length)
   const [showForm, setShowForm] = useState(false)
   const [entityName, setEntityName] = useState(workingEntity?.companyName || "")
   const [bulkEntityName] = useState(workingEntity?.companyName || "")
@@ -158,6 +167,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const [taxMode, setTaxMode] = useState<GstTaxMode>("split")
   const [tdsAmount, setTdsAmount] = useState("")
   const [otherDeduction, setOtherDeduction] = useState("")
+  const [validUntil, setValidUntil] = useState(plusDays(15))
+  const [paymentDetails, setPaymentDetails] = useState("")
   const [sourceProforma, setSourceProforma] = useState<{ id: string; number: string } | null>(null)
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)
   const [correctionSource, setCorrectionSource] = useState<CorrectionSource | null>(null)
@@ -212,7 +223,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
   const minimumInvoiceAmount = invoiceAmountMin === "" ? null : Number(invoiceAmountMin)
   const maximumInvoiceAmount = invoiceAmountMax === "" ? null : Number(invoiceAmountMax)
   const hasInvoiceFilters = Boolean(normalizedInvoiceSearch || invoiceEntityFilter || invoiceDateFilter || invoiceAmountMin || invoiceAmountMax)
-  const filteredInvoices = invoices.filter((invoice) => {
+  const registerDocuments: (Invoice & Partial<Proforma>)[] = isQuotation ? proformas : invoices
+  const filteredInvoices = registerDocuments.filter((invoice) => {
     if (!workingEntity || (invoice.entityId ? invoice.entityId !== workingEntity.id : invoice.entityName !== workingEntity.companyName)) return false
     const searchableText = [invoice.sourceNumber, invoice.number, invoice.entityName, invoice.companyName, invoice.correctsInvoiceNumber, invoice.correction?.replacementInvoiceNumber]
       .filter(Boolean)
@@ -226,7 +238,9 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     return true
   })
   const visibleInvoices = showAllInvoices ? filteredInvoices : filteredInvoices.slice(0, 5)
-  const draftStorageKey = !customersOnly && workspace?.id && selectedEntityId ? `chanax.invoice-draft.${workspace.id}.${selectedEntityId}` : ""
+  const draftPrefix = isQuotation ? "chanax.quotation-form-draft" : "chanax.invoice-draft"
+  const draftStorageKey = !customersOnly && workspace?.id && selectedEntityId ? `${draftPrefix}.${workspace.id}.${selectedEntityId}` : ""
+  const templatePaymentDetails = (entityId?: string) => { const template = templateFor(entityId); return template.showQuotationPaymentDetails ? template.quotationPaymentDetails : "" }
   const showNotice = (text: string, isError = false) => { setNotice(text); setNoticeIsError(isError) }
 
   const verifyManualCustomerGstin = async () => {
@@ -284,7 +298,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     const conversionId = (location.state as { convertProformaId?: string } | null)?.convertProformaId
     if (conversionId) return
     try {
-      const saved = localStorage.getItem(draftStorageKey) || localStorage.getItem(`chanax.invoice-draft.${workspace?.id}`)
+      const saved = localStorage.getItem(draftStorageKey) || (isQuotation ? null : localStorage.getItem(`chanax.invoice-draft.${workspace?.id}`))
       if (!saved) return
       const draft = JSON.parse(saved) as Partial<InvoiceDraft>
       if (draft.entityName && draft.entityName !== workingEntity?.companyName) return
@@ -302,11 +316,13 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       setSourceProforma(draft.sourceProforma || null)
       setEditingInvoiceId(draft.editingInvoiceId || null)
       setCorrectionSource(draft.correctionSource || null)
+      if (draft.validUntil) setValidUntil(draft.validUntil)
+      if (typeof draft.paymentDetails === "string") setPaymentDetails(draft.paymentDetails)
       setShowForm(Boolean(draft.showForm))
     } catch {
       localStorage.removeItem(draftStorageKey)
     }
-  }, [draftStorageKey, location.state, workspace?.id, workingEntity?.companyName])
+  }, [draftStorageKey, isQuotation, location.state, workspace?.id, workingEntity?.companyName])
 
   useEffect(() => {
     if (!draftStorageKey || loadedDraftKey.current !== draftStorageKey || !showForm) return
@@ -324,8 +340,10 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       sourceProforma,
       editingInvoiceId,
       correctionSource,
+      validUntil,
+      paymentDetails,
     } satisfies InvoiceDraft))
-  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, includesGst, lineItems, taxMode, otherDeduction, showForm, sourceProforma, status, tdsAmount])
+  }, [companyName, correctionSource, date, draftStorageKey, editingInvoiceId, entityName, includesGst, lineItems, taxMode, otherDeduction, paymentDetails, showForm, sourceProforma, status, tdsAmount, validUntil])
 
   useEffect(() => {
     if (!preview.length || bulkImportPending || bulkImportHasError) return
@@ -335,7 +353,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
   useEffect(() => {
     const conversionId = (location.state as { convertProformaId?: string } | null)?.convertProformaId
-    if (!conversionId || loading) return
+    if (isQuotation || !conversionId || loading) return
     const record = proformas.find((proforma) => proforma.id === conversionId)
     navigate(location.pathname, { replace: true, state: null })
     if (!record) {
@@ -389,7 +407,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setShowForm(true)
     showNotice(`${record.number} is ready to review. Saving the invoice will use one credit.`)
     window.scrollTo({ top: 0, behavior: "smooth" })
-  }, [companies, customers, loading, location.pathname, location.state, navigate, proformas])
+  }, [companies, customers, isQuotation, loading, location.pathname, location.state, navigate, proformas])
 
   const fillFormFromInvoice = (invoice: Invoice, replacement: boolean) => {
     const sourceItems = invoice.lineItems?.length ? invoice.lineItems : [{
@@ -436,6 +454,11 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setCorrectionSource(null)
     setEditingInvoiceId(invoice.id)
     fillFormFromInvoice(invoice, false)
+    if (isQuotation) {
+      const quotation = invoice as Proforma
+      setValidUntil(quotation.validUntil || plusDays(15))
+      setPaymentDetails(quotation.paymentDetails ?? templatePaymentDetails(quotation.entityId))
+    }
     showNotice(`${invoice.sourceNumber || invoice.number} is open for editing. Saving changes does not use another credit.`)
   }
 
@@ -498,7 +521,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
   const draftError = () => {
     if (!entityName || !companyName) return "Select the issuing entity and customer."
-    if (!date) return "Select the invoice date."
+    if (!date) return `Select the ${docWord} date.`
+    if (isQuotation && validUntil && validUntil < date) return "Valid until must be on or after the quotation date."
     if (parsedLineItems.some((item) => !Number.isFinite(item.quantity) || (item.quantity ?? 0) <= 0 || !Number.isFinite(item.unitPrice) || (item.unitPrice ?? 0) < 0)) return "Every line needs a quantity greater than zero and a valid non-negative unit price."
     if (parsedLineItems.some((item) => !item.description || item.taxableAmount <= 0)) return "Every line item needs a description and taxable amount greater than zero."
     if (parsedLineItems.some((item) => item.hsnSac && !hsnSacPattern.test(item.hsnSac))) return "HSN/SAC must contain 4, 6, or 8 digits."
@@ -509,7 +533,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
   const buildDraftInvoice = (): Invoice => ({
     id: "invoice-preview",
-    number: nextInvoiceNumberForEntity(companies.find((company) => company.companyName === entityName), setup, invoices),
+    number: isQuotation ? "Quotation" : nextInvoiceNumberForEntity(companies.find((company) => company.companyName === entityName), setup, invoices),
+    entityId: companies.find((company) => company.companyName === entityName)?.id,
     entityName,
     customerId: individualCustomers.find((customer) => customer.companyName === companyName)?.id,
     companyName,
@@ -530,6 +555,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     sourceProformaId: sourceProforma?.id,
     sourceProformaNumber: sourceProforma?.number,
     status,
+    ...(isQuotation ? { validUntil, paymentDetails: paymentDetails.trim() } : {}),
   })
 
   const resetForm = () => {
@@ -544,6 +570,8 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setSourceProforma(null)
     setEditingInvoiceId(null)
     setCorrectionSource(null)
+    setValidUntil(plusDays(15))
+    setPaymentDetails("")
     setDraftFormError("")
     setShowForm(false)
   }
@@ -570,6 +598,16 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     setDraftFormError("")
     try {
       let savedInvoice: Invoice | null = null
+      if (isQuotation) {
+        const quotation = invoice as Omit<Proforma, "id" | "number">
+        if (!quotation.entityId) throw new Error("Select the issuing entity.")
+        if (editingInvoiceId) await updateProforma(editingInvoiceId, quotation)
+        else await addProforma(quotation)
+        await refresh()
+        resetForm()
+        showNotice(editingInvoiceId ? "The draft quotation was updated without using another credit." : "Quotation saved. One credit was used.")
+        return
+      }
       if (editingInvoiceId) {
         await updateInvoice(editingInvoiceId, invoice)
       } else if (correctionSource) {
@@ -592,7 +630,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         showNotice(sourceProforma && savedInvoice ? `${sourceProforma.number} was converted into invoice ${savedInvoice.number}.` : "Invoice saved to your workspace.")
       }
     } catch (saveError) {
-      setDraftFormError(customerErrorMessage(saveError, "The invoice could not be saved. Please try again."))
+      setDraftFormError(customerErrorMessage(saveError, `The ${docWord} could not be saved. Please try again.`))
     } finally {
       setInvoiceSaving(false)
     }
@@ -604,7 +642,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       setDraftFormError(error)
       return
     }
-    setDraftFormError("For credit protection, a full document preview is available after the invoice is generated. Review the totals above before saving; previewing does not use a credit.")
+    setDraftFormError(`For credit protection, a full document preview is available after the ${docWord} is saved. Review the totals above before saving; previewing does not use a credit.`)
   }
 
   const updateLineItem = (itemId: string, field: keyof DraftLineItem, value: string) => {
@@ -675,10 +713,20 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
     fields[index + 1].focus()
   }
 
+  const documentEntity = (invoice: Invoice) => companies.find((company) => invoice.entityId ? company.id === invoice.entityId : company.companyName === invoice.entityName)
+  const pdfFile = async (input: Parameters<typeof createInvoicePdfFile>[0]) => {
+    const file = await createInvoicePdfFile({ ...input, documentType: isQuotation ? "quotation" : "invoice" })
+    return isQuotation ? { ...file, name: `${cleanInvoiceFileName(input.invoice.companyName)}_${input.invoice.number}_quotation.pdf` } : file
+  }
   const downloadPdf = async (invoice: Invoice) => {
     try {
-      const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+      const invoiceEntity = documentEntity(invoice)
       const invoiceTemplate = templateFor(invoiceEntity?.id)
+      if (isQuotation) {
+        await downloadInvoicePdf({ invoice, entity: invoiceEntity, customer: customers.find((customer) => customer.id === invoice.customerId), template: invoiceTemplate, canRemoveBranding: brandingCanBeRemoved, documentType: "quotation" })
+        showNotice(`${invoice.number} downloaded.`)
+        return
+      }
       await downloadInvoicePdf({
         invoice,
         entity: invoiceEntity,
@@ -689,38 +737,38 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       })
       showNotice(`${invoice.sourceNumber || invoice.number} downloaded using the ${invoiceTemplate.preset} template${invoiceEntity ? ` for ${invoiceEntity.companyName}` : ""}.`)
     } catch (error) {
-      showNotice(customerErrorMessage(error, "The invoice PDF could not be created."), true)
+      showNotice(customerErrorMessage(error, `The ${docWord} PDF could not be created.`), true)
     }
   }
 
   const shareInvoiceOnWhatsApp = async (invoice: Invoice) => {
-    const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+    const invoiceEntity = documentEntity(invoice)
     const customer = customers.find((item) => item.id === invoice.customerId)
       || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
     const result = await sharePdfViaWhatsApp({
-      title: `Invoice ${invoice.sourceNumber || invoice.number}`,
-      message: `Invoice ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
-      createFile: () => createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved }),
+      title: `${docLabel} ${invoice.sourceNumber || invoice.number}`,
+      message: `${docLabel} ${invoice.sourceNumber || invoice.number} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
+      createFile: () => pdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved }),
     })
-    if (result === "shared") showNotice("Invoice prepared. Choose WhatsApp in the share panel to send the PDF.")
-    if (result === "opened") showNotice("WhatsApp opened with the invoice message. This browser cannot attach the generated PDF automatically.")
+    if (result === "shared") showNotice(`${docLabel} prepared. Choose WhatsApp in the share panel to send the PDF.`)
+    if (result === "opened") showNotice(`WhatsApp opened with the ${docWord} message. This browser cannot attach the generated PDF automatically.`)
   }
 
   const emailInvoice = async (invoice: Invoice, toEmail: string) => {
     if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
-    const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+    const invoiceEntity = documentEntity(invoice)
     const customer = customers.find((item) => item.id === invoice.customerId)
       || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
-    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
+    const file = await pdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
     const invoiceNumber = invoice.sourceNumber || invoice.number
     const message = await sendDocumentEmail({
       workspaceId: workspace.id,
       documentId: invoice.id,
       toEmail,
-      documentType: "invoice",
+      documentType: isQuotation ? "quotation" : "invoice",
       documentNumber: invoiceNumber,
-      subject: `Invoice ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
-      message: `Hello,\n\nPlease find invoice ${invoiceNumber} attached.\n\nRegards,\n${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
+      subject: `${docLabel} ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
+      message: `Hello,\n\nPlease find ${docWord} ${invoiceNumber} attached.\n\nRegards,\n${invoiceEntity?.companyName || invoice.entityName || "ChanaX"}`,
       filename: file.name,
       pdf: file.data,
     })
@@ -729,18 +777,18 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
   const sendInvoiceOnWhatsApp = async (invoice: Invoice, toNumber: string) => {
     if (!workspace?.id) throw new Error("Your workspace is not ready. Refresh and try again.")
-    const invoiceEntity = companies.find((company) => company.companyName === invoice.entityName)
+    const invoiceEntity = documentEntity(invoice)
     const customer = customers.find((item) => item.id === invoice.customerId)
       || customers.find((item) => item.entityId === invoiceEntity?.id && item.companyName === invoice.companyName)
-    const file = await createInvoicePdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
+    const file = await pdfFile({ invoice, entity: invoiceEntity, customer, template: templateFor(invoiceEntity?.id), canRemoveBranding: brandingCanBeRemoved })
     const invoiceNumber = invoice.sourceNumber || invoice.number
     const message = await sendDocumentWhatsApp({
       workspaceId: workspace.id,
       documentId: invoice.id,
       toNumber,
-      documentType: "invoice",
+      documentType: isQuotation ? "quotation" : "invoice",
       documentNumber: invoiceNumber,
-      message: `Invoice ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
+      message: `${docLabel} ${invoiceNumber} from ${invoiceEntity?.companyName || invoice.entityName || "our company"} for ${invoice.companyName}.`,
       senderCompanyName: invoiceEntity?.companyName || invoice.entityName || "",
       recipientCompanyName: customer?.companyName || invoice.companyName,
       filename: file.name,
@@ -1083,9 +1131,9 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       {customersOnly && canManage ? <input ref={customerFileInput} type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCustomerFile(file); event.target.value = "" }} /> : null}
       <PageHeader
         eyebrow={customersOnly ? "Master data" : "Documents"}
-        title={customersOnly ? "Customers" : "Invoices"}
-        description={customersOnly ? `Customers for ${workingEntity?.companyName || "the selected entity"}. Change the working entity from the navbar.` : "Create invoices individually or import a monthly invoice batch. Manage customer records on the Customers page."}
-        actions={canManage && !customersOnly ? (
+        title={customersOnly ? "Customers" : isQuotation ? "Quotations" : "Invoices"}
+        description={customersOnly ? `Customers for ${workingEntity?.companyName || "the selected entity"}. Change the working entity from the navbar.` : isQuotation ? "Prepare a quotation before a sale, then convert an accepted quotation into a final invoice." : "Create invoices individually or import a monthly invoice batch. Manage customer records on the Customers page."}
+        actions={canManage && !customersOnly && !isQuotation ? (
           <>
             <input
               ref={customerFileInput}
@@ -1123,12 +1171,14 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
             className="h-14 w-full max-w-xl gap-3 rounded-xl px-6 text-base font-semibold shadow-md ring-4 ring-primary/10 hover:shadow-lg"
             disabled={!workingEntity || !individualCustomers.length}
             aria-expanded={showForm}
-            onClick={() => setShowForm((value) => !value)}
+            onClick={() => { if (isQuotation && !showForm && !paymentDetails) setPaymentDetails(templatePaymentDetails(workingEntity?.id)); setShowForm((value) => !value) }}
           >
-            <Plus className="size-5" />New invoice
+            <Plus className="size-5" />New {docWord}
           </Button>
         </div>
       ) : null}
+
+      {isQuotation ? <div className="rounded-xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100"><p className="font-semibold">A quotation is not a sales or tax invoice.</p><p className="mt-1">It is clearly marked as a quotation in the preview and PDF, carries your payment details, and can be converted into an invoice from the register below.</p></div> : null}
 
       {!customersOnly && invoiceAllowance ? <p className={`rounded-lg border p-3 text-sm ${invoiceAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Credits:</strong> {invoiceAllowance.remaining} remaining for invoices, quotations and payslips. {invoiceAllowance.gstStatus === "verified" ? "GSTIN verified." : invoiceAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}
 
@@ -1136,15 +1186,15 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
       {notice && <p role={noticeIsError ? "alert" : "status"} className={noticeIsError ? "rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{notice}</p>}
       {!companies.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Create at least one managed Entity. The selected entity will be the invoice issuer.</p>}
-      {!customersOnly && !individualCustomers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add customers for this entity on the <a className="underline" href="/customers">Customers page</a> before creating an invoice.</p>}
+      {!customersOnly && !individualCustomers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add customers for this entity on the <a className="underline" href="/customers">Customers page</a> before creating {isQuotation ? "a quotation" : "an invoice"}.</p>}
 
       {!customersOnly && showForm && canManage && (
         <Card>
-          <CardHeader><CardTitle>{editingInvoiceId ? "Edit draft invoice" : correctionSource ? `Replace invoice ${correctionSource.invoiceNumber}` : sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{editingInvoiceId ? "Update this draft in place. Its invoice number remains unchanged and no additional credit is used." : correctionSource ? "Review the corrected details carefully. Saving creates the next invoice number and permanently links it to the cancelled original." : sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{isQuotation ? (editingInvoiceId ? "Edit draft quotation" : "Create quotation") : editingInvoiceId ? "Edit draft invoice" : correctionSource ? `Replace invoice ${correctionSource.invoiceNumber}` : sourceProforma ? "Convert quotation to invoice" : "Create individual invoice"}</CardTitle><CardDescription>{isQuotation ? (editingInvoiceId ? "Update this draft in place. Its quotation number remains unchanged and no additional credit is used." : "Same as an invoice: add multiple descriptions, choose GST and review the totals. One credit is used when the quotation is saved.") : editingInvoiceId ? "Update this draft in place. Its invoice number remains unchanged and no additional credit is used." : correctionSource ? "Review the corrected details carefully. Saving creates the next invoice number and permanently links it to the cancelled original." : sourceProforma ? "Review and edit the quotation details before creating the final sales invoice." : "Add multiple descriptions and review the totals before saving. The complete document preview becomes available after generation."}</CardDescription></CardHeader>
           <CardContent className="space-y-6" onKeyDown={moveToNextInvoiceField}>
             {sourceProforma ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"><strong>Source quotation: {sourceProforma.number}</strong><p className="mt-1">The quotation remains saved. Previewing uses no credit. One credit is used only when this invoice is saved.</p></div> : null}
             {correctionSource ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"><strong>Correction of {correctionSource.invoiceNumber}</strong><p className="mt-1">Original reason: {correctionSource.reason}</p><p className="mt-1">The original is not changed until this replacement is saved. One credit is used for the new invoice.</p></div> : null}
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className={`grid gap-4 ${isQuotation ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
               <div className="space-y-2">
                 <Label htmlFor="invoice-entity">Issuing entity</Label>
                 <Input id="invoice-entity" value={entityName} readOnly aria-label="Issuing entity" />
@@ -1157,16 +1207,17 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                 </select>
                 {entityName && !individualCustomers.length && <p className="text-xs text-destructive">This entity has no saved invoice customers yet.</p>}
               </div>
-              <div className="space-y-2"><Label htmlFor="invoice-date">Invoice date</Label><Input id="invoice-date" type="date" value={date} onChange={(event) => { setDate(event.target.value); setDraftFormError("") }} /></div>
+              <div className="space-y-2"><Label htmlFor="invoice-date">{docLabel} date</Label><Input id="invoice-date" type="date" value={date} onChange={(event) => { setDate(event.target.value); setDraftFormError("") }} /></div>
+              {isQuotation ? <div className="space-y-2"><Label htmlFor="quotation-valid-until">Valid until</Label><Input id="quotation-valid-until" type="date" min={date} value={validUntil} onChange={(event) => { setValidUntil(event.target.value); setDraftFormError("") }} /></div> : null}
             </div>
 
             <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={includesGst} onChange={(event) => changeIncludesGst(event.target.checked)} />
-                <span><span className="font-medium">Include GST amounts</span><span className="mt-1 block text-xs text-muted-foreground">Use CGST/SGST or IGST calculations even if this entity has not provided a GSTIN. The GSTIN will remain blank on the invoice.</span></span>
+                <span><span className="font-medium">Include GST amounts</span><span className="mt-1 block text-xs text-muted-foreground">{isQuotation ? "Turn off to quote without GST. Converting the quotation keeps this choice on the invoice." : "Use CGST/SGST or IGST calculations even if this entity has not provided a GSTIN. The GSTIN will remain blank on the invoice."}</span></span>
               </label>
               {isGstInvoice ? <div className="space-y-2">
-              <Label htmlFor="invoice-tax-mode">Tax type for the entire invoice</Label>
+              <Label htmlFor="invoice-tax-mode">Tax type for the entire {docWord}</Label>
               <select id="invoice-tax-mode" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm md:max-w-sm" value={taxMode} onChange={(event) => changeInvoiceTaxMode(event.target.value as GstTaxMode)}>
                 <option value="split">CGST + SGST</option><option value="igst">IGST</option>
               </select>
@@ -1178,7 +1229,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-medium">Invoice descriptions</h3>
+                  <h3 className="font-medium">{docLabel} descriptions</h3>
                   <p className="text-xs text-muted-foreground">{isGstInvoice ? "Choose 0%, 5%, 12%, 18% or 28% GST. Quantity × unit price gives the taxable amount. You can also enter the line taxable amount or inclusive total to calculate the other values automatically." : "Enter quantity and unit price, or the line amount. HSN/SAC is optional for this non-GST invoice."}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => setLineItems((items) => [...items, newDraftLine(selectedEntityHsnCodes[0] || "")])}><Plus />Add description</Button>
@@ -1206,7 +1257,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                           {gstRateOptions.map((rate) => <option key={rate} value={rate}>{rate}%</option>)}
                           {!gstRateOptions.some(rate => rate === roundMoney(Number(item.igstRate) || Number(item.cgstRate) + Number(item.sgstRate))) ? <option value={roundMoney(Number(item.igstRate) || Number(item.cgstRate) + Number(item.sgstRate))}>Custom: {roundMoney(Number(item.igstRate) || Number(item.cgstRate) + Number(item.sgstRate))}%</option> : null}
                         </select>
-                        <span>{taxMode === "igst" ? "Applies as IGST on this invoice." : "Splits equally as CGST + SGST."}</span>
+                        <span>{taxMode === "igst" ? `Applies as IGST on this ${docWord}.` : "Splits equally as CGST + SGST."}</span>
                       </div> : null}
                     </div>
                   ))}
@@ -1220,16 +1271,22 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
               <div className="space-y-1 text-sm md:text-right">
                 <p className="text-muted-foreground">Taxable: ₹{draftTotals.taxableAmount.toLocaleString("en-IN")}</p>
                 {isGstInvoice ? <p className="text-muted-foreground">Tax: ₹{(draftTotals.cgstAmount + draftTotals.sgstAmount + draftTotals.igstAmount).toLocaleString("en-IN")}</p> : null}
-                <p className="text-lg font-semibold">Invoice total: ₹{draftTotals.amount.toLocaleString("en-IN")}</p>
+                <p className="text-lg font-semibold">{docLabel} total: ₹{draftTotals.amount.toLocaleString("en-IN")}</p>
                 <p className="font-medium">Net receivable: ₹{Math.max(0, draftTotals.amount - (Number(tdsAmount) || 0) - (Number(otherDeduction) || 0)).toLocaleString("en-IN")}</p>
               </div>
             </div>
+
+            {isQuotation ? <div className="space-y-2" data-enter-navigation="off">
+              <Label htmlFor="quotation-payment-details">Payment details (printed on the quotation)</Label>
+              <textarea id="quotation-payment-details" rows={4} className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm" value={paymentDetails} onChange={(event) => setPaymentDetails(event.target.value)} placeholder={"Bank: Example Bank\nA/C: 1234567890\nIFSC: EXMP0000123\nUPI: business@upi"} />
+              <p className="text-xs text-muted-foreground">Filled from your template settings. Edit here for this quotation only; the UPI QR code from the template is added when it is switched on there.</p>
+            </div> : null}
 
             {draftFormError ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">{draftFormError}</p> : null}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={status === "Generated"} disabled={Boolean(correctionSource)} onChange={(event) => setStatus(event.target.checked ? "Generated" : "Draft")} /> {correctionSource ? "Replacement will be generated" : "Mark as generated"}</label>
-              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Review preview policy</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : editingInvoiceId ? "Save changes" : correctionSource ? "Create replacement invoice" : "Save invoice"}</Button></div>
+              <div className="flex gap-2"><Button variant="outline" onClick={resetForm} disabled={invoiceSaving}>Cancel</Button><Button variant="outline" onClick={viewDraft} disabled={invoiceSaving}><Eye />Review preview policy</Button><Button onClick={() => void save()} disabled={invoiceSaving}>{invoiceSaving ? <><LoaderCircle className="animate-spin" />Saving…</> : editingInvoiceId ? "Save changes" : correctionSource ? "Create replacement invoice" : `Save ${docWord}`}</Button></div>
             </div>
           </CardContent>
         </Card>
@@ -1368,13 +1425,13 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>Invoice register</CardTitle>
+              <CardTitle>{docLabel} register</CardTitle>
               <CardDescription>
                 {hasInvoiceFilters
-                  ? `${filteredInvoices.length} invoices match your filters for this entity.`
+                  ? `${filteredInvoices.length} ${docWord}s match your filters for this entity.`
                   : filteredInvoices.length > 5 && !showAllInvoices
-                  ? `Showing the latest 5 of ${filteredInvoices.length} invoices.`
-                  : `${filteredInvoices.length} invoice${filteredInvoices.length === 1 ? "" : "s"} maintained for this entity.`}
+                  ? `Showing the latest 5 of ${filteredInvoices.length} ${docWord}s.`
+                  : `${filteredInvoices.length} ${docWord}${filteredInvoices.length === 1 ? "" : "s"} maintained for this entity.`}
               </CardDescription>
             </div>
             {filteredInvoices.length > 5 && (
@@ -1387,14 +1444,14 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
         <CardContent className="space-y-4">
           <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.3fr)_180px_170px_150px_150px_auto]">
             <div className="space-y-2">
-              <Label htmlFor="invoice-register-search">Invoice, customer or entity</Label>
+              <Label htmlFor="invoice-register-search">{docLabel}, customer or entity</Label>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="invoice-register-search"
                   value={invoiceSearch}
                   onChange={(event) => { setInvoiceSearch(event.target.value); setShowAllInvoices(false) }}
-                  placeholder="Search by name or invoice number"
+                  placeholder={`Search by name or ${docWord} number`}
                   className="pl-9"
                 />
               </div>
@@ -1404,7 +1461,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
               <Input id="invoice-register-entity" value={workingEntity?.companyName || "No entity selected"} readOnly />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="invoice-register-date">Invoice date</Label>
+              <Label htmlFor="invoice-register-date">{docLabel} date</Label>
               <Input id="invoice-register-date" type="date" value={invoiceDateFilter} onChange={(event) => { setInvoiceDateFilter(event.target.value); setShowAllInvoices(false) }} />
             </div>
             <div className="space-y-2">
@@ -1418,33 +1475,34 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
             <Button variant="outline" className="self-end" disabled={!hasInvoiceFilters} onClick={clearInvoiceFilters}><X />Clear</Button>
           </div>
           <Table>
-            <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Entity</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>{docLabel}</TableHead><TableHead>Entity</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead>{isQuotation ? <TableHead>Valid until</TableHead> : null}<TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {visibleInvoices.length ? visibleInvoices.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}{invoice.correctsInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaces {invoice.correctsInvoiceNumber}</p> : null}{invoice.correction?.replacementInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaced by {invoice.correction.replacementInvoiceNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell><TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant={invoice.status === "Cancelled" ? "destructive" : invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.status}</Badge>{invoice.correction ? <p className="max-w-40 text-xs text-muted-foreground" title={invoice.correction.reason}>{correctionLabels[invoice.correction.method]}{invoice.correction.referenceNumber ? ` · ${invoice.correction.referenceNumber}` : ""}</p> : null}</div></TableCell>
+                  <TableCell><p className="font-medium">{invoice.sourceNumber || invoice.number}</p>{invoice.sourceProformaNumber ? <p className="text-xs text-muted-foreground">From quotation {invoice.sourceProformaNumber}</p> : null}{invoice.correctsInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaces {invoice.correctsInvoiceNumber}</p> : null}{invoice.correction?.replacementInvoiceNumber ? <p className="text-xs text-amber-700 dark:text-amber-300">Replaced by {invoice.correction.replacementInvoiceNumber}</p> : null}</TableCell><TableCell>{invoice.entityName || "—"}</TableCell><TableCell>{invoice.companyName}</TableCell><TableCell>{invoice.date}</TableCell>{isQuotation ? <TableCell>{invoice.validUntil || "—"}</TableCell> : null}<TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell><TableCell><div className="space-y-1"><Badge variant={invoice.status === "Cancelled" ? "destructive" : invoice.status === "Draft" ? "secondary" : "outline"}>{invoice.convertedInvoiceId ? "Converted" : invoice.status}</Badge>{invoice.convertedInvoiceId ? <p className="text-xs text-muted-foreground">{invoice.convertedInvoiceNumber ? `Invoice ${invoice.convertedInvoiceNumber}` : "Invoice created"}</p> : null}{invoice.correction ? <p className="max-w-40 text-xs text-muted-foreground" title={invoice.correction.reason}>{correctionLabels[invoice.correction.method]}{invoice.correction.referenceNumber ? ` · ${invoice.correction.referenceNumber}` : ""}</p> : null}</div></TableCell>
                   <TableCell className="text-right">
                     {pendingDelete === invoice.id && canManage ? (
-                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await deleteInvoice(invoice.id); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(customerErrorMessage(error, "The invoice could not be deleted."), true) } }}>Confirm delete</Button></div>
+                      <div className="flex justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button><Button size="sm" variant="destructive" onClick={async () => { try { await (isQuotation ? deleteProforma(invoice.id) : deleteInvoice(invoice.id)); setPendingDelete(null); showNotice(`${invoice.number} was deleted.`) } catch (error) { showNotice(customerErrorMessage(error, `The ${docWord} could not be deleted.`), true) } }}>Confirm delete</Button></div>
                     ) : (
                       <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title="Preview invoice" onClick={() => setPdfPreview(invoice)}><Eye /></Button>
+                        <Button size="icon" variant="ghost" aria-label={`Preview ${invoice.sourceNumber || invoice.number}`} title={`Preview ${docWord}`} onClick={() => setPdfPreview(invoice)}><Eye /></Button>
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
-                        {invoice.status === "Draft" || invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title="Share invoice" onClick={() => setShareTarget(invoice)}><Share2 /></Button> : null}
+                        {invoice.status === "Draft" || invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title={`Share ${docWord}`} onClick={() => setShareTarget(invoice)}><Share2 /></Button> : null}
                         {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Edit ${invoice.sourceNumber || invoice.number}`} title="Edit draft" onClick={() => editDraftInvoice(invoice)}><FilePenLine /></Button> : null}
-                        {canManage && invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Correct ${invoice.sourceNumber || invoice.number}`} title="Correct issued invoice" onClick={() => openCorrection(invoice)}><FilePenLine /></Button> : null}
-                        {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} title="Delete draft" onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
+                        {canManage && isQuotation && invoice.status === "Generated" && !invoice.convertedInvoiceId ? <Button size="sm" variant="outline" onClick={() => navigate("/invoices", { state: { convertProformaId: invoice.id } })}>Convert to invoice</Button> : null}
+                        {canManage && !isQuotation && invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Correct ${invoice.sourceNumber || invoice.number}`} title="Correct issued invoice" onClick={() => openCorrection(invoice)}><FilePenLine /></Button> : null}
+                        {canManage && (invoice.status === "Draft" || isQuotation && !invoice.convertedInvoiceId) ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} title={invoice.status === "Draft" ? "Delete draft" : `Delete ${docWord}`} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>
                     )}
                   </TableCell>
                 </TableRow>
-              )) : <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">{hasInvoiceFilters ? "No invoices match these filters." : "Add an invoice separately or import your regular invoice spreadsheet."}</TableCell></TableRow>}
+              )) : <TableRow><TableCell colSpan={isQuotation ? 8 : 7} className="h-40 text-center text-muted-foreground">{hasInvoiceFilters ? `No ${docWord}s match these filters.` : isQuotation ? "No quotations yet. Use New quotation to create one." : "Add an invoice separately or import your regular invoice spreadsheet."}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>}
 
-      {!customersOnly && canManage ? <Card>
+      {!customersOnly && !isQuotation && canManage ? <Card>
         <CardHeader>
           <CardTitle>Bulk invoice generation</CardTitle>
           <CardDescription>Select the entity once, download the format, fill one invoice line item per row, and upload the completed workbook.</CardDescription>
@@ -1568,17 +1626,17 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
       ) : null}
 
       {pdfPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 md:p-6" role="dialog" aria-modal="true" aria-label="Invoice preview">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 md:p-6" role="dialog" aria-modal="true" aria-label={`${docLabel} preview`}>
           <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-background shadow-2xl">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
               <div>
-                <h2 className="font-semibold">Invoice preview</h2>
+                <h2 className="font-semibold">{docLabel} preview</h2>
                 <p className="text-sm text-muted-foreground">Template: {templateFor(companies.find((company) => company.companyName === pdfPreview.entityName)?.id).preset}{companies.find((company) => company.companyName === pdfPreview.entityName) ? ` (${companies.find((company) => company.companyName === pdfPreview.entityName)?.companyName})` : ""}. The downloaded PDF will use this format.</p>
               </div>
               <div className="flex gap-2">
                 {pdfPreview.status === "Draft" || pdfPreview.status === "Generated" ? <Button variant="outline" onClick={() => setShareTarget(pdfPreview)}><Share2 />Share</Button> : null}
                 <Button variant="outline" onClick={() => void downloadPdf(pdfPreview)}><Download />Download PDF</Button>
-                <Button size="icon" variant="ghost" aria-label="Close invoice preview" onClick={() => setPdfPreview(null)}><X /></Button>
+                <Button size="icon" variant="ghost" aria-label={`Close ${docWord} preview`} onClick={() => setPdfPreview(null)}><X /></Button>
               </div>
             </div>
             <div className="overflow-auto bg-muted/70 p-3 md:p-8">
@@ -1588,6 +1646,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                 customer={customers.find((customer) => customer.id === pdfPreview.customerId)
                   || customers.find((customer) => customer.entityId === companies.find((company) => company.companyName === pdfPreview.entityName)?.id && customer.companyName === pdfPreview.companyName)}
                 template={templateFor(companies.find((company) => company.companyName === pdfPreview.entityName)?.id)}
+                documentType={isQuotation ? "quotation" : "invoice"}
                 canRemoveBranding={brandingCanBeRemoved}
               />
             </div>
@@ -1597,7 +1656,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
       <DocumentShareDialog
         open={Boolean(shareTarget)}
-        title={shareTarget ? `invoice ${shareTarget.sourceNumber || shareTarget.number}` : "invoice"}
+        title={shareTarget ? `${docWord} ${shareTarget.sourceNumber || shareTarget.number}` : docWord}
         onClose={() => setShareTarget(null)}
         onEmail={async (email) => {
           if (!shareTarget) return

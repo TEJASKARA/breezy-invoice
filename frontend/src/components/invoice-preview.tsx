@@ -4,6 +4,7 @@ import type { Company, Customer, Invoice, TemplateElementId, TemplateElementSett
 import { calculateInvoiceTotals, getInvoiceLineItems } from "@/lib/invoice-calculations"
 import { cn } from "@/lib/utils"
 import { createInvoicePdf } from "@/lib/invoice-pdf"
+import { quotationPayment } from "@/lib/quotation-payment"
 
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -129,7 +130,8 @@ function EditableInvoicePreview({
   const displayedTitle = isQuotation ? "QUOTATION / PROFORMA" : isGstInvoice ? element("invoiceTitle").label : "INVOICE"
   const validUntil = (invoice as Invoice & { validUntil?: string }).validUntil
   const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
-  const showQuotationPaymentDetails = isQuotation && template.showQuotationPaymentDetails && Boolean(template.quotationPaymentDetails.trim() || template.quotationPaymentQrDataUrl)
+  const payment = quotationPayment(invoice, template)
+  const showQuotationPaymentDetails = isQuotation && payment.show
   const showTerms = template.showTerms && element("terms").visible
   const logoSize = Math.min(200, Math.max(40, template.logoSize))
   const watermarkOpacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
@@ -335,8 +337,8 @@ function EditableInvoicePreview({
         <EditableInvoiceElement id="terms" setting={element("terms")} editor={editor} onPointerDown={startElementDrag} className={cn(showTerms && showQuotationPaymentDetails && "grid grid-cols-2 gap-5")}>
           {showQuotationPaymentDetails && (
             <div className="flex min-w-0 items-start gap-3">
-              <div className="min-w-0 flex-1"><p className="font-semibold text-zinc-800">Payment details</p><p className="mt-2 max-h-16 overflow-hidden whitespace-pre-wrap leading-4">{template.quotationPaymentDetails}</p></div>
-              {template.quotationPaymentQrDataUrl ? <div className="shrink-0 text-center"><img src={template.quotationPaymentQrDataUrl} alt="UPI payment QR code" className="size-14 rounded border object-contain" /><p className="mt-1 text-[10px]">Scan to pay</p></div> : null}
+              <div className="min-w-0 flex-1"><p className="font-semibold text-zinc-800">Payment details</p><p className="mt-2 max-h-16 overflow-hidden whitespace-pre-wrap leading-4">{payment.text}</p></div>
+              {payment.qr ? <div className="shrink-0 text-center"><img src={payment.qr} alt="UPI payment QR code" className="size-14 rounded border object-contain" /><p className="mt-1 text-[10px]">Scan to pay</p></div> : null}
             </div>
           )}
           {showTerms && (

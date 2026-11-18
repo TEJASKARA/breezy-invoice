@@ -98,7 +98,7 @@ export type Invoice = {
   /** Date (YYYY-MM-DD) this replacement invoice was regenerated from the cancelled original. */
   regeneratedAt?: string
 }
-export type Proforma = Invoice & { entityId: string; validUntil?: string; convertedInvoiceId?: string; convertedInvoiceNumber?: string }
+export type Proforma = Invoice & { entityId: string; validUntil?: string; /** Bank/UPI details printed on this quotation. */ paymentDetails?: string; convertedInvoiceId?: string; convertedInvoiceNumber?: string }
 export type PayrollComponent = { id: string; label: string; amount: number }
 export type AttendanceHoliday = { id: string; date: string; name: string }
 export type AttendanceDayStatus = "present" | "half_day" | "paid_leave" | "unpaid_leave"
