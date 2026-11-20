@@ -42,7 +42,7 @@ function loadWorkspaceRows(db: ReturnType<typeof client>, workspaceId: string) {
     db.from("breezy_workspace_settings").select("setup, template").eq("workspace_id", workspaceId).maybeSingle(),
     db.from("breezy_entities").select("id, payload, transferred_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_customers").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-    db.from("breezy_invoices").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+    db.from("breezy_invoices").select("id, entity_id, payload, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_proformas").select("id, entity_id, customer_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_employees").select("id, entity_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     db.from("breezy_payslips").select("id, entity_id, employee_id, payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
@@ -95,7 +95,7 @@ export async function loadWorkspace(userId: string, preferredWorkspaceId?: strin
     template: (settingsResult.data?.template as TemplateSettings | undefined),
     companies: ((entitiesResult.data || []) as (PayloadRow & { transferred_at: string | null })[]).map((row) => ({ ...row.payload, id: row.id, transferredAt: row.transferred_at || undefined }) as Company),
     customers: ((customersResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Customer),
-    invoices: withRegeneratedDates(((invoicesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id || undefined }) as Invoice)),
+    invoices: withRegeneratedDates(((invoicesResult.data || []) as (RelatedPayloadRow & { created_at?: string })[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id || undefined, createdAt: row.created_at || row.payload.createdAt }) as Invoice)),
     proformas: ((proformasResult.error ? [] : proformasResult.data || []) as ProformaPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id, customerId: row.customer_id || undefined }) as Proforma),
     employees: ((employeesResult.data || []) as RelatedPayloadRow[]).map((row) => ({ ...row.payload, id: row.id, entityId: row.entity_id }) as Employee),
     payslips: ((payslipsResult.data || []) as PayslipPayloadRow[]).map((row) => ({

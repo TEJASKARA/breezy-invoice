@@ -28,6 +28,7 @@ import {
   upsertPayslips,
 } from "@/lib/workspace-repository"
 import { trackAction } from "@/lib/usage-tracking"
+import { canDeleteInvoice } from "@/lib/invoice-deletion"
 
 export type TallySettings = {
   companyName: string
@@ -97,6 +98,8 @@ export type Invoice = {
   correctsInvoiceNumber?: string
   /** Date (YYYY-MM-DD) this replacement invoice was regenerated from the cancelled original. */
   regeneratedAt?: string
+  /** When the invoice was saved (ISO timestamp); generated invoices can be deleted for 24 hours. */
+  createdAt?: string
 }
 export type Proforma = Invoice & { entityId: string; validUntil?: string; /** Bank/UPI details printed on this quotation. */ paymentDetails?: string; convertedInvoiceId?: string; convertedInvoiceNumber?: string }
 export type PayrollComponent = { id: string; label: string; amount: number }
@@ -875,7 +878,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
       if (company?.transferredAt) throw new Error("This company has moved. Create its new invoices in the receiving account.")
       const issuedNumber = numberFromCompany(company, current.setup, current.invoices)
-      const added = { ...invoice, entityId: company?.id, id: id(), number: issuedNumber }
+      const added = { ...invoice, entityId: company?.id, id: id(), number: issuedNumber, createdAt: new Date().toISOString() }
       const updatedCompany = company ? advanceCompanyNumbering(company, [issuedNumber]) : undefined
       const nextCompanies = updatedCompany
         ? current.companies.map((candidate) => candidate.id === updatedCompany.id ? updatedCompany : candidate)
@@ -896,7 +899,9 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       invoices.forEach(assertInvoiceTaxMode)
       const current = stateRef.current
       const counters = new Map<string, number>()
-      const added = invoices.map((invoice, index) => {
+      const createdAt = new Date().toISOString()
+      const added = invoices.map((original, index) => {
+        const invoice = { ...original, createdAt }
         const company = current.companies.find((candidate) => candidate.companyName === invoice.entityName)
         if (company?.transferredAt) throw new Error("This company has moved. Create its new invoices in the receiving account.")
         if (!company) return { ...invoice, id: id(), number: nextDefaultInvoiceNumber(current.invoices, index) }
@@ -979,9 +984,19 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     deleteInvoice: async (invoiceId) => {
       const existing = stateRef.current.invoices.find((invoice) => invoice.id === invoiceId)
       if (!existing) throw new Error("The invoice could not be found.")
-      if (existing.status !== "Draft") throw new Error("Issued invoices cannot be deleted. Use Correct invoice to preserve the audit trail.")
-      await persistAndWait((_userId, workspaceId) => deleteInvoiceRow(workspaceId, invoiceId))
-      commit({ ...stateRef.current, invoices: stateRef.current.invoices.filter((invoice) => invoice.id !== invoiceId) })
+      if (!canDeleteInvoice(existing)) throw new Error("Issued invoices can only be deleted within 24 hours of creation. Use Correct invoice to preserve the audit trail.")
+      // A deleted conversion frees its quotation so it can be converted again.
+      const source = existing.sourceProformaId ? stateRef.current.proformas.find((item) => item.id === existing.sourceProformaId && item.convertedInvoiceId === invoiceId) : undefined
+      const freedSource = source ? (({ convertedInvoiceId: _id, convertedInvoiceNumber: _number, ...rest }) => rest as Proforma)(source) : undefined
+      await persistAndWait(async (userId, workspaceId) => {
+        await deleteInvoiceRow(workspaceId, invoiceId)
+        if (freedSource) await upsertProformas(userId, workspaceId, [freedSource])
+      })
+      commit({
+        ...stateRef.current,
+        invoices: stateRef.current.invoices.filter((invoice) => invoice.id !== invoiceId),
+        proformas: freedSource ? stateRef.current.proformas.map((item) => item.id === freedSource.id ? freedSource : item) : stateRef.current.proformas,
+      })
       trackAction("invoice_deleted")
     },
     addProforma: async (proforma) => {
