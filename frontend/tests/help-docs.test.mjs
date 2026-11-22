@@ -29,7 +29,7 @@ test("every word must match, and empty queries return nothing", () => {
 test("help reflects the single credit balance", () => {
   const text = JSON.stringify(helpArticles)
   assert.ok(!/quotation credit/i.test(text))
-  assert.ok(text.includes("400"))
+  assert.ok(text.includes("165 (incl. 10% bonus)"))
 })
 
 test("every figure points to a real article, section and image file", async () => {

@@ -541,10 +541,10 @@ export const helpArticles: HelpArticle[] = [
       { blocks: [{ kind: "p", text: "Your credit balance is shown in the top bar. Drafts don't use credits; a credit is used when a document is generated." }] },
       { heading: "Plans", blocks: [
         { kind: "table", head: ["Plan", "Price (+18% GST)", "Credits"], rows: [
-          ["Monthly", "₹199 / month", "400"],
-          ["Quarterly", "₹499 / 3 months", "1,250"],
-          ["Annual", "₹1,499 / year", "5,200"],
-          ["3 Years", "₹3,299 / 3 years", "15,600"],
+          ["Monthly", "₹199 / month", "165 (incl. 10% bonus)"],
+          ["Quarterly", "₹499 / 3 months (50% off ₹998)", "506 (incl. 15% bonus)"],
+          ["Annual", "₹1,499 / year (50% off ₹2,998)", "2,160 (incl. 20% bonus)"],
+          ["3 Years", "₹3,299 / 3 years (50% off ₹6,598)", "6,750 (incl. 25% bonus)"],
         ] },
         { kind: "p", text: "Every plan includes the owner plus 2 team accounts. Paid credits expire at the end of the plan period." },
       ] },

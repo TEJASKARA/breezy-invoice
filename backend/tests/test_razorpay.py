@@ -17,13 +17,13 @@ def test_billing_plan_prices_are_server_controlled() -> None:
     assert billing_plan("monthly").base_amount_paise == 19_900
     assert billing_plan("monthly").gst_amount_paise == 3_582
     assert billing_plan("monthly").amount_paise == 23_482
-    assert billing_plan("monthly").credits == 400
+    assert billing_plan("monthly").credits == 165
     assert billing_plan("quarterly").amount_paise == 58_882
-    assert billing_plan("quarterly").credits == 1_250
+    assert billing_plan("quarterly").credits == 506
     assert billing_plan("annual").amount_paise == 176_882
-    assert billing_plan("annual").credits == 5_200
+    assert billing_plan("annual").credits == 2_160
     assert billing_plan("three_year").amount_paise == 389_282
-    assert billing_plan("three_year").credits == 15_600
+    assert billing_plan("three_year").credits == 6_750
 
 
 def test_custom_plan_adds_twenty_percent_at_sixty_paise_rate() -> None:

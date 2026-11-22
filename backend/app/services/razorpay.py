@@ -50,10 +50,12 @@ def _plan_with_gst(
 
 
 BILLING_PLANS = {
-    "monthly": _plan_with_gst("monthly", "Monthly", 19_900, 400, 1),
-    "quarterly": _plan_with_gst("quarterly", "Quarterly", 49_900, 1_250, 3),
-    "annual": _plan_with_gst("annual", "Annual", 149_900, 5_200, 12),
-    "three_year": _plan_with_gst("three_year", "Three year", 329_900, 15_600, 36),
+    # Credits include the plan's bonus: 10% monthly, 15% quarterly, 20% annual,
+    # 25% three-year (ChanaX_Subscription_Pricing.xlsx, Nov 2026).
+    "monthly": _plan_with_gst("monthly", "Monthly", 19_900, 165, 1),
+    "quarterly": _plan_with_gst("quarterly", "Quarterly", 49_900, 506, 3),
+    "annual": _plan_with_gst("annual", "Annual", 149_900, 2_160, 12),
+    "three_year": _plan_with_gst("three_year", "Three year", 329_900, 6_750, 36),
 }
 
 CUSTOM_PLAN_OPTIONS = {

@@ -20,10 +20,10 @@ import { downloadBillingInvoice } from "@/lib/billing-invoice-pdf"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
 const fixedPlans = [
-  { key: "monthly" as const, name: "Monthly", price: 199, term: "1 month", credits: 400, bonus: 20, seats: "Owner + 2", description: "₹35.82 GST is added at checkout. Total payable: ₹234.82." },
-  { key: "quarterly" as const, name: "Quarterly", price: 499, term: "3 months", credits: 1250, bonus: 25, seats: "Owner + 2", description: "₹89.82 GST is added at checkout. Total payable: ₹588.82." },
-  { key: "annual" as const, name: "Annual", price: 1499, term: "12 months", credits: 5200, bonus: 30, seats: "Owner + 2", description: "₹269.82 GST is added at checkout. Total payable: ₹1,768.82." },
-  { key: "three_year" as const, name: "3 Years", price: 3299, term: "36 months", credits: 15600, bonus: 30, seats: "Owner + 2", description: "₹593.82 GST is added at checkout. Total payable: ₹3,892.82." },
+  { key: "monthly" as const, name: "Monthly", price: 199, regularPrice: null, term: "1 month", credits: 165, bonus: 10, seats: "Owner + 2", description: "₹35.82 GST is added at checkout. Total payable: ₹234.82." },
+  { key: "quarterly" as const, name: "Quarterly", price: 499, regularPrice: 998, term: "3 months", credits: 506, bonus: 15, seats: "Owner + 2", description: "₹89.82 GST is added at checkout. Total payable: ₹588.82." },
+  { key: "annual" as const, name: "Annual", price: 1499, regularPrice: 2998, term: "12 months", credits: 2160, bonus: 20, seats: "Owner + 2", description: "₹269.82 GST is added at checkout. Total payable: ₹1,768.82." },
+  { key: "three_year" as const, name: "3 Years", price: 3299, regularPrice: 6598, term: "36 months", credits: 6750, bonus: 25, seats: "Owner + 2", description: "₹593.82 GST is added at checkout. Total payable: ₹3,892.82." },
 ]
 
 function currency(value: number) {
@@ -135,12 +135,12 @@ export function PricingPage() {
               <div key={plan.name} className="flex h-full flex-col rounded-xl border p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-lg font-semibold">{plan.name}</h3>
-                  <Badge className="border-primary/20 bg-primary/10 text-primary">50% off</Badge>
+                  {plan.regularPrice ? <Badge className="border-primary/20 bg-primary/10 text-primary">{Math.round((1 - plan.price / plan.regularPrice) * 100)}% off</Badge> : null}
                 </div>
                 <div className="mt-3">
-                  <p className="text-sm text-muted-foreground"><span className="sr-only">Regular price: </span><del>{currency(plan.price * 2)}</del></p>
-                  <p className="mt-1 text-3xl font-bold"><span className="sr-only">Offer price: </span>{currency(plan.price)}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p>
-                  <p className="mt-1 text-xs font-medium text-primary">Offer price, excluding GST</p>
+                  {plan.regularPrice ? <p className="text-sm text-muted-foreground"><span className="sr-only">Regular price: </span><del>{currency(plan.regularPrice)}</del></p> : <p className="text-sm text-muted-foreground" aria-hidden="true">&nbsp;</p>}
+                  <p className="mt-1 text-3xl font-bold"><span className="sr-only">{plan.regularPrice ? "Offer price: " : "Price: "}</span>{currency(plan.price)}<span className="text-sm font-normal text-muted-foreground"> / {plan.term}</span></p>
+                  <p className="mt-1 text-xs font-medium text-primary">{plan.regularPrice ? "Offer price, excluding GST" : "Excluding GST"}</p>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">{plan.description}</p>
                 <div className="mt-5 flex-1 space-y-2 text-sm">
