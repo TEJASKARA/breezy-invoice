@@ -225,13 +225,14 @@ export function adminErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
-export type AnalyticsTestAccount = { user_id: string; email: string; note: string | null; created_at: string | null }
+export type AnalyticsTestAccount = { user_id: string; email: string | null; phone?: string | null; note: string | null; created_at: string | null }
 
 /** Accounts (e.g. internal testers) hidden from platform-wide usage analytics. */
 export function loadAnalyticsTestAccounts() {
   return adminRequest<{ accounts: AnalyticsTestAccount[] }>("/api/v1/admin/analytics-exclusions").then((result) => result.accounts)
 }
 
+/** Adds a test account by email address or phone number. */
 export function addAnalyticsTestAccount(email: string, note?: string) {
   return adminRequest<AnalyticsTestAccount>("/api/v1/admin/analytics-exclusions", {
     method: "POST",

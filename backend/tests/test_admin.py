@@ -262,3 +262,13 @@ def test_marketing_import_validates_and_attributes_upload(
     assert kwargs["upload"]["duplicate_in_file"] == 1
     assert bad.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     assert importer.await_count == 1
+
+
+def test_test_accounts_can_be_phone_only() -> None:
+    from app.schemas.admin import AnalyticsExclusion, AnalyticsExclusionCreate
+
+    account = AnalyticsExclusion(
+        user_id="00000000-0000-0000-0000-000000000003", phone="919876543210"
+    )
+    assert account.email is None and account.phone == "919876543210"
+    assert AnalyticsExclusionCreate(email="+91 98765 43210").email == "+91 98765 43210"

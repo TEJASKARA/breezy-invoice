@@ -324,24 +324,25 @@ function TestAccountsPanel({ accounts, busy, onAdd, onRemove }: {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><FlaskConical className="size-4" />Test accounts ({accounts.length})</CardTitle>
-        <CardDescription>Activity, sign-ups and workspaces of these emails are left out of the platform-wide numbers. Searching one of them directly still shows its usage. Nothing is deleted.</CardDescription>
+        <CardDescription>Activity, sign-ups and workspaces of these accounts (added by email or phone number) are left out of the platform-wide numbers. Searching one of them directly still shows its usage. Nothing is deleted.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); if (email.trim()) void onAdd(email).then(() => setEmail("")) }}>
-          <Label htmlFor="test-account-email" className="sr-only">Test account email</Label>
-          <Input id="test-account-email" type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tester@example.com" className="sm:max-w-sm" />
+          <Label htmlFor="test-account-email" className="sr-only">Test account email or phone number</Label>
+          <Input id="test-account-email" type="text" inputMode="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tester@example.com or +91 98765 43210" className="sm:max-w-sm" />
           <Button type="submit" variant="outline" disabled={busy || !email.trim()}><Plus />Exclude from analytics</Button>
         </form>
         {accounts.length ? (
           <div className="flex flex-wrap gap-2">
             {accounts.map((account) => (
               <span key={account.user_id} className="inline-flex items-center gap-1 rounded-full border bg-muted/40 py-1 pl-3 pr-1 text-sm">
-                {account.email}
-                <Button type="button" size="icon" variant="ghost" className="size-6" disabled={busy} aria-label={`Include ${account.email} in analytics again`} title="Include in analytics again" onClick={() => void onRemove(account)}><X className="size-3.5" /></Button>
+                {account.email || account.phone || "Account"}
+                {account.email && account.phone ? <span className="text-xs text-muted-foreground">{account.phone}</span> : null}
+                <Button type="button" size="icon" variant="ghost" className="size-6" disabled={busy} aria-label={`Include ${account.email || account.phone || "this account"} in analytics again`} title="Include in analytics again" onClick={() => void onRemove(account)}><X className="size-3.5" /></Button>
               </span>
             ))}
           </div>
-        ) : <p className="text-sm text-muted-foreground">No test accounts yet. Add an email above, or use &ldquo;Hide&rdquo; on a row in Most active users.</p>}
+        ) : <p className="text-sm text-muted-foreground">No test accounts yet. Add an email or phone number above, or use &ldquo;Hide&rdquo; on a row in Most active users.</p>}
       </CardContent>
     </Card>
   )

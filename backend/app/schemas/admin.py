@@ -68,7 +68,8 @@ class PlatformUsageReportResponse(BaseModel):
 
 class AnalyticsExclusion(BaseModel):
     user_id: str
-    email: str
+    email: str | None = None
+    phone: str | None = None
     note: str | None = None
     created_at: str | None = None
 
@@ -78,6 +79,8 @@ class AnalyticsExclusionList(BaseModel):
 
 
 class AnalyticsExclusionCreate(BaseModel):
+    # An email address or a phone number (with country code; 10-digit Indian
+    # mobile numbers are treated as +91).
     email: str = Field(min_length=3, max_length=320)
     note: str | None = Field(default=None, max_length=200)
 
