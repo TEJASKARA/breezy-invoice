@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Download, ImagePlus, LoaderCircle, Save, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
 
@@ -22,15 +22,19 @@ const inlinePdfUnsupported = typeof navigator !== "undefined" && (navigator.pdfV
 
 /** Design the company letterhead used on employment letters, or download it blank. */
 export function LetterheadPage() {
-  const { companies, templateFor, letterheadFor, updateLetterhead } = useMvpStore()
+  const { companies, template: workspaceTemplate, templateFor, letterheadFor, updateLetterhead } = useMvpStore()
   const { can, subscription } = useWorkspaceAccess()
   const { selectedEntity } = useEntitySelection()
   const entity = selectedEntity ?? companies[0]
   const canManage = can("templates.manage") && !entity?.transferredAt
-  const saved = letterheadFor(entity?.id)
+  // templateFor/letterheadFor build new objects on every call; memoise them so
+  // the preview only redraws when the saved design or the company changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const saved = useMemo(() => letterheadFor(entity?.id), [workspaceTemplate, entity?.id])
   const [draft, setDraft] = useState<LetterheadSettings | null>(null)
   const letterhead = draft ?? saved
-  const template = templateFor(entity?.id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const template = useMemo(() => templateFor(entity?.id), [workspaceTemplate, entity?.id])
   const [previewUrl, setPreviewUrl] = useState("")
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
