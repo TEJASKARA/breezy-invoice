@@ -149,6 +149,28 @@ export function WorkspaceAccessProvider({ children }: { children: React.ReactNod
   return <WorkspaceAccessContext.Provider value={value}>{children}</WorkspaceAccessContext.Provider>
 }
 
+const guestWorkspace: Workspace = { id: "guest", owner_user_id: "guest", name: "Free tools", subscription_code: "", status: "active", created_at: new Date(0).toISOString() }
+const guestMembership: WorkspaceMembership = { id: "guest", workspace_id: "guest", user_id: "guest", role: "owner", permissions: [], status: "active", joined_at: null }
+
+/** Free tools (not signed in): full access to a workspace that lives only in this browser. */
+export function GuestWorkspaceAccessProvider({ children }: { children: React.ReactNode }) {
+  const value = useMemo<WorkspaceAccessState>(() => ({
+    user: null,
+    workspace: guestWorkspace,
+    membership: guestMembership,
+    subscription: null,
+    creditAccount: null,
+    workspaceOptions: [],
+    userProfile: null,
+    loading: false,
+    error: null,
+    can: () => true,
+    refresh: async () => undefined,
+    switchWorkspace: async () => undefined,
+  }), [])
+  return <WorkspaceAccessContext.Provider value={value}>{children}</WorkspaceAccessContext.Provider>
+}
+
 export function useWorkspaceAccess() {
   const value = useContext(WorkspaceAccessContext)
   if (!value) throw new Error("useWorkspaceAccess must be used inside WorkspaceAccessProvider")

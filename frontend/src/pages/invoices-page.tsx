@@ -27,6 +27,7 @@ import { sharePdfViaWhatsApp } from "@/lib/whatsapp-share"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { canDeleteInvoice } from "@/lib/invoice-deletion"
+import { appPath } from "@/lib/guest-mode"
 
 type ImportInvoice = Omit<Invoice, "id" | "number">
 type ImportCustomer = Omit<Customer, "id">
@@ -1204,7 +1205,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
 
       {notice && <p role={noticeIsError ? "alert" : "status"} className={noticeIsError ? "rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{notice}</p>}
       {!companies.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Create at least one managed Entity. The selected entity will be the invoice issuer.</p>}
-      {!customersOnly && !individualCustomers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add customers for this entity on the <a className="underline" href="/customers">Customers page</a> before creating {isQuotation ? "a quotation" : "an invoice"}.</p>}
+      {!customersOnly && !individualCustomers.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add customers for this entity on the <a className="underline" href={appPath("/customers")}>Customers page</a> before creating {isQuotation ? "a quotation" : "an invoice"}.</p>}
 
       {!customersOnly && showForm && canManage && (
         <Card>
@@ -1507,7 +1508,7 @@ export function InvoicesPage({ view = "invoices" }: { view?: "invoices" | "custo
                         <Button size="icon" variant="ghost" aria-label={`Download ${invoice.sourceNumber || invoice.number} as PDF`} title="Download PDF" onClick={() => void downloadPdf(invoice)}><Download /></Button>
                         {invoice.status === "Draft" || invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Share ${invoice.sourceNumber || invoice.number}`} title={`Share ${docWord}`} onClick={() => setShareTarget(invoice)}><Share2 /></Button> : null}
                         {canManage && invoice.status === "Draft" ? <Button size="icon" variant="ghost" aria-label={`Edit ${invoice.sourceNumber || invoice.number}`} title="Edit draft" onClick={() => editDraftInvoice(invoice)}><FilePenLine /></Button> : null}
-                        {canManage && isQuotation && invoice.status === "Generated" && !invoice.convertedInvoiceId ? <Button size="sm" variant="outline" onClick={() => navigate("/invoices", { state: { convertProformaId: invoice.id } })}>Convert to invoice</Button> : null}
+                        {canManage && isQuotation && invoice.status === "Generated" && !invoice.convertedInvoiceId ? <Button size="sm" variant="outline" onClick={() => navigate(appPath("/invoices"), { state: { convertProformaId: invoice.id } })}>Convert to invoice</Button> : null}
                         {canManage && !isQuotation && invoice.status === "Generated" ? <Button size="icon" variant="ghost" aria-label={`Correct ${invoice.sourceNumber || invoice.number}`} title="Correct issued invoice" onClick={() => openCorrection(invoice)}><FilePenLine /></Button> : null}
                         {canManage && (isQuotation ? invoice.status === "Draft" || !invoice.convertedInvoiceId : canDeleteInvoice(invoice)) ? <Button size="icon" variant="ghost" aria-label={`Delete ${invoice.number}`} title={invoice.status === "Draft" ? "Delete draft" : isQuotation ? `Delete ${docWord}` : "Delete (available for 24 hours after creation)"} onClick={() => setPendingDelete(invoice.id)}><Trash2 /></Button> : null}
                       </div>

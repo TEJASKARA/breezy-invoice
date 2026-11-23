@@ -8,6 +8,9 @@ import ts from "typescript"
 const require = createRequire(import.meta.url)
 const jsPdfUrl = pathToFileURL(require.resolve("jspdf")).href
 let source = await readFile(new URL("../src/lib/employee-letter-pdf.ts", import.meta.url), "utf8")
+const letterheadSource = ts.transpileModule(await readFile(new URL("../src/lib/letterhead.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
+const letterheadUrl = `data:text/javascript;base64,${Buffer.from(letterheadSource).toString("base64")}`
+source = source.replace('"@/lib/letterhead"', JSON.stringify(letterheadUrl))
 source = source.replace('import("jspdf")', `import(${JSON.stringify(jsPdfUrl)})`)
 source = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
 const { createEmployeeLetterPdf } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)

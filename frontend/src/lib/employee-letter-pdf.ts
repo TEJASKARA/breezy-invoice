@@ -1,5 +1,6 @@
 import type { Company, Employee, EmployeeLetter, TemplateSettings } from "@/lib/mvp-store"
 import type { SalaryLine } from "@/lib/salary-structure"
+import { drawLetterhead, LETTERHEAD_CONTENT_BOTTOM, normalizeLetterhead, type LetterheadSettings } from "@/lib/letterhead"
 
 function safe(value: string) { return value.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || "employee" }
 
@@ -32,13 +33,13 @@ function printableLetterBody(body: string, letter: EmployeeLetter, employee: Emp
   return kept.join("\n").trim()
 }
 
-export async function createEmployeeLetterPdf({ letter, employee, entity, template, canRemoveBranding = false }: { letter: EmployeeLetter; employee: Employee; entity?: Company; template: TemplateSettings; canRemoveBranding?: boolean }) {
+export async function createEmployeeLetterPdf({ letter, employee, entity, template, letterhead: suppliedLetterhead, canRemoveBranding = false }: { letter: EmployeeLetter; employee: Employee; entity?: Company; template: TemplateSettings; letterhead?: LetterheadSettings | null; canRemoveBranding?: boolean }) {
+  const letterhead = normalizeLetterhead(suppliedLetterhead)
   const { jsPDF } = await import("jspdf")
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true })
   const margin = 20
   const pageWidth = 210
   const pageHeight = 297
-  const logoSize = Math.min(36, Math.max(14, template.logoSize / 3))
   const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
   const colour = (hex: string): [number, number, number] => {
     const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : "FFFFFF"
@@ -59,15 +60,9 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
       doc.text("Created by ChanaX", pageWidth - margin, pageHeight - 7, { align: "right" })
     }
   }
-  paintPage()
-  let y = 22
-  if (template.logoDataUrl) {
-    try { doc.addImage(template.logoDataUrl, template.logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", margin, y, logoSize, logoSize); y += logoSize + 6 } catch { /* keep letter usable if an old image cannot be decoded */ }
-  }
-  doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.text(entity?.companyName || "Company", margin, y)
-  y += 7; doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90)
-  doc.text(doc.splitTextToSize(entity?.billingAddress || entity?.premisesAddress || "", 120), margin, y)
-  y += 16; doc.setDrawColor(190); doc.line(margin, y, 190, y); y += 12
+  // Every page is printed on the company letterhead.
+  const letterheadPage = () => { paintPage(); return drawLetterhead(doc, { entity, template, letterhead }) }
+  let y = letterheadPage() + 2
   doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text(letter.title, 105, y, { align: "center" })
   y += 14; doc.setFont("helvetica", "normal"); doc.setFontSize(10)
   doc.text(`Date: ${letter.issueDate}`, margin, y); y += 9
@@ -76,12 +71,12 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
   doc.setFont("helvetica", "bold"); doc.text(`Subject: ${letter.subject}`, margin, y); y += 10
   doc.setFont("helvetica", "normal")
   const startContinuationPage = () => {
-    doc.addPage(); paintPage()
+    doc.addPage()
+    const top = letterheadPage()
     doc.setTextColor(90); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
-    doc.text(`${letter.title} - continued`, margin, 22)
-    doc.setDrawColor(190); doc.line(margin, 26, 190, 26)
+    doc.text(`${letter.title} - continued`, margin, top)
     doc.setTextColor(20); doc.setFont("helvetica", "normal"); doc.setFontSize(10)
-    return 36
+    return top + 9
   }
   const paragraphs = printableLetterBody(letter.body, letter, employee).split(/\n{2,}/).filter(Boolean)
   // Loaded only for letters that carry salary details.
@@ -93,9 +88,9 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
     const lines = doc.splitTextToSize(paragraph, 170) as string[]
     let remaining = [...lines]
     while (remaining.length) {
-      const availableLines = Math.floor((264 - y) / 5)
+      const availableLines = Math.floor((LETTERHEAD_CONTENT_BOTTOM - y) / 5)
       if (availableLines < 1) y = startContinuationPage()
-      const chunk = remaining.splice(0, Math.max(1, Math.floor((264 - y) / 5)))
+      const chunk = remaining.splice(0, Math.max(1, Math.floor((LETTERHEAD_CONTENT_BOTTOM - y) / 5)))
       doc.text(chunk, margin, y)
       y += chunk.length * 5
       if (remaining.length) y = startContinuationPage()
@@ -103,7 +98,7 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
     y += 4
   }
   const signatureHeight = template.signatureMode === "uploaded" && template.signatureDataUrl ? 25 : 12
-  if (Math.max(y + 12, 238) + signatureHeight > (showChanaxBranding ? 282 : 290)) y = startContinuationPage()
+  if (Math.max(y + 12, 238) + signatureHeight > 270) y = startContinuationPage()
   y = Math.max(y + 12, 238)
   if (template.signatureMode === "uploaded" && template.signatureDataUrl) {
     try { doc.addImage(template.signatureDataUrl, template.signatureDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", margin, y, 35, 15); y += 18 } catch { /* fallback to typed signatory */ }
@@ -113,8 +108,8 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
 
   const structure = salaryHelpers?.letterSalaryStructure(letter.letterType, letter.salary)
   if (structure && structure.earnings.length) {
-    doc.addPage(); paintPage()
-    let row = 24
+    doc.addPage()
+    let row = letterheadPage() + 2
     doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(13)
     doc.text(letter.letterType === "offer" ? "ANNEXURE A - SALARY STRUCTURE" : "ANNEXURE A - LAST DRAWN SALARY STRUCTURE", 105, row, { align: "center" })
     row += 9; doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(70)

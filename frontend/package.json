@@ -25,7 +25,9 @@
     "test:salary": "node --test tests/salary-structure.test.mjs",
     "test:help": "node --test tests/help-docs.test.mjs",
     "test:dashboard": "node --test tests/dashboard-analytics.test.mjs",
-    "test:invoice-delete": "node --test tests/invoice-deletion.test.mjs"
+    "test:invoice-delete": "node --test tests/invoice-deletion.test.mjs",
+    "test:letterhead": "node --test tests/letterhead.test.mjs",
+    "test:guest": "node --test tests/guest-mode.test.mjs tests/guest-workspace.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

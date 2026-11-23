@@ -1,4 +1,5 @@
 import {
+  Stamp,
   AlertTriangle,
   Building2,
   Boxes,
@@ -81,6 +82,7 @@ const navigation = [
   { label: "Expenses", href: "/expenses", icon: WalletCards, permission: "expenses.read" },
   { label: "Data Export", href: "/tally-export", icon: FileOutput, permission: "data_export.read" },
   { label: "Templates", href: "/settings/templates", icon: FileText, permission: "templates.read" },
+  { label: "Letterhead", href: "/settings/letterhead", icon: Stamp, permission: "templates.read" },
   { label: "Pricing", href: "/pricing", icon: PackageCheck, permission: null },
 ]
 

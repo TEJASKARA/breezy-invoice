@@ -23,6 +23,7 @@ import { downloadZip } from "@/lib/zip-download"
 import { sendPayslipEmail } from "@/lib/document-email-api"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
+import { appPath } from "@/lib/guest-mode"
 
 type PayslipDraft = Omit<Payslip, "id">
 type ImportPayslip = Omit<Payslip, "id">
@@ -685,8 +686,8 @@ export function EmployeesPage() {
         title="Employees & payslips"
         description="Add employees separately or through Excel, reuse last month’s salary, and generate individual or bulk payslips."
         actions={<>
-          <Button variant="outline" asChild><Link to="/attendance"><CalendarCheck2 />Attendance</Link></Button>
-          <Button variant="outline" asChild><Link to="/employees/letters"><FileSignature />Employee letters</Link></Button>
+          <Button variant="outline" asChild><Link to={appPath("/attendance")}><CalendarCheck2 />Attendance</Link></Button>
+          <Button variant="outline" asChild><Link to={appPath("/employees/letters")}><FileSignature />Employee letters</Link></Button>
           {canManage ? <Button variant="outline" onClick={() => { setEmployeeDraft(blankEmployee(selectedEntityId)); setEditingEmployeeId(null); setShowEmployeeForm(true); clearMessages() }}><UserPlus />Add employee</Button> : null}
           {canManage ? <Button onClick={() => openPayslipForm()}><Plus />Create payslip</Button> : null}
         </>}
@@ -711,7 +712,7 @@ export function EmployeesPage() {
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div><CardTitle>Attendance & monthly payroll</CardTitle><CardDescription>Attendance now has its own workspace page, connected to these employee records and saved salary structures.</CardDescription></div>
-          <Button asChild><Link to="/attendance"><CalendarCheck2 />Open attendance</Link></Button>
+          <Button asChild><Link to={appPath("/attendance")}><CalendarCheck2 />Open attendance</Link></Button>
         </CardHeader>
       </Card>
 

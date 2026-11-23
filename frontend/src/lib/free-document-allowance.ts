@@ -42,7 +42,7 @@ export function getFreeDocumentAllowance(
   }
   if (!subscription || subscription.plan_key !== "free") return null
   const hasGstin = hasRegisteredGstin(setup)
-  const limit = 20
+  const limit = 15
   const used = Math.max(recordsCurrentlySaved, savedUsage(subscription))
   return { kind, limit, used, remaining: Math.max(0, limit - used), hasGstin: false, gstStatus: hasGstin ? "provisional" : "no_gst" }
 }

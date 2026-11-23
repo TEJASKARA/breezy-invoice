@@ -1,4 +1,5 @@
 import { trackAction } from "@/lib/usage-tracking"
+import { claimGuestDownload } from "@/lib/guest-mode"
 
 export type ZipFile = {
   name: string
@@ -100,6 +101,7 @@ export function createZip(files: ZipFile[]) {
 
 export function downloadZip(files: ZipFile[], archiveName: string) {
   if (!files.length) throw new Error("There are no PDF files to download.")
+  if (!claimGuestDownload()) return
   trackAction("zip_downloaded", { kind: archiveName.split("_")[0].slice(0, 30), count: files.length })
   const zip = createZip(files)
   const bytes = zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength) as ArrayBuffer

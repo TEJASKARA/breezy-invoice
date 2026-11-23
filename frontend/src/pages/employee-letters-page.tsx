@@ -1,7 +1,9 @@
 import { useEntitySelection } from "@/lib/entity-selection"
 import { customerErrorMessage } from "@/lib/customer-errors"
 import { useEffect, useMemo, useState } from "react"
-import { Download, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
+import { Download, Mail, MessageCircle, Plus, Stamp, Trash2 } from "lucide-react"
+import { Link } from "react-router-dom"
+import { appPath } from "@/lib/guest-mode"
 
 import { DocumentShareDialog } from "@/components/document-share-dialog"
 import { PageHeader } from "@/components/page-header"
@@ -42,7 +44,7 @@ function templateBody(type: EmployeeLetter["letterType"], name: string, effectiv
 
 export function EmployeeLettersPage() {
   const { selectedEntityId } = useEntitySelection()
-  const { setup, companies, employees, employeeLetters, templateFor, addEmployee, updateEmployee, addEmployeeLetter, deleteEmployeeLetter } = useMvpStore()
+  const { setup, companies, employees, employeeLetters, templateFor, letterheadFor, addEmployee, updateEmployee, addEmployeeLetter, deleteEmployeeLetter } = useMvpStore()
   const { can, workspace, subscription } = useWorkspaceAccess()
   const canManage = can("payslips.manage")
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
@@ -133,7 +135,7 @@ export function EmployeeLettersPage() {
   async function documentFor(letter: EmployeeLetter) {
     const targetEmployee = employees.find((item) => item.id === letter.employeeId)
     if (!targetEmployee) throw new Error("The linked employee could not be found.")
-    return { doc: await createEmployeeLetterPdf({ letter, employee: targetEmployee, entity: companies.find((item) => item.id === letter.entityId), template: templateFor(letter.entityId), canRemoveBranding: brandingCanBeRemoved }), employee: targetEmployee }
+    return { doc: await createEmployeeLetterPdf({ letter, employee: targetEmployee, entity: companies.find((item) => item.id === letter.entityId), template: templateFor(letter.entityId), letterhead: letterheadFor(letter.entityId), canRemoveBranding: brandingCanBeRemoved }), employee: targetEmployee }
   }
   async function download(letter: EmployeeLetter) { const { doc, employee: target } = await documentFor(letter); doc.save(employeeLetterFileName(letter, target)); trackAction("employee_letter_pdf_downloaded", { letter_type: letter.letterType }) }
   async function share(letter: EmployeeLetter) { const target = employees.find((item) => item.id === letter.employeeId); if (!target) return; await sharePdfViaWhatsApp({ title: letter.title, message: `${letter.title} for ${target.employeeName}.`, createFile: async () => { const { doc } = await documentFor(letter); return { name: employeeLetterFileName(letter, target), data: new Uint8Array(doc.output("arraybuffer")) } } }) }
@@ -188,7 +190,7 @@ export function EmployeeLettersPage() {
   }
 
   return <div className="space-y-7">
-    <PageHeader eyebrow="Employee documents" title="Employment letters" description="Create offer, internship offer, relieving & experience and termination letters with your saved company branding and signature." />
+    <PageHeader eyebrow="Employee documents" title="Employment letters" description="Create offer, internship offer, relieving & experience and termination letters on your company letterhead, with your saved signature." actions={<Button variant="outline" asChild><Link to={appPath("/settings/letterhead")}><Stamp />Edit letterhead</Link></Button>} />
     {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p> : null}
     {notice ? <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{notice}</p> : null}
     <Card><CardHeader><CardTitle>Create employee letter</CardTitle><CardDescription>Start with the standard wording, then edit every line for the employee.</CardDescription></CardHeader><CardContent className="space-y-4">

@@ -72,6 +72,14 @@ class SupabaseGateway:
             headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
         )
 
+    async def record_guest_download(self, visitor_hash: str, tool: str) -> None:
+        await self._request(
+            "POST",
+            "breezy_guest_downloads",
+            json=[{"visitor_hash": visitor_hash, "tool": tool}],
+            headers={"Prefer": "return=minimal"},
+        )
+
     async def create_purge_approval(self, row: dict[str, Any]) -> None:
         await self._request(
             "POST",

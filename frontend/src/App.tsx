@@ -30,6 +30,8 @@ const PlatformAdminPage = lazy(() => import("@/pages/platform-admin-page").then(
 const CaPortalPage = lazy(() => import("@/pages/ca-portal-page").then((module) => ({ default: module.CaPortalPage })))
 const ProfilePage = lazy(() => import("@/pages/profile-page").then((module) => ({ default: module.ProfilePage })))
 const SharedDocumentPage = lazy(() => import("@/pages/shared-document-page").then((module) => ({ default: module.SharedDocumentPage })))
+const FreeToolsPage = lazy(() => import("@/pages/free-tools-page").then((module) => ({ default: module.FreeToolsPage })))
+const LetterheadPage = lazy(() => import("@/pages/letterhead-page").then((module) => ({ default: module.LetterheadPage })))
 const HelpPage = lazy(() => import("@/pages/help-page").then((module) => ({ default: module.HelpPage })))
 const CaInvitationPage = lazy(() => import("@/pages/ca-invitation-page").then((module) => ({ default: module.CaInvitationPage })))
 const TermsPage = lazy(() => import("@/pages/public-information-page").then((module) => ({ default: module.TermsPage })))
@@ -93,6 +95,8 @@ function App() {
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/cancellation-refunds" element={<CancellationRefundsPage />} />
       <Route path="/d/:token" element={<SharedDocumentPage />} />
+      <Route path="/free" element={<Navigate to="/free/invoice" replace />} />
+      <Route path="/free/:tool" element={<FreeToolsPage />} />
       <Route element={<WorkspaceProviders />}>
         <Route path="/ca-invite" element={<CaInvitationPage />} />
         <Route path="/setup" element={<Protected><PostSignupPhoneGate><OnboardingPage /></PostSignupPhoneGate></Protected>} />
@@ -110,6 +114,7 @@ function App() {
           <Route path="/expenses" element={<PermissionGate permission="expenses.read"><ExpensesPage /></PermissionGate>} />
           <Route path="/tally-export" element={<PermissionGate permission="data_export.read"><TallyExportPage /></PermissionGate>} />
           <Route path="/settings/templates" element={<PermissionGate permission="templates.read"><TemplatesPage /></PermissionGate>} />
+          <Route path="/settings/letterhead" element={<PermissionGate permission="templates.read"><LetterheadPage /></PermissionGate>} />
           <Route path="/settings/workspace" element={<WorkspaceSettingsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/help" element={<HelpPage />} />

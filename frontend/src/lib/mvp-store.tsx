@@ -29,6 +29,9 @@ import {
 } from "@/lib/workspace-repository"
 import { trackAction } from "@/lib/usage-tracking"
 import { canDeleteInvoice } from "@/lib/invoice-deletion"
+import { normalizeLetterhead, type LetterheadSettings } from "@/lib/letterhead"
+import { GUEST_STATE_KEY } from "@/lib/guest-mode"
+import { mergeGuestWorkspace } from "@/lib/guest-workspace"
 
 export type TallySettings = {
   companyName: string
@@ -272,6 +275,8 @@ export type TemplateSettings = {
   elements: Record<TemplateElementId, TemplateElementSetting>
   /** Per-entity overrides keyed by entity (company) id. Entities without an entry use the workspace default. */
   entityTemplates?: Record<string, TemplateSettings>
+  /** Letterhead per entity (company) id, kept on the workspace template. */
+  letterheads?: Record<string, LetterheadSettings>
 }
 export type InvoiceNumbering = {
   mode: "default" | "continue"
@@ -355,6 +360,8 @@ type MvpStore = MvpState & {
   hasEntityTemplate: (entityId?: string | null) => boolean
   updateEntityTemplate: (entityId: string, template: Partial<TemplateSettings>) => void
   clearEntityTemplate: (entityId: string) => void
+  letterheadFor: (entityId?: string | null) => LetterheadSettings
+  updateLetterhead: (entityId: string, letterhead: LetterheadSettings) => void
 }
 
 const legacyStorageKey = "breezyaccounts-mvp-data"
@@ -627,7 +634,12 @@ function readState(storageKey: string): MvpState {
   }
 }
 
-export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Workspace data for the signed-in workspace. With `guest`, the same store
+ * runs entirely in this browser (free tools): nothing is sent to the server
+ * and the data is kept under GUEST_STATE_KEY until the visitor signs up.
+ */
+export function MvpStoreProvider({ children, guest = false }: { children: React.ReactNode; guest?: boolean }) {
   const { user: accessUser, workspace: accessWorkspace, loading: accessLoading, workspaceOptions } = useWorkspaceAccess()
   const selectedWorkspaceId = accessWorkspace?.id || null
   const selectedUserId = accessUser?.id || null
@@ -650,6 +662,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   const persist = (operation: (userId: string, workspaceId: string) => Promise<unknown>) => {
+    if (guest) return
     const userId = userIdRef.current
     const workspaceId = workspaceIdRef.current
     if (!userId || !workspaceId || !supabase) {
@@ -671,6 +684,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   const persistAndWait = async (operation: (userId: string, workspaceId: string) => Promise<unknown>) => {
+    if (guest) return
     const userId = userIdRef.current
     const workspaceId = workspaceIdRef.current
     if (!userId || !workspaceId || !supabase) {
@@ -702,6 +716,14 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     // Account selection is the sole authority. Never choose another membership
     // independently while loading entity data or submitting writes.
     const selectedSequence = ++loadSequence.current
+    if (guest) {
+      commit(localStorage.getItem(GUEST_STATE_KEY) ? readState(GUEST_STATE_KEY) : emptyState())
+      setStorageKey(GUEST_STATE_KEY)
+      setSyncStatus("local")
+      setSyncError(null)
+      setLoading(false)
+      return
+    }
     if (accessLoading) {
       if (workspaceIdRef.current !== selectedWorkspaceId || userIdRef.current !== selectedUserId) {
         workspaceIdRef.current = null
@@ -748,12 +770,20 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
           workspaceIdRef.current = workspaceId
           const workspaceCacheKey = `breezyinvoice-workspace:${workspaceId}`
           const workspaceCache = localStorage.getItem(workspaceCacheKey) ? readState(workspaceCacheKey) : canImportLegacyCache ? cachedState : emptyState()
-          if (hasData) commit(normalizeState(workspaceData))
-          else {
-            commit(workspaceCache)
-            await saveFullWorkspace(userId, workspaceId, workspaceCache)
+          let initial = hasData ? normalizeState(workspaceData) : workspaceCache
+          let needsSave = !hasData
+          // Free tools: move what a visitor set up before signing up into their new workspace.
+          const guestData = canImportLegacyCache && localStorage.getItem(GUEST_STATE_KEY) ? readState(GUEST_STATE_KEY) : null
+          if (guestData && !initial.companies.length && !initial.customers.length && !initial.employees.length) {
+            initial = mergeGuestWorkspace(initial, guestData)
+            needsSave = true
+          }
+          commit(initial)
+          if (needsSave) {
+            await saveFullWorkspace(userId, workspaceId, initial)
             if (sequence !== loadSequence.current) return
           }
+          if (guestData) localStorage.removeItem(GUEST_STATE_KEY)
           setStorageKey(workspaceCacheKey)
         } else {
           commit(cachedState)
@@ -776,7 +806,7 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     }
     void hydrate(selectedUserId)
     return () => { loadSequence.current += 1 }
-  }, [selectedWorkspaceId, selectedUserId, accessLoading, canImportLegacyCache])
+  }, [selectedWorkspaceId, selectedUserId, accessLoading, canImportLegacyCache, guest])
   useEffect(() => { if (storageKey && !loading) localStorage.setItem(storageKey, JSON.stringify(state)) }, [state, storageKey, loading])
   const value = useMemo<MvpStore>(() => ({
     ...state,
@@ -784,8 +814,15 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
     loading,
     syncStatus,
     syncError,
-    completeSetup: async (setup) => {
+    completeSetup: async (suppliedSetup) => {
       const current = stateRef.current
+      // Keep attendance and salary/leave rules already saved (e.g. made in the free tools before sign-up).
+      const setup: Setup = {
+        ...suppliedSetup,
+        attendanceDrafts: suppliedSetup.attendanceDrafts ?? current.setup?.attendanceDrafts,
+        salaryStructure: suppliedSetup.salaryStructure ?? current.setup?.salaryStructure,
+        leavePolicy: suppliedSetup.leavePolicy ?? current.setup?.leavePolicy,
+      }
       // A workspace can only have one initial entity. This also makes a retry
       // after a failed setup save safe: once an entity exists, we only update
       // the workspace settings.
@@ -1122,7 +1159,16 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       const existing = current.template.entityTemplates?.[entityId]
       const updatedEntityTemplate = { ...(existing ? baseTemplate(existing) : baseTemplate(current.template)), ...changes }
       delete updatedEntityTemplate.entityTemplates
+      delete updatedEntityTemplate.letterheads
       const updatedTemplate = { ...current.template, entityTemplates: { ...(current.template.entityTemplates || {}), [entityId]: updatedEntityTemplate } }
+      const next = { ...current, template: updatedTemplate }
+      commit(next)
+      persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, next.setup, updatedTemplate))
+    },
+    letterheadFor: (entityId) => normalizeLetterhead(entityId ? state.template.letterheads?.[entityId] : undefined),
+    updateLetterhead: (entityId, letterhead) => {
+      const current = stateRef.current
+      const updatedTemplate = { ...current.template, letterheads: { ...(current.template.letterheads || {}), [entityId]: normalizeLetterhead(letterhead) } }
       const next = { ...current, template: updatedTemplate }
       commit(next)
       persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, next.setup, updatedTemplate))
@@ -1136,7 +1182,9 @@ export function MvpStoreProvider({ children }: { children: React.ReactNode }) {
       commit(next)
       persist((userId, workspaceId) => saveWorkspaceSettings(userId, workspaceId, next.setup, updatedTemplate))
     },
-  }), [state, loading, syncStatus, syncError])
+  // persist/persistAndWait only change with `guest`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [state, loading, syncStatus, syncError, guest])
   return <MvpContext.Provider value={value}>{children}</MvpContext.Provider>
 }
 export function useMvpStore() { const store = useContext(MvpContext); if (!store) throw new Error("useMvpStore must be used inside MvpStoreProvider"); return store }

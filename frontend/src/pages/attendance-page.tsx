@@ -22,6 +22,7 @@ import { createPayslipPdfFile } from "@/lib/payslip-pdf"
 import { downloadZip } from "@/lib/zip-download"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
+import { appPath } from "@/lib/guest-mode"
 
 type AttendanceException = Pick<PayslipAttendance, "halfDays" | "paidLeaveDays" | "unpaidLeaveDays"> & { dailyRecords?: AttendanceDayRecord[] }
 type AttendanceMode = "daily" | "monthly"
@@ -372,7 +373,7 @@ function AttendancePageContent() {
         eyebrow="Payroll"
         title="Attendance"
         description="Mark attendance, browse each employee’s monthly record, or select a date to see who was present."
-        actions={<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("excel")}><FileSpreadsheet />{exportingAttendance === "excel" ? "Preparing Excel…" : "Download Excel"}</Button><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("pdf")}><Download />{exportingAttendance === "pdf" ? "Preparing PDF…" : "Download PDF"}</Button><Button variant="outline" asChild><Link to="/employees"><Users />Employees & payslips</Link></Button></div>}
+        actions={<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("excel")}><FileSpreadsheet />{exportingAttendance === "excel" ? "Preparing Excel…" : "Download Excel"}</Button><Button variant="outline" disabled={Boolean(exportingAttendance)} onClick={() => void downloadAttendanceCopy("pdf")}><Download />{exportingAttendance === "pdf" ? "Preparing PDF…" : "Download PDF"}</Button><Button variant="outline" asChild><Link to={appPath("/employees")}><Users />Employees & payslips</Link></Button></div>}
       />
 
       {payslipAllowance ? <p className={`rounded-lg border p-3 text-sm ${payslipAllowance.remaining === 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-muted/40 text-muted-foreground"}`}><strong className="text-foreground">Credits:</strong> {payslipAllowance.remaining} remaining for invoices, quotations and payslips. {payslipAllowance.gstStatus === "verified" ? "GSTIN verified." : payslipAllowance.gstStatus === "provisional" ? "GSTIN verification pending; verification unlocks additional free credits." : "Non-GST workspace."}</p> : null}

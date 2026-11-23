@@ -24,3 +24,23 @@ async def record_anonymous_visit(visit: AnonymousVisit) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Analytics is temporarily unavailable.",
         ) from exc
+
+
+class GuestDownload(BaseModel):
+    visitor_id: str = Field(min_length=20, max_length=100)
+    tool: str = Field(pattern=r"^[a-z_-]{2,40}$")
+
+
+@router.post("/guest-download", status_code=status.HTTP_204_NO_CONTENT)
+async def record_guest_download(download: GuestDownload) -> None:
+    """Free tools: record a signed-out visitor's download (hashed browser id only)."""
+    settings = get_settings()
+    digest_source = f"{settings.supabase_anon_key}:{download.visitor_id}"
+    digest = hashlib.sha256(digest_source.encode()).hexdigest()
+    try:
+        await SupabaseGateway(settings).record_guest_download(digest, download.tool)
+    except SupabaseGatewayError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Analytics is temporarily unavailable.",
+        ) from exc

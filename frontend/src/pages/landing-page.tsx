@@ -5,8 +5,12 @@ import {
   CalendarCheck2,
   Database,
   FileOutput,
+  FilePlus2,
+  FileSignature,
   FileText,
+  Gift,
   Palette,
+  Stamp,
   ReceiptText,
   Users,
   WalletCards,
@@ -18,6 +22,18 @@ import { BrandMark } from "@/components/brand-mark"
 import { PublicFooter } from "@/components/public-footer"
 import { supabase } from "@/lib/supabase"
 import { useAuthUser } from "@/lib/use-auth-user"
+import { freeToolList, type FreeToolInfo } from "@/lib/free-tools"
+
+const freeToolIcons: Record<FreeToolInfo["id"], typeof ReceiptText> = {
+  invoice: ReceiptText,
+  quotation: FilePlus2,
+  letterhead: Stamp,
+  "offer-letter": FileSignature,
+  payslip: WalletCards,
+  attendance: CalendarCheck2,
+  "invoice-design": Palette,
+  customers: Users,
+}
 
 const salesFlow = [
   { label: "Customer", description: "Contact, GST and billing details", icon: Users },
@@ -95,6 +111,7 @@ export function LandingPage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
           <BrandMark tone="brand" />
           <nav className="hidden items-center gap-7 text-sm text-[#0b3f77]/65 sm:flex" aria-label="Landing page navigation">
+            <a href="#free-tools" className="transition-colors hover:text-[#0b3f77]">Free tools</a>
             <a href="#features" className="transition-colors hover:text-[#0b3f77]">Features</a>
             <a href="#workflow" className="transition-colors hover:text-[#0b3f77]">What we do</a>
             <a href="#operations" className="transition-colors hover:text-[#0b3f77]">How it works</a>
@@ -137,6 +154,7 @@ export function LandingPage() {
               <Link to={primaryHref} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0b3f77] px-5 text-sm font-medium text-white shadow-[0_10px_30px_rgba(11,63,119,.22)] transition-transform hover:-translate-y-0.5">
                 {primaryLabel}<ArrowRight className="size-4" />
               </Link>
+              <a href="#free-tools" className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#0b3f77]/25 px-5 text-sm font-medium transition-colors hover:bg-[#0b3f77]/5">Try free tools</a>
               <span className="text-sm text-[#0b3f77]/50">Built for Indian businesses</span>
             </div>
           </div>
@@ -158,6 +176,30 @@ export function LandingPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="free-tools" className="scroll-mt-20 border-b border-[#0b3f77]/10 bg-[#f4f9fc]">
+        <div className="mx-auto max-w-7xl px-5 py-20 sm:px-8 sm:py-24">
+          <div className="flex flex-wrap items-end justify-between gap-6">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0b3f77]/50">Free tools · no sign-up</p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Make your first document free, right now.</h2>
+              <p className="mt-4 text-[#0b3f77]/60">Design invoices, quotations, letterheads, offer letters with CTC, payslips and attendance sheets in your browser. Your first download is free; sign up free for 15 more documents, and everything you've made moves to your account.</p>
+            </div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-sm"><Gift className="size-4 text-[#13aeda]" />15 free documents on sign-up</span>
+          </div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {freeToolList.filter((tool) => !tool.helper).map((tool) => {
+              const Icon = freeToolIcons[tool.id]
+              return <Link key={tool.id} to={`/free/${tool.id}`} className="group rounded-2xl border border-[#0b3f77]/15 bg-white p-5 shadow-[0_8px_24px_rgba(11,63,119,.05)] transition-transform hover:-translate-y-0.5">
+                <div className="grid size-10 place-items-center rounded-xl bg-[#13aeda]/10 text-[#0b83ae]"><Icon className="size-5" /></div>
+                <h3 className="mt-4 font-semibold">{tool.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-[#0b3f77]/60">{tool.description}</p>
+                <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[#0b83ae]">Open free tool<ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" /></span>
+              </Link>
+            })}
           </div>
         </div>
       </section>

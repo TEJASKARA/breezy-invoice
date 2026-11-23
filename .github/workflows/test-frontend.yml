@@ -38,5 +38,7 @@ jobs:
       - run: npm run test:help
       - run: npm run test:dashboard
       - run: npm run test:invoice-delete
+      - run: npm run test:letterhead
+      - run: npm run test:guest
       - run: npm run lint
       - run: npm run build

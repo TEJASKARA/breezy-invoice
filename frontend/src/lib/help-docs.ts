@@ -108,7 +108,7 @@ export const helpArticles: HelpArticle[] = [
         "Save. You land on the Overview page.",
       ] }] },
       { heading: "Free credits", blocks: [
-        { kind: "table", head: ["Account", "Free credits"], rows: [["New workspace", "20"], ["After GSTIN verification", "60"]] },
+        { kind: "table", head: ["Account", "Free credits"], rows: [["New workspace", "15"], ["After GSTIN verification", "60"]] },
       ] },
       { blocks: [{ kind: "note", text: "A GSTIN that is cancelled or suspended on the GST portal can't be verified. Choose No, I do not have a GSTIN for now, and add it in Workspace settings once it is active again." }] },
     ],

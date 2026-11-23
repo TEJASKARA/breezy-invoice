@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp-number"
+import { isGuestMode } from "@/lib/guest-mode"
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -121,7 +122,10 @@ export function DocumentShareDialog({
         <Button className="absolute right-4 top-4" size="icon" variant="ghost" aria-label="Close share options" onClick={onClose}><X /></Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {mode === "choose" ? <div className={`grid gap-3 ${onEmail ? "sm:grid-cols-2" : ""}`}>
+        {isGuestMode() ? <div className="space-y-3 text-sm">
+          <p>Sharing by email, WhatsApp or link needs a free account. Your company, customers and design move with you when you sign up.</p>
+          <Button asChild className="w-full"><a href="/login">Sign up free</a></Button>
+        </div> : mode === "choose" ? <div className={`grid gap-3 ${onEmail ? "sm:grid-cols-2" : ""}`}>
           {onEmail ? <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => setMode("email")}><Mail className="size-5" /><span className="text-left"><span className="block font-medium">Email</span><span className="block text-xs font-normal text-muted-foreground">Send the PDF attachment</span></span></Button> : null}
           <Button className="h-auto justify-start gap-3 p-4" variant="outline" disabled={pending !== null} onClick={() => { if (onWhatsAppSend) { setMode("whatsapp"); setError("") } else void shareWhatsApp() }}>{pending === "whatsapp" ? <LoaderCircle className="size-5 animate-spin" /> : <MessageCircle className="size-5" />}<span className="text-left"><span className="block font-medium">WhatsApp</span><span className="block text-xs font-normal text-muted-foreground">{onWhatsAppSend ? "Send the PDF to a number" : "Open app or WhatsApp Web"}</span></span></Button>
           {onShareLink ? <div className={onEmail ? "sm:col-span-2" : ""}><Button variant="ghost" size="sm" className="text-muted-foreground" disabled={pending !== null} onClick={() => void createLink()}>{pending === "link" ? <LoaderCircle className="animate-spin" /> : <Link2 />}{pending === "link" ? "Creating link" : "Share a link"}</Button></div> : null}
