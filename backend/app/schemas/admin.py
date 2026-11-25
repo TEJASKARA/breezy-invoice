@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 class PlatformAdminAccessResponse(BaseModel):
     is_super_admin: bool
+    # True when the user is an admin but must still pass an authenticator-app check.
+    mfa_required: bool = False
 
 
 class PlatformWorkspaceResponse(BaseModel):

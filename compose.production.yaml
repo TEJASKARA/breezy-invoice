@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+  # Virus scanner for uploads. Optional: it only starts with COMPOSE_PROFILES=scan
+  # (see deploy/README.md) and needs about 1.5 GB of RAM. Never published to the internet.
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: ["scan"]
+    restart: unless-stopped
+    volumes:
+      - clamav_db:/var/lib/clamav
+    expose:
+      - "3310"
   deletion-purger:
     image: curlimages/curl:8.12.1
     env_file:
@@ -27,3 +37,19 @@ services:
       - -c
       - while true; do curl --fail --silent --show-error -X POST -H "X-ChanaX-Cron-Secret:$${ACCOUNT_DELETION_CRON_SECRET}" http://api:8000/api/v1/maintenance/purge-deletions; sleep 86400; done
     restart: unless-stopped
+  # Hourly: compares Razorpay with our payment records and repairs missed webhooks.
+  payment-reconciler:
+    image: curlimages/curl:8.12.1
+    env_file:
+      - ./backend/.env
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - while true; do sleep 600; curl --fail --silent --show-error -X POST -H "X-ChanaX-Cron-Secret:$${ACCOUNT_DELETION_CRON_SECRET}" http://api:8000/api/v1/maintenance/reconcile-payments; echo; sleep 3000; done
+    restart: unless-stopped
+
+volumes:
+  clamav_db:

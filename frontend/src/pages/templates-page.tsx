@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { type Company, type Customer, type Invoice, type TemplateElementId, type TemplateSettings, type TemplateTextBlock, useMvpStore } from "@/lib/mvp-store"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
+import { isPngOrJpegDataUrl } from "@/lib/file-signature"
 import { cn } from "@/lib/utils"
 import { trackAction } from "@/lib/usage-tracking"
 
@@ -198,6 +199,10 @@ export function TemplatesPage() {
     }
     const reader = new FileReader()
     reader.onload = () => {
+      if (!isPngOrJpegDataUrl(String(reader.result))) {
+        showMessage("That file is not a real PNG or JPG image, so it was not added.", "error")
+        return
+      }
       if (kind === "logo") updateTemplate({ logoDataUrl: String(reader.result) })
       else if (kind === "signature") updateTemplate({ signatureDataUrl: String(reader.result), signatureMode: "uploaded" })
       else if (kind === "quotationPaymentQr") updateTemplate({ quotationPaymentQrDataUrl: String(reader.result), showQuotationPaymentDetails: true })

@@ -14,6 +14,16 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
     account_deletion_cron_secret: str = ""
+    # When true, every /admin route needs a token from an authenticator-app (MFA)
+    # sign-in (aal2). Turn on once each platform admin has enrolled an authenticator.
+    admin_require_mfa: bool = False
+    # ClamAV virus scanning for uploads. Empty host = off; once set, an unreachable
+    # scanner blocks uploads instead of letting them through.
+    clamav_host: str = ""
+    clamav_port: int = 3310
+    clamav_timeout_seconds: float = 20.0
+    # Per-IP / per-user request limits (see app/core/rate_limit.py). Leave on.
+    rate_limit_enabled: bool = True
     platform_admin_user_ids: str = ""
     # Exact, verified Supabase account email addresses permitted to use the
     # private platform-administration area. User IDs remain supported too.

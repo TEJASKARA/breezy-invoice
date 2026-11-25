@@ -1,0 +1,8 @@
+# Direct dependencies, as ranges. Do NOT install from this file: requirements.txt is the
+# pinned, hash-checked lock generated from it (see the header of requirements.txt).
+celery[redis]>=5.5,<6
+fastapi>=0.116,<1
+httpx>=0.28,<1
+pillow>=13,<14
+pydantic-settings>=2.10,<3
+uvicorn[standard]>=0.35,<1

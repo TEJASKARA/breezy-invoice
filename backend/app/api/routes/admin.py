@@ -60,10 +60,25 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _verified_email(user: dict[str, Any]) -> str:
+    """The account's email, but only once Supabase has confirmed it.
+
+    An unconfirmed address is just something a person typed in, so it must never
+    grant admin or approver access.
+    """
+    if not user.get("email_confirmed_at"):
+        return ""
+    return str(user.get("email") or "")
+
+
 def _is_platform_admin_user(user: dict[str, Any], settings: Settings) -> bool:
     return settings.is_platform_admin(str(user.get("id") or "")) or (
-        settings.is_platform_admin_email(str(user.get("email") or ""))
+        settings.is_platform_admin_email(_verified_email(user))
     )
+
+
+def _mfa_missing(user: dict[str, Any], settings: Settings) -> bool:
+    return settings.admin_require_mfa and user.get("_aal") != "aal2"
 
 
 def _require_platform_admin(user: dict[str, Any], settings: Settings) -> None:
@@ -71,6 +86,11 @@ def _require_platform_admin(user: dict[str, Any], settings: Settings) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account does not have ChanaX platform-administrator access.",
+        )
+    if _mfa_missing(user, settings):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Multi-factor authentication is required for platform administration.",  # noqa: E501
         )
 
 
@@ -86,8 +106,10 @@ async def platform_admin_access(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
         ) from exc
+    is_admin = _is_platform_admin_user(user, settings)
     return PlatformAdminAccessResponse(
-        is_super_admin=_is_platform_admin_user(user, settings)
+        is_super_admin=is_admin,
+        mfa_required=is_admin and _mfa_missing(user, settings),
     )
 
 
@@ -265,7 +287,7 @@ async def approve_purge(
     try:
         user = await gateway.authenticated_user(_bearer_token(authorization))
         _require_platform_admin(user, settings)
-        if not settings.is_purge_approver(str(user.get("email") or "")):
+        if not settings.is_purge_approver(_verified_email(user)):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the primary purge approver can approve this request.",

@@ -7,6 +7,7 @@ from app.api.routes import (
     billing,
     ca_partners,
     documents,
+    expense_bills,
     gst,
     maintenance,
     team,
@@ -21,6 +22,9 @@ api_router.include_router(
     ca_partners.router, prefix="/ca-partners", tags=["CA partners"]
 )
 api_router.include_router(documents.router, prefix="/documents", tags=["Documents"])
+api_router.include_router(
+    expense_bills.router, prefix="/expense-bills", tags=["Expense bills"]
+)
 api_router.include_router(billing.router, prefix="/billing", tags=["Billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Platform admin"])
 api_router.include_router(

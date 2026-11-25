@@ -1,0 +1,39 @@
+name: Backend dependency audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/requirements*"
+      - ".github/workflows/backend-dependency-audit.yml"
+  pull_request:
+    paths:
+      - "backend/requirements*"
+      - ".github/workflows/backend-dependency-audit.yml"
+  schedule:
+    # New vulnerabilities are published daily, so re-check weekly even when nothing changed.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit uv
+      - name: The lock files match requirements.in and requirements-dev.in
+        run: |
+          uv pip compile requirements.in -o requirements.txt --universal --python-version 3.11 --generate-hashes -q
+          uv pip compile requirements-dev.in -o requirements-dev.txt --universal --python-version 3.11 --generate-hashes -q
+          git diff --exit-code -- requirements.txt requirements-dev.txt \
+            || { echo "::error::Lock files are out of date. Run the two uv pip compile commands in backend/requirements.in and commit the result."; exit 1; }
+      - name: No known vulnerabilities in the pinned runtime packages
+        run: pip-audit --require-hashes -r requirements.txt --progress-spinner off
+      - name: No known vulnerabilities in the pinned test tools
+        run: pip-audit --require-hashes -r requirements-dev.txt --progress-spinner off

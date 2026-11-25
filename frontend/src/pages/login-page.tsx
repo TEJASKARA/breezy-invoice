@@ -4,12 +4,14 @@ import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { CaptchaWidget } from "@/components/captcha-widget"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { pendingCaInvitation } from "@/lib/ca-invitation-session"
+import { captchaEnabled, captchaOptions } from "@/lib/captcha"
 import { supabase } from "@/lib/supabase"
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp-number"
 
@@ -34,6 +36,8 @@ export function LoginPage() {
   const [message, setMessage] = useState("")
   const [messageIsError, setMessageIsError] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState("")
+  const [captchaResetKey, setCaptchaResetKey] = useState(0)
   // Straight into the workspace: it opens setup automatically for new accounts.
   const destination = () => pendingCaInvitation() ? "/ca-invite" : "/workspace"
 
@@ -60,6 +64,18 @@ export function LoginPage() {
     setMessageIsError(isError)
   }
 
+  // A security-check token works once, so every request that uses it asks for a new one.
+  function captchaReady() {
+    if (!captchaEnabled || captchaToken) return true
+    show("Please complete the security check below.", true)
+    return false
+  }
+
+  function renewCaptcha() {
+    setCaptchaToken("")
+    setCaptchaResetKey((value) => value + 1)
+  }
+
   function back() {
     setStep("identify")
     setPassword("")
@@ -71,10 +87,12 @@ export function LoginPage() {
 
   async function sendPhoneCode(digits: string) {
     if (!supabase) return show("Sign-in is temporarily unavailable. Please try again later.", true)
+    if (!captchaReady()) return
     setBusy(true)
     show("")
     // Creates the account on first use, so this is sign-up and sign-in in one.
-    const { error } = await supabase.auth.signInWithOtp({ phone: `+${digits}` })
+    const { error } = await supabase.auth.signInWithOtp({ phone: `+${digits}`, options: captchaOptions(captchaToken) })
+    renewCaptcha()
     setBusy(false)
     if (error) return show(customerErrorMessage(error, "We couldn't send the code. Please try again."), true)
     setPhone(digits)
@@ -116,11 +134,13 @@ export function LoginPage() {
     event.preventDefault()
     if (!supabase) return show("Sign-in is temporarily unavailable. Please try again later.", true)
     if (password.length < 6) return show("Your password must contain at least 6 characters.", true)
+    if (!captchaReady()) return
     setBusy(true)
     show("")
     const result = isSignUp
-      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${destination()}` } })
-      : await supabase.auth.signInWithPassword({ email, password })
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${destination()}`, ...captchaOptions(captchaToken) } })
+      : await supabase.auth.signInWithPassword({ email, password, options: captchaOptions(captchaToken) })
+    renewCaptcha()
     setBusy(false)
     if (result.error) return show(customerErrorMessage(result.error), true)
     if (isSignUp && !result.data.session) return show("Check your email to confirm your account, then sign in.")
@@ -145,9 +165,11 @@ export function LoginPage() {
 
   async function resetPassword() {
     if (!supabase) return show("Your account connection is temporarily unavailable. Please try again later.", true)
+    if (!captchaReady()) return
     setBusy(true)
     show("")
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/login` })
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/login`, ...captchaOptions(captchaToken) })
+    renewCaptcha()
     setBusy(false)
     show(error ? customerErrorMessage(error) : "Password reset instructions were sent to your email.", Boolean(error))
   }
@@ -275,6 +297,8 @@ export function LoginPage() {
                   <Button className="w-full" disabled={busy}>{busy ? "Please wait…" : "Update password"}<ArrowRight /></Button>
                 </form>
               ) : null}
+
+              {step !== "recovery" ? <CaptchaWidget onToken={setCaptchaToken} resetKey={captchaResetKey} /> : null}
 
               {message ? <p role={messageIsError ? "alert" : "status"} className={messageIsError ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" : "rounded-lg bg-muted p-3 text-sm text-muted-foreground"}>{message}</p> : null}
             </CardContent>

@@ -52,9 +52,14 @@ async function adminRequest<T>(path: string, init: RequestInit = {}): Promise<T>
   return payload as T
 }
 
+export type PlatformAdminStatus = { is_super_admin: boolean; mfa_required: boolean }
+
+export function loadPlatformAdminStatus() {
+  return adminRequest<PlatformAdminStatus>("/api/v1/admin/me")
+}
+
 export function loadPlatformAdminAccess() {
-  return adminRequest<{ is_super_admin: boolean }>("/api/v1/admin/me")
-    .then((result) => result.is_super_admin)
+  return loadPlatformAdminStatus().then((result) => result.is_super_admin)
 }
 
 export function findPlatformWorkspaces(identifier: string) {

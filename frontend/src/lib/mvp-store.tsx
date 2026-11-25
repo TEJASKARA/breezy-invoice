@@ -784,7 +784,9 @@ export function MvpStoreProvider({ children, guest = false }: { children: React.
             if (sequence !== loadSequence.current) return
           }
           if (guestData) localStorage.removeItem(GUEST_STATE_KEY)
-          setStorageKey(workspaceCacheKey)
+          // Anything cached by an earlier version is now on the server, so remove it.
+          localStorage.removeItem(workspaceCacheKey)
+          localStorage.removeItem(userCacheKey)
         } else {
           commit(cachedState)
           throw new Error("No active ChanaX workspace was found for this account.")
@@ -807,7 +809,9 @@ export function MvpStoreProvider({ children, guest = false }: { children: React.
     void hydrate(selectedUserId)
     return () => { loadSequence.current += 1 }
   }, [selectedWorkspaceId, selectedUserId, accessLoading, canImportLegacyCache, guest])
-  useEffect(() => { if (storageKey && !loading) localStorage.setItem(storageKey, JSON.stringify(state)) }, [state, storageKey, loading])
+  // Only the signed-out free tools keep their data in this browser. A signed-in workspace
+  // lives on the server and is never copied into browser storage.
+  useEffect(() => { if (guest && storageKey && !loading) localStorage.setItem(storageKey, JSON.stringify(state)) }, [state, storageKey, loading, guest])
   const value = useMemo<MvpStore>(() => ({
     ...state,
     activeCompanies: state.companies.filter((company) => !company.transferredAt),

@@ -1,3 +1,5 @@
+import base64
+import json
 import logging
 import secrets
 from datetime import UTC, datetime
@@ -22,6 +24,18 @@ class GstVerificationUnavailable(SupabaseGatewayError):
 
 
 logger = logging.getLogger(__name__)
+
+
+def _token_assurance_level(access_token: str) -> str:
+    """The token's authenticator assurance level: "aal1" (password) or "aal2" (MFA)."""
+    try:
+        payload = access_token.split(".")[1]
+        padded = payload + "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded))
+    except (IndexError, ValueError):  # unreadable token: treat as aal1
+        return "aal1"
+    is_mfa = isinstance(claims, dict) and claims.get("aal") == "aal2"
+    return "aal2" if is_mfa else "aal1"
 
 DOCUMENT_LINK_BUCKET = "document-links"
 
@@ -62,6 +76,9 @@ class SupabaseGateway:
         payload = response.json()
         if not payload.get("id"):
             raise SupabaseGatewayError("Supabase did not return an authenticated user.")
+        # Supabase has just accepted this token, so reading its claims is safe.
+        # "aal2" means the user also passed a multi-factor (authenticator app) check.
+        payload["_aal"] = _token_assurance_level(access_token)
         return payload
 
     async def record_anonymous_visit(self, visitor_hash: str) -> None:
@@ -321,6 +338,20 @@ class SupabaseGateway:
         )
         return token
 
+    async def save_expense_bill(self, path: str, content: bytes, mime: str) -> None:
+        """Store a bill that has already been checked, using the service role."""
+        headers = self._service_headers()
+        headers.update({"Content-Type": mime, "x-upsert": "false"})
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/"
+                f"expense-bills/{quote(path)}",
+                content=content,
+                headers=headers,
+            )
+        if response.is_error:
+            raise SupabaseGatewayError("The bill could not be saved. Please try again.")
+
     async def shared_document(self, token: str) -> dict[str, Any] | None:
         """Look up a share link; None if it or its document no longer exists."""
         rows = await self._get(
@@ -568,6 +599,31 @@ class SupabaseGateway:
         if not rows:
             raise SupabaseGatewayError("The payment order could not be found.")
         return rows[0]
+
+    async def payment_orders_between(
+        self,
+        *,
+        status: str,
+        created_after: datetime,
+        created_before: datetime,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        return await self._get(
+            "breezy_payment_orders",
+            {
+                "select": (
+                    "provider_order_id,provider_payment_id,amount_paise,currency,"
+                    "refunded_paise,workspace_id,created_at"
+                ),
+                "status": f"eq.{status}",
+                "and": (
+                    f"(created_at.gt.{created_after.isoformat()},"
+                    f"created_at.lt.{created_before.isoformat()})"
+                ),
+                "order": "created_at.asc",
+                "limit": str(limit),
+            },
+        )
 
     async def payment_history(
         self, workspace_id: str, limit: int = 20

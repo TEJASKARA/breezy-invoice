@@ -13,6 +13,7 @@ import { useMvpStore } from "@/lib/mvp-store"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { trackAction } from "@/lib/usage-tracking"
 import { appPath } from "@/lib/guest-mode"
+import { isPngOrJpegDataUrl } from "@/lib/file-signature"
 import { cn } from "@/lib/utils"
 import { useWorkspaceAccess } from "@/lib/workspace-access"
 
@@ -65,7 +66,10 @@ export function LetterheadPage() {
     if (!/^image\/(png|jpe?g)$/.test(file.type)) return setMessage({ text: "Upload a PNG or JPG image.", error: true })
     if (file.size > MAX_IMAGE_BYTES) return setMessage({ text: "The image must be smaller than 1.5 MB.", error: true })
     const reader = new FileReader()
-    reader.onload = () => change({ [field]: String(reader.result), style: "image" })
+    reader.onload = () => {
+      if (!isPngOrJpegDataUrl(String(reader.result))) return setMessage({ text: "That file is not a real PNG or JPG image.", error: true })
+      change({ [field]: String(reader.result), style: "image" })
+    }
     reader.readAsDataURL(file)
   }
 

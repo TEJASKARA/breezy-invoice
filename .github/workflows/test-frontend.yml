@@ -40,5 +40,8 @@ jobs:
       - run: npm run test:invoice-delete
       - run: npm run test:letterhead
       - run: npm run test:guest
+      - run: npm run test:captcha
+      - run: npm run test:signature
+      - run: npm run test:cleanup
       - run: npm run lint
       - run: npm run build

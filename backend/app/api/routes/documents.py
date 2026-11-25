@@ -27,6 +27,7 @@ from app.services.email_sender import (
     send_employee_letter_email,
     send_payslip_email,
 )
+from app.services.malware_scan import MalwareFound, ScannerUnavailable, scan_bytes
 from app.services.supabase_gateway import SupabaseGateway, SupabaseGatewayError
 from app.services.whatsapp_sender import (
     WhatsAppConfigurationError,
@@ -248,6 +249,8 @@ async def create_document_link(
             await gateway.assert_workspace_document(
                 request.workspace_id, request.document_id, request.document_type
             )
+        # Share links are opened by customers, so the PDF is scanned before it is kept.
+        await scan_bytes(settings, pdf)
         token = await gateway.save_document_link(
             workspace_id=request.workspace_id,
             document_type=request.document_type,
@@ -258,6 +261,16 @@ async def create_document_link(
             pdf=pdf,
             created_by=str(user.get("id") or ""),
         )
+    except MalwareFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This file was blocked because it may contain a virus.",
+        ) from exc
+    except ScannerUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Files cannot be checked right now. Please try again shortly.",
+        ) from exc
     except SupabaseGatewayError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)

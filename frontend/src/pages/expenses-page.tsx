@@ -43,7 +43,7 @@ function formatMonth(value: string) {
 export function ExpensesPage() {
   const { user } = useAuthUser()
   const { companies, invoices, proformas, payslips, expenses, addExpense, deleteExpense } = useMvpStore()
-  const { can } = useWorkspaceAccess()
+  const { can, workspace } = useWorkspaceAccess()
   const { selectedEntityId, selectEntity: setSelectedEntityId, openEntityManager } = useEntitySelection()
   const canManage = can("expenses.manage") && !companies.find((company) => company.id === selectedEntityId)?.transferredAt
   const [categoryFilter, setCategoryFilter] = useState("all")
@@ -124,10 +124,13 @@ export function ExpensesPage() {
     }
     setSaving(true)
     let billPath: string | undefined
+    let billName: string | undefined
     try {
       if (billFile) {
-        if (!user) throw new Error("Your login session could not be verified. Please sign in again.")
-        billPath = await uploadExpenseBill(user.id, billFile)
+        if (!user || !workspace) throw new Error("Your login session could not be verified. Please sign in again.")
+        const uploaded = await uploadExpenseBill(workspace.id, billFile)
+        billPath = uploaded.path
+        billName = uploaded.fileName
       }
       await addExpense({
         entityId: draft.entityId,
@@ -139,7 +142,7 @@ export function ExpensesPage() {
         paymentStatus: draft.paymentStatus,
         notes: draft.notes.trim(),
         billPath,
-        billName: billFile?.name,
+        billName,
       })
       setDraft({ entityId: draft.entityId, name: "", category: "", customCategory: "", vendorName: "", date: today(), amount: "", paymentStatus: "Paid", notes: "" })
       setBillFile(null)

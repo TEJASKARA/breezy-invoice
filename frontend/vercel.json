@@ -4,5 +4,21 @@
       "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy-Report-Only",
+          "value": "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://iiyrncgfsqsyxsbqulqq.supabase.co https://*.googleusercontent.com https://*.razorpay.com; font-src 'self' data:; connect-src 'self' blob: data: https://iiyrncgfsqsyxsbqulqq.supabase.co wss://iiyrncgfsqsyxsbqulqq.supabase.co https://api.chanax.in https://api.razorpay.com https://lumberjack.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com; frame-src 'self' blob: https://iiyrncgfsqsyxsbqulqq.supabase.co https://checkout.razorpay.com https://api.razorpay.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com; frame-ancestors 'none'; upgrade-insecure-requests"
+        },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), usb=(), interest-cohort=()" }
+      ]
+    }
   ]
 }

@@ -1,0 +1,6 @@
+# Test and lint tools. requirements-dev.txt is the pinned lock generated from this file.
+-c requirements.txt
+-r requirements.in
+pytest>=9.0.3,<10
+pytest-asyncio>=1.1,<2
+ruff>=0.12,<1

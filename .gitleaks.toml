@@ -1,0 +1,15 @@
+# Secret scanning for ChanaX (https://github.com/gitleaks/gitleaks).
+# Uses gitleaks' built-in rules plus the paths below, which only contain third-party code
+# or local files that are never committed.
+title = "ChanaX secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Third-party code and local-only files"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.env$''',
+]

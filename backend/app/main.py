@@ -3,8 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.rate_limit import (
+    RateLimiter,
+    RateLimitMiddleware,
+    build_rules,
+    exempt_patterns,
+)
 
 settings = get_settings()
+rate_limiter = RateLimiter(
+    build_rules(settings.api_v1_prefix), exempt_patterns(settings.api_v1_prefix)
+)
 
 app = FastAPI(
     title=settings.app_name,
@@ -12,6 +21,10 @@ app = FastAPI(
     docs_url="/docs" if settings.app_env != "production" else None,
     redoc_url=None,
 )
+
+# Added before CORS so CORS stays outermost and 429 replies still carry its headers.
+if settings.rate_limit_enabled:
+    app.add_middleware(RateLimitMiddleware, limiter=rate_limiter)
 
 app.add_middleware(
     CORSMiddleware,

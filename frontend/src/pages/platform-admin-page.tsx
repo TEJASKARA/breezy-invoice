@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom"
 import { BarChart3, Coins, Link2, Mail, Search, Trash2, UserCog, Megaphone } from "lucide-react"
 
 import { AdminMarketing } from "@/components/admin-marketing"
+import { AdminMfaGate } from "@/components/admin-mfa-gate"
 import { PageHeader } from "@/components/page-header"
 import { AdminPaymentLinks } from "@/components/admin-payment-links"
 import { AdminUserSetup } from "@/components/admin-user-setup"
@@ -15,13 +16,14 @@ import { Label } from "@/components/ui/label"
 import { adminErrorMessage,
   findPlatformWorkspaces,
   grantPlatformCredits,
-  loadPlatformAdminAccess,
+  loadPlatformAdminStatus,
   requestPlatformPurge, approvePlatformPurge,
   type PlatformWorkspace,
 } from "@/lib/platform-admin-api"
 
 export function PlatformAdminPage() {
-  const [access, setAccess] = useState<"loading" | "allowed" | "denied">("loading")
+  const [access, setAccess] = useState<"loading" | "allowed" | "denied" | "mfa">("loading")
+  const [accessCheck, setAccessCheck] = useState(0)
   const [tab, setTab] = useState<"usage" | "credits" | "lifecycle" | "users" | "marketing" | "payment-links">("usage")
   const [setupQuery, setSetupQuery] = useState("")
   const [purgeCode, setPurgeCode] = useState("")
@@ -39,11 +41,11 @@ export function PlatformAdminPage() {
 
   useEffect(() => {
     let active = true
-    void loadPlatformAdminAccess()
-      .then((allowed) => { if (active) setAccess(allowed ? "allowed" : "denied") })
+    void loadPlatformAdminStatus()
+      .then((result) => { if (active) setAccess(!result.is_super_admin ? "denied" : result.mfa_required ? "mfa" : "allowed") })
       .catch(() => { if (active) setAccess("denied") })
     return () => { active = false }
-  }, [])
+  }, [accessCheck])
 
   async function findWorkspace() {
     if (!subscriberQuery.trim()) return
@@ -91,6 +93,7 @@ export function PlatformAdminPage() {
     return <div className="grid min-h-72 place-items-center text-sm text-muted-foreground">Checking platform-administrator access…</div>
   }
   if (access === "denied") return <Navigate to="/workspace" replace />
+  if (access === "mfa") return <AdminMfaGate onVerified={() => { setAccess("loading"); setAccessCheck((value) => value + 1) }} />
 
   const amount = Number(creditAmount)
   const canGrant = Boolean(

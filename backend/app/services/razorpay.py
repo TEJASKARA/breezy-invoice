@@ -177,6 +177,12 @@ class RazorpayClient:
             )
         return payload
 
+    async def order_payments(self, order_id: str) -> list[dict[str, Any]]:
+        """Every payment attempt Razorpay has for one order."""
+        payload = await self._request("GET", f"/orders/{order_id}/payments")
+        items = payload.get("items")
+        return items if isinstance(items, list) else []
+
     async def payment(self, payment_id: str) -> dict[str, Any]:
         self._configured()
         async with httpx.AsyncClient(

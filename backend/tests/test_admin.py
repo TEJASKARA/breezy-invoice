@@ -25,11 +25,39 @@ def test_platform_admin_access_can_use_exact_authenticated_email() -> None:
         platform_admin_emails="Dhanush@chanax.in,lasya@chanax.in",
     )
 
+    confirmed = "2026-11-01T00:00:00Z"
     assert _is_platform_admin_user(
+        {"id": "other", "email": "dhanush@chanax.in", "email_confirmed_at": confirmed},
+        settings,
+    )
+    assert not _is_platform_admin_user(
+        {"id": "other", "email": "someone@chanax.in", "email_confirmed_at": confirmed},
+        settings,
+    )
+
+
+def test_unconfirmed_email_never_grants_platform_admin() -> None:
+    settings = Settings(_env_file=None, platform_admin_emails="dhanush@chanax.in")
+
+    assert not _is_platform_admin_user(
         {"id": "other", "email": "dhanush@chanax.in"}, settings
     )
     assert not _is_platform_admin_user(
-        {"id": "other", "email": "someone@chanax.in"}, settings
+        {"id": "other", "email": "dhanush@chanax.in", "email_confirmed_at": None},
+        settings,
+    )
+
+
+def test_unconfirmed_email_is_not_the_purge_approver() -> None:
+    from app.api.routes.admin import _verified_email
+
+    settings = Settings(_env_file=None, purge_approver_email="rushi@chanax.in")
+
+    assert not settings.is_purge_approver(_verified_email({"email": "rushi@chanax.in"}))
+    assert settings.is_purge_approver(
+        _verified_email(
+            {"email": "rushi@chanax.in", "email_confirmed_at": "2026-11-01T00:00:00Z"}
+        )
     )
 
 
@@ -272,3 +300,85 @@ def test_test_accounts_can_be_phone_only() -> None:
     )
     assert account.email is None and account.phone == "919876543210"
     assert AnalyticsExclusionCreate(email="+91 98765 43210").email == "+91 98765 43210"
+
+
+ADMIN_ID = "00000000-0000-0000-0000-0000000000aa"
+
+
+def test_admin_routes_need_mfa_when_required() -> None:
+    settings = Settings(
+        _env_file=None, platform_admin_user_ids=ADMIN_ID, admin_require_mfa=True
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        _require_platform_admin({"id": ADMIN_ID, "_aal": "aal1"}, settings)
+    assert blocked.value.status_code == status.HTTP_403_FORBIDDEN
+    assert "Multi-factor" in blocked.value.detail
+
+    _require_platform_admin({"id": ADMIN_ID, "_aal": "aal2"}, settings)
+
+
+def test_mfa_is_not_enforced_until_switched_on() -> None:
+    settings = Settings(_env_file=None, platform_admin_user_ids=ADMIN_ID)
+
+    _require_platform_admin({"id": ADMIN_ID, "_aal": "aal1"}, settings)
+
+
+def test_token_assurance_level_is_read_from_the_token() -> None:
+    import base64
+    import json
+
+    from app.services.supabase_gateway import _token_assurance_level
+
+    def part(value: object) -> str:
+        raw = json.dumps(value).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    def token(**claims: str) -> str:
+        return f"{part({'alg': 'HS256'})}.{part({'sub': 'u', **claims})}.signature"
+
+    assert _token_assurance_level(token(aal="aal2")) == "aal2"
+    assert _token_assurance_level(token(aal="aal1")) == "aal1"
+    assert _token_assurance_level(token()) == "aal1"
+    assert _token_assurance_level("not-a-token") == "aal1"
+    assert _token_assurance_level("a.@@@.c") == "aal1"
+    assert _token_assurance_level(f"a.{part(['aal2'])}.c") == "aal1"
+
+
+def test_admin_route_rejects_aal1_token_and_accepts_aal2(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    from fastapi.testclient import TestClient
+
+    from app.core.config import get_settings
+    from app.main import app
+    from app.services.supabase_gateway import SupabaseGateway
+
+    settings = Settings(
+        _env_file=None, platform_admin_user_ids=ADMIN_ID, admin_require_mfa=True
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        client = TestClient(app)
+        headers = {"Authorization": "Bearer test-token"}
+
+        monkeypatch.setattr(
+            SupabaseGateway,
+            "authenticated_user",
+            AsyncMock(return_value={"id": ADMIN_ID, "_aal": "aal1"}),
+        )
+        blocked = client.get("/api/v1/admin/workspaces?query=abc", headers=headers)
+        me = client.get("/api/v1/admin/me", headers=headers)
+
+        monkeypatch.setattr(
+            SupabaseGateway,
+            "authenticated_user",
+            AsyncMock(return_value={"id": ADMIN_ID, "_aal": "aal2"}),
+        )
+        me_mfa = client.get("/api/v1/admin/me", headers=headers)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert blocked.status_code == 403
+    assert me.json() == {"is_super_admin": True, "mfa_required": True}
+    assert me_mfa.json() == {"is_super_admin": True, "mfa_required": False}
