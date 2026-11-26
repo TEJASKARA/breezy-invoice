@@ -137,10 +137,7 @@ function guardDocument(doc: PdfDocument) {
 const guestPaths: Record<string, string> = {
   "/invoices": "/free/invoice",
   "/proformas": "/free/quotation",
-  "/customers": "/free/customers",
-  "/employees": "/free/payslip",
   "/employees/letters": "/free/offer-letter",
-  "/attendance": "/free/attendance",
   "/settings/templates": "/free/invoice-design",
   "/settings/letterhead": "/free/letterhead",
 }

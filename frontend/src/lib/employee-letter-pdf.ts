@@ -1,6 +1,6 @@
 import type { Company, Employee, EmployeeLetter, TemplateSettings } from "@/lib/mvp-store"
 import type { SalaryLine } from "@/lib/salary-structure"
-import { drawLetterhead, LETTERHEAD_CONTENT_BOTTOM, normalizeLetterhead, type LetterheadSettings } from "@/lib/letterhead"
+import { drawLetterhead, LETTERHEAD_CONTENT_BOTTOM, letterheadFont, normalizeLetterhead, paintLetterheadPage, type LetterheadSettings } from "@/lib/letterhead"
 
 function safe(value: string) { return value.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || "employee" }
 
@@ -41,41 +41,31 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
   const pageWidth = 210
   const pageHeight = 297
   const showChanaxBranding = template.showChanaxBranding || !canRemoveBranding
-  const colour = (hex: string): [number, number, number] => {
-    const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : "FFFFFF"
-    return [Number.parseInt(normalized.slice(0, 2), 16), Number.parseInt(normalized.slice(2, 4), 16), Number.parseInt(normalized.slice(4, 6), 16)]
-  }
+  // Letters use the letterhead's font (or the template's), with its page colour, border and watermark.
+  const font = await letterheadFont(doc, template, letterhead)
   const paintPage = () => {
-    const background = colour(template.pageColor)
-    doc.setFillColor(...background)
-    doc.rect(0, 0, pageWidth, pageHeight, "F")
-    if (template.watermarkEnabled && template.watermarkText.trim()) {
-      const opacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
-      const watermarkColour = background.map((channel) => Math.round(channel * (1 - opacity) + 82 * opacity)) as [number, number, number]
-      doc.setTextColor(...watermarkColour); doc.setFont("helvetica", "bold"); doc.setFontSize(31)
-      doc.text(template.watermarkText.trim().slice(0, 48).toUpperCase(), pageWidth / 2, pageHeight / 2, { align: "center", angle: 32 })
-    }
+    paintLetterheadPage(doc, { entity, template, letterhead, font })
     if (showChanaxBranding) {
-      doc.setTextColor(148, 163, 184); doc.setFont("helvetica", "normal"); doc.setFontSize(6.5)
+      doc.setTextColor(148, 163, 184); doc.setFont(font, "normal"); doc.setFontSize(6.5)
       doc.text("Created by ChanaX", pageWidth - margin, pageHeight - 7, { align: "right" })
     }
   }
   // Every page is printed on the company letterhead.
-  const letterheadPage = () => { paintPage(); return drawLetterhead(doc, { entity, template, letterhead }) }
+  const letterheadPage = () => { paintPage(); return drawLetterhead(doc, { entity, template, letterhead, font }) }
   let y = letterheadPage() + 2
-  doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text(letter.title, 105, y, { align: "center" })
-  y += 14; doc.setFont("helvetica", "normal"); doc.setFontSize(10)
+  doc.setTextColor(20); doc.setFont(font, "bold"); doc.setFontSize(15); doc.text(letter.title, 105, y, { align: "center" })
+  y += 14; doc.setFont(font, "normal"); doc.setFontSize(10)
   doc.text(`Date: ${letter.issueDate}`, margin, y); y += 9
-  doc.text(`To,`, margin, y); y += 6; doc.setFont("helvetica", "bold"); doc.text(employee.employeeName, margin, y); y += 5
-  doc.setFont("helvetica", "normal"); doc.text(`${employee.designation}${employee.department ? `, ${employee.department}` : ""}`, margin, y); y += 11
-  doc.setFont("helvetica", "bold"); doc.text(`Subject: ${letter.subject}`, margin, y); y += 10
-  doc.setFont("helvetica", "normal")
+  doc.text(`To,`, margin, y); y += 6; doc.setFont(font, "bold"); doc.text(employee.employeeName, margin, y); y += 5
+  doc.setFont(font, "normal"); doc.text(`${employee.designation}${employee.department ? `, ${employee.department}` : ""}`, margin, y); y += 11
+  doc.setFont(font, "bold"); doc.text(`Subject: ${letter.subject}`, margin, y); y += 10
+  doc.setFont(font, "normal")
   const startContinuationPage = () => {
     doc.addPage()
     const top = letterheadPage()
-    doc.setTextColor(90); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
+    doc.setTextColor(90); doc.setFont(font, "bold"); doc.setFontSize(9)
     doc.text(`${letter.title} - continued`, margin, top)
-    doc.setTextColor(20); doc.setFont("helvetica", "normal"); doc.setFontSize(10)
+    doc.setTextColor(20); doc.setFont(font, "normal"); doc.setFontSize(10)
     return top + 9
   }
   const paragraphs = printableLetterBody(letter.body, letter, employee).split(/\n{2,}/).filter(Boolean)
@@ -103,32 +93,32 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
   if (template.signatureMode === "uploaded" && template.signatureDataUrl) {
     try { doc.addImage(template.signatureDataUrl, template.signatureDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", margin, y, 35, 15); y += 18 } catch { /* fallback to typed signatory */ }
   }
-  doc.setFont("helvetica", "bold"); doc.text(letter.signatureName || `For ${entity?.companyName || "Company"}`, margin, y)
-  y += 5; doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Authorised signatory", margin, y)
+  doc.setFont(font, "bold"); doc.text(letter.signatureName || `For ${entity?.companyName || "Company"}`, margin, y)
+  y += 5; doc.setFont(font, "normal"); doc.setFontSize(9); doc.text("Authorised signatory", margin, y)
 
   const structure = salaryHelpers?.letterSalaryStructure(letter.letterType, letter.salary)
   if (structure && structure.earnings.length) {
     doc.addPage()
     let row = letterheadPage() + 2
-    doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(13)
+    doc.setTextColor(20); doc.setFont(font, "bold"); doc.setFontSize(13)
     doc.text(letter.letterType === "offer" ? "ANNEXURE A - SALARY STRUCTURE" : "ANNEXURE A - LAST DRAWN SALARY STRUCTURE", 105, row, { align: "center" })
-    row += 9; doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(70)
+    row += 9; doc.setFont(font, "normal"); doc.setFontSize(9.5); doc.setTextColor(70)
     doc.text(`${employee.employeeName}${employee.designation ? ` - ${employee.designation}` : ""}`, margin, row)
     doc.text(`Annual CTC: ${salaryHelpers?.formatRupees(structure.annualCtc, "INR ")}`, 190, row, { align: "right" })
     row += 7
     const amountX = 150, annualX = 190
     const header = () => {
       doc.setFillColor(235, 238, 243); doc.rect(margin, row - 5, 170, 8, "F")
-      doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5)
+      doc.setTextColor(20); doc.setFont(font, "bold"); doc.setFontSize(9.5)
       doc.text("Component", margin + 2, row); doc.text("Monthly (INR)", amountX, row, { align: "right" }); doc.text("Annual (INR)", annualX - 2, row, { align: "right" })
       row += 8
     }
     const amount = (value: number) => Math.round(value).toLocaleString("en-IN")
     const section = (title: string, lines: SalaryLine[]) => {
       if (!lines.length) return
-      doc.setTextColor(100); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5)
+      doc.setTextColor(100); doc.setFont(font, "bold"); doc.setFontSize(8.5)
       doc.text(title.toUpperCase(), margin + 2, row); row += 6
-      doc.setTextColor(30); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5)
+      doc.setTextColor(30); doc.setFont(font, "normal"); doc.setFontSize(9.5)
       for (const item of lines) {
         doc.text(item.label, margin + 2, row); doc.text(amount(item.monthly), amountX, row, { align: "right" }); doc.text(amount(item.annual), annualX - 2, row, { align: "right" })
         row += 6
@@ -136,7 +126,7 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
     }
     const total = (label: string, monthly: number) => {
       doc.setDrawColor(200); doc.line(margin, row - 4, 190, row - 4)
-      doc.setTextColor(20); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5)
+      doc.setTextColor(20); doc.setFont(font, "bold"); doc.setFontSize(9.5)
       doc.text(label, margin + 2, row); doc.text(amount(monthly), amountX, row, { align: "right" }); doc.text(amount(monthly * 12), annualX - 2, row, { align: "right" })
       row += 9
     }
@@ -144,7 +134,7 @@ export async function createEmployeeLetterPdf({ letter, employee, entity, templa
     section("Earnings", structure.earnings); total("Gross salary", structure.grossMonthly)
     section("Employee deductions", structure.employeeDeductions); total("Net take-home salary", structure.netMonthly)
     section("Employer contributions", structure.employerContributions); total("Total cost to company (CTC)", structure.monthlyCtc)
-    row += 2; doc.setTextColor(100); doc.setFont("helvetica", "normal"); doc.setFontSize(8)
+    row += 2; doc.setTextColor(100); doc.setFont(font, "normal"); doc.setFontSize(8)
     doc.text(doc.splitTextToSize("PF, ESIC, Professional Tax and gratuity are calculated as per the rules applicable on the date of this letter and may change with law. Income tax, if any, is deducted as per the employee's declarations.", 170), margin, row)
   }
   return doc

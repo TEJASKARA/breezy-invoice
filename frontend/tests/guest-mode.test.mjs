@@ -26,9 +26,9 @@ test("a guest gets one free download, then is asked to sign up", () => {
 
 test("app links point to the matching free tool only for guests", () => {
   guest.setGuestMode(true)
-  assert.equal(guest.appPath("/customers"), "/free/customers")
+  assert.equal(guest.appPath("/settings/templates"), "/free/invoice-design")
   assert.equal(guest.appPath("/settings/letterhead"), "/free/letterhead")
   assert.equal(guest.appPath("/pricing"), "/pricing")
   guest.setGuestMode(false)
-  assert.equal(guest.appPath("/customers"), "/customers")
+  assert.equal(guest.appPath("/settings/templates"), "/settings/templates")
 })

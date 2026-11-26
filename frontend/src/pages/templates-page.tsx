@@ -15,13 +15,11 @@ import { useWorkspaceAccess } from "@/lib/workspace-access"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { isPngOrJpegDataUrl } from "@/lib/file-signature"
 import { cn } from "@/lib/utils"
+import { customStyleFrom, customPreset, resolveTemplateStyle, templatePresets, type TemplatePresetId } from "@/lib/template-style"
+import { CustomStyleEditor, FontPicker, StyleThumbnail } from "@/components/template-style-controls"
 import { trackAction } from "@/lib/usage-tracking"
 
-const templates = [
-  { id: "classic" as const, name: "Classic Ledger", description: "Traditional bordered GST invoice" },
-  { id: "breeze" as const, name: "Modern Breeze", description: "Bold, modern and brand-forward" },
-  { id: "minimal" as const, name: "Minimal Professional", description: "Clean layout with generous spacing" },
-]
+const templates: { id: TemplatePresetId; name: string; description: string }[] = [...templatePresets.map(({ id, name, description }) => ({ id, name, description })), customPreset]
 
 const DEFAULT_SCOPE = "default"
 const selectClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -50,22 +48,6 @@ const resetElements = (): TemplateSettings["elements"] => ({
   terms: { visible: true, offsetX: 0, offsetY: 0, label: "Terms & conditions" },
   signature: { visible: true, offsetX: 0, offsetY: 0, label: "Authorised signatory" },
 })
-
-function TemplateThumbnail({ preset, color, pageColor }: { preset: TemplateSettings["preset"]; color: string; pageColor: string }) {
-  return (
-    <div className="aspect-[1.45] rounded-md border p-2 shadow-sm" style={{ backgroundColor: pageColor }}>
-      {preset === "breeze" && <div className="mb-2 h-3 rounded-sm" style={{ backgroundColor: color }} />}
-      <div className="flex justify-between gap-2">
-        <div className="space-y-1"><div className="h-1.5 w-12 rounded-full" style={{ backgroundColor: color }} /><div className="h-1 w-8 rounded-full bg-slate-200" /></div>
-        <div className="h-1.5 w-10 rounded-full" style={{ backgroundColor: preset === "classic" ? "#0f172a" : color }} />
-      </div>
-      <div className={cn("mt-3 grid grid-cols-3 gap-1", preset === "classic" && "border border-slate-300 p-1")}>
-        <div className="h-1 rounded-full bg-slate-200" /><div className="h-1 rounded-full bg-slate-200" /><div className="h-1 rounded-full bg-slate-200" />
-      </div>
-      <div className="mt-2 space-y-1">{[1, 2, 3].map((row) => <div key={row} className="h-1 rounded-full bg-slate-100" />)}</div>
-    </div>
-  )
-}
 
 function sampleInvoice(entityName: string, customerName: string): Invoice {
   return {
@@ -257,6 +239,8 @@ export function TemplatesPage() {
       quotationPaymentQrDataUrl: null,
       customTexts: [],
       fontStyle: "sans",
+      fontFamily: undefined,
+      customStyle: undefined,
       documentTextScale: 100,
       compact: false,
       elements: resetElements(),
@@ -383,16 +367,17 @@ export function TemplatesPage() {
         <Card className={cn("h-fit xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto", !canManage && "pointer-events-none opacity-70")}>
           <CardContent className="space-y-6 p-5">
             <section className="space-y-3">
-              <div><h2 className="font-semibold">Choose a template</h2><p className="text-sm text-muted-foreground">Three layouts designed for Indian GST invoices.</p></div>
+              <div><h2 className="font-semibold">Choose a template</h2><p className="text-sm text-muted-foreground">{templates.length - 1} layouts for Indian GST invoices, or design your own with Custom.</p></div>
               <div className="space-y-3">
                 {templates.map((item) => (
-                  <button key={item.id} type="button" onClick={() => updateTemplate({ preset: item.id })} className={cn("grid w-full grid-cols-[88px_1fr_auto] items-center gap-3 rounded-lg border p-2 text-left transition hover:bg-muted/50", template.preset === item.id && "border-foreground ring-1 ring-foreground")}>
-                    <TemplateThumbnail preset={item.id} color={template.accentColor} pageColor={template.pageColor} />
+                  <button key={item.id} type="button" onClick={() => updateTemplate(item.id === "custom" ? { preset: "custom", customStyle: template.preset === "custom" ? template.customStyle : customStyleFrom(template) } : { preset: item.id })} className={cn("grid w-full grid-cols-[88px_1fr_auto] items-center gap-3 rounded-lg border p-2 text-left transition hover:bg-muted/50", template.preset === item.id && "border-foreground ring-1 ring-foreground")}>
+                    <StyleThumbnail style={resolveTemplateStyle({ preset: item.id, accentColor: template.accentColor, customStyle: item.id === "custom" ? template.customStyle ?? customStyleFrom(template) : undefined })} pageColor={template.pageColor} />
                     <span className="min-w-0"><span className="block text-sm font-medium">{item.name}</span><span className="block text-xs text-muted-foreground">{item.description}</span></span>
                     {template.preset === item.id && <Check className="size-4" aria-label="Selected" />}
                   </button>
                 ))}
               </div>
+              {template.preset === "custom" ? <CustomStyleEditor value={resolveTemplateStyle(template)} onChange={(changes) => updateTemplate({ customStyle: { ...resolveTemplateStyle(template), ...changes } })} onError={(text) => showMessage(text, "error")} /> : null}
             </section>
 
             <Separator />
@@ -591,8 +576,9 @@ export function TemplatesPage() {
             </section>
 
             <section className="space-y-3">
-              <Label>Typography</Label>
-              <div className="grid grid-cols-3 gap-2">{(["sans", "serif", "mono"] as const).map((font) => <Button key={font} type="button" variant={template.fontStyle === font ? "default" : "outline"} onClick={() => updateTemplate({ fontStyle: font })}>{font === "sans" ? "Modern" : font === "serif" ? "Classic" : "Mono"}</Button>)}</div>
+              <Label htmlFor="template-font">Font</Label>
+              <FontPicker id="template-font" fontFamily={template.fontFamily} fontStyle={template.fontStyle} onChange={(change) => updateTemplate({ fontFamily: change.fontFamily, ...(change.fontStyle ? { fontStyle: change.fontStyle } : {}) })} />
+              <p className="text-xs text-muted-foreground">25 fonts, used in the preview and the downloaded PDF.</p>
             </section>
 
             <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border p-3"><span><span className="block text-sm font-medium">Compact line items</span><span className="block text-xs text-muted-foreground">Fit more products on one page</span></span><input type="checkbox" checked={template.compact} onChange={(event) => updateTemplate({ compact: event.target.checked })} className="size-4 accent-foreground" /></label>

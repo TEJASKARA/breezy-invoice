@@ -30,7 +30,8 @@
     "test:guest": "node --test tests/guest-mode.test.mjs tests/guest-workspace.test.mjs",
     "test:captcha": "node --test tests/captcha.test.mjs",
     "test:signature": "node --test tests/file-signature.test.mjs",
-    "test:cleanup": "node --test tests/session-cleanup.test.mjs"
+    "test:cleanup": "node --test tests/session-cleanup.test.mjs",
+    "test:styles": "node --test tests/template-style.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

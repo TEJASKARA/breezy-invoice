@@ -30,6 +30,7 @@ import {
 import { trackAction } from "@/lib/usage-tracking"
 import { canDeleteInvoice } from "@/lib/invoice-deletion"
 import { normalizeLetterhead, type LetterheadSettings } from "@/lib/letterhead"
+import type { TemplatePresetId, TemplateStyleOptions } from "@/lib/template-style"
 import { GUEST_STATE_KEY } from "@/lib/guest-mode"
 import { mergeGuestWorkspace } from "@/lib/guest-workspace"
 
@@ -250,7 +251,9 @@ const defaultTemplateElements = (): Record<TemplateElementId, TemplateElementSet
   signature: { visible: true, offsetX: 0, offsetY: 0, label: "Authorised signatory" },
 })
 export type TemplateSettings = {
-  preset: "classic" | "breeze" | "minimal"
+  preset: TemplatePresetId
+  /** Options for the "custom" preset: header layout, table, borders, colours and background. */
+  customStyle?: Partial<TemplateStyleOptions>
   accentColor: string
   pageColor: string
   logoDataUrl: string | null
@@ -269,7 +272,10 @@ export type TemplateSettings = {
   quotationPaymentDetails: string
   quotationPaymentQrDataUrl: string | null
   customTexts: TemplateTextBlock[]
+  /** Built-in PDF font, used when no library font is chosen (templates saved before the font library). */
   fontStyle: "sans" | "serif" | "mono"
+  /** Font from the font library (see document-fonts.ts); overrides fontStyle. */
+  fontFamily?: string
   documentTextScale: number
   compact: boolean
   elements: Record<TemplateElementId, TemplateElementSetting>

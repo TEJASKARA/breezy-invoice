@@ -14,6 +14,8 @@ const calculationsUrl = moduleUrl((await readFile(new URL("../src/lib/invoice-ca
 const renderer = (await readFile(new URL("../src/lib/invoice-pdf.ts", import.meta.url), "utf8"))
   .replace('"@/lib/invoice-calculations"', JSON.stringify(calculationsUrl))
   .replace('"@/lib/quotation-payment"', JSON.stringify(quotationPaymentUrl))
+  .replace('"@/lib/document-fonts"', JSON.stringify(moduleUrl(await readFile(new URL("../src/lib/document-fonts.ts", import.meta.url), "utf8"))))
+  .replace('"@/lib/template-style"', JSON.stringify(moduleUrl(await readFile(new URL("../src/lib/template-style.ts", import.meta.url), "utf8"))))
   .replace('import { trackAction } from "@/lib/usage-tracking"', 'const trackAction = () => {}')
   .replace('import("jspdf")', `import(${JSON.stringify(pathToFileURL(require.resolve("jspdf")).href)})`)
 const { createInvoicePdf } = await import(moduleUrl(renderer))

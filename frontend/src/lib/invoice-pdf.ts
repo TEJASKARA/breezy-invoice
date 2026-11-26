@@ -4,6 +4,8 @@ import { calculateInvoiceTotals, getInvoiceLineItems } from "@/lib/invoice-calcu
 import type { Company, Customer, Invoice, TemplateElementId, TemplateSettings } from "@/lib/mvp-store"
 import { trackAction } from "@/lib/usage-tracking"
 import { quotationPayment } from "@/lib/quotation-payment"
+import { embedPdfFont } from "@/lib/document-fonts"
+import { resolveTemplateStyle, tint } from "@/lib/template-style"
 
 const pageWidth = 210
 const pageHeight = 297
@@ -24,12 +26,6 @@ function money(value = 0) {
 
 export function cleanInvoiceFileName(value: string) {
   return value.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || "invoice"
-}
-
-function fontName(style: TemplateSettings["fontStyle"]) {
-  if (style === "serif") return "times"
-  if (style === "mono") return "courier"
-  return "helvetica"
 }
 
 function addLogo(doc: JsPdfDocument, logoDataUrl: string, x: number, y: number, width: number, height: number) {
@@ -89,11 +85,15 @@ export async function createInvoicePdf({
   const textScale = Math.min(1.1, Math.max(0.85, (template.documentTextScale ?? 100) / 100))
   const setFontSize = doc.setFontSize.bind(doc)
   doc.setFontSize = ((size: number) => setFontSize(size * textScale)) as typeof doc.setFontSize
-  const accent = colour(template.accentColor)
-  const ink: [number, number, number] = [24, 24, 27]
+  const style = resolveTemplateStyle(template)
+  const accent = colour(style.headerColor)
+  const tableHead = colour(style.tableHeadColor)
+  const ink = colour(style.textColor)
   const muted: [number, number, number] = [100, 116, 139]
   const soft: [number, number, number] = [245, 247, 250]
-  const baseFont = fontName(template.fontStyle)
+  const stripe = colour(tint(style.tableHeadColor, 0.93))
+  const white: [number, number, number] = [255, 255, 255]
+  const baseFont = await embedPdfFont(doc, template.fontFamily, template.fontStyle)
   const invoiceNumber = invoice.sourceNumber || invoice.number
   const issuerName = entity?.companyName || invoice.entityName || "Issuing entity"
   const customerName = customer?.companyName || invoice.companyName
@@ -123,6 +123,22 @@ export async function createInvoicePdf({
     const background = colour(template.pageColor)
     doc.setFillColor(...background)
     doc.rect(0, 0, pageWidth, pageHeight, "F")
+    if (style.backgroundImageDataUrl) {
+      try { doc.addImage(style.backgroundImageDataUrl, style.backgroundImageDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG", 0, 0, pageWidth, pageHeight, undefined, "FAST") } catch { /* keep the page usable if the image can't be decoded */ }
+    }
+    if (style.pageBorder === "double") {
+      doc.setDrawColor(...accent)
+      doc.setLineWidth(0.7)
+      doc.rect(8, 8, pageWidth - 16, pageHeight - 16)
+      doc.setLineWidth(0.2)
+      doc.rect(10.5, 10.5, pageWidth - 21, pageHeight - 21)
+    } else if (style.pageBorder === "thin") {
+      doc.setDrawColor(...accent)
+      doc.setLineWidth(0.35)
+      if (style.rounded) doc.roundedRect(8, 8, pageWidth - 16, pageHeight - 16, 3, 3)
+      else doc.rect(8, 8, pageWidth - 16, pageHeight - 16)
+      doc.setLineWidth(0.2)
+    }
     if (template.watermarkEnabled && template.watermarkImageDataUrl) {
       const opacity = Math.min(0.3, Math.max(0.05, template.watermarkOpacity))
       doc.saveGraphicsState()
@@ -151,61 +167,100 @@ export async function createInvoicePdf({
   doc.setFont(baseFont, "normal")
   doc.setTextColor(...ink)
 
-  if (template.preset === "breeze") {
+  if (style.topStrip && !style.headerBand) {
     doc.setFillColor(...accent)
     doc.rect(0, 0, pageWidth, 8, "F")
-  } else if (template.preset === "classic") {
-    doc.setDrawColor(...accent)
-    doc.setLineWidth(0.7)
-    doc.rect(8, 8, pageWidth - 16, pageHeight - 16)
-    doc.setLineWidth(0.2)
-    doc.rect(10.5, 10.5, pageWidth - 21, pageHeight - 21)
   }
 
-  const headerY = template.preset === "breeze" ? 20 : 16
+  const headerY = style.topStrip || style.headerBand ? 20 : 16
   const logoShift = shift("logo")
-  const logoShown = Boolean(element("logo").visible && template.logoDataUrl && addLogo(doc, template.logoDataUrl, margin + logoShift.x, headerY + logoShift.y, logoSize, logoSize))
   const issuerShift = shift("issuer")
-  const issuerX = (logoShown ? margin + logoSize + 5 : margin) + issuerShift.x
-  let headerBottom = headerY + (logoShown ? logoSize + logoShift.y : 0)
-  if (element("issuer").visible) {
-    doc.setFont(baseFont, "bold")
-    doc.setFontSize(template.preset === "minimal" ? 15 : 17)
-    const issuerWidth = Math.max(25, pageWidth - margin - 70 - issuerX)
-    const issuerNameLines = doc.splitTextToSize(issuerName, issuerWidth) as string[]
-    doc.text(issuerNameLines, issuerX, headerY + 6 + issuerShift.y)
-    const addressY = headerY + 6 + issuerShift.y + issuerNameLines.length * 6 + 2
-    doc.setFont(baseFont, "normal")
-    doc.setFontSize(8.5)
-    doc.setTextColor(...muted)
-    const issuerAddress = addressLines(doc, entity?.billingAddress || entity?.premisesAddress || "", issuerWidth)
-    doc.text(issuerAddress, issuerX, addressY)
-    const issuerMetaY = addressY + issuerAddress.length * 4
-    if (entity?.gstin) doc.text(`GSTIN: ${entity.gstin}`, issuerX, issuerMetaY)
-    if (entity?.pan) doc.text(`PAN: ${entity.pan}`, issuerX, issuerMetaY + 4)
-    headerBottom = Math.max(headerBottom, issuerMetaY + 8)
+  const titleShift = shift("invoiceTitle")
+  const logoAvailable = Boolean(element("logo").visible && template.logoDataUrl && (() => { try { doc.getImageProperties(template.logoDataUrl!); return true } catch { return false } })())
+  const onBand = style.headerBand
+  const headerInk: [number, number, number] = onBand ? white : ink
+  const headerMuted: [number, number, number] = onBand ? [226, 232, 240] : muted
+  const titleColour: [number, number, number] = onBand ? white : accent
+  const nameSize = style.quietHeader ? 15 : 17
+  const titleSize = style.quietHeader ? 17 : 20
+
+  /** Lays out (and, when `draw` is true, prints) the header; returns its bottom edge. */
+  const header = (draw: boolean) => {
+    const centered = style.headerLayout === "centered"
+    const logoRight = style.headerLayout === "logo-right"
+    let bottom = headerY
+    let logoBottom = headerY
+    if (logoAvailable) {
+      const logoX = centered ? (pageWidth - logoSize) / 2 : logoRight ? pageWidth - margin - logoSize : margin
+      if (draw) addLogo(doc, template.logoDataUrl!, logoX + logoShift.x, headerY + logoShift.y, logoSize, logoSize)
+      logoBottom = headerY + logoSize + logoShift.y
+      bottom = Math.max(bottom, logoBottom)
+    }
+    const write = (text: string | string[], x: number, y: number, align: "left" | "right" | "center" = "left") => { if (draw) doc.text(text, x, y, { align }) }
+    if (element("issuer").visible) {
+      const issuerX = (centered ? pageWidth / 2 : logoRight || !logoAvailable ? margin : margin + logoSize + 5) + issuerShift.x
+      const issuerWidth = centered ? 150 : logoRight ? Math.max(40, pageWidth - margin * 2 - Math.max(logoSize, 62) - 6) : Math.max(25, pageWidth - margin - 70 - issuerX)
+      const align = centered ? "center" : "left"
+      const nameY = (centered ? logoBottom + (logoAvailable ? 7 : 6) : headerY + 6) + issuerShift.y
+      doc.setFont(baseFont, "bold")
+      doc.setFontSize(nameSize)
+      doc.setTextColor(...headerInk)
+      const nameLines = doc.splitTextToSize(issuerName, issuerWidth) as string[]
+      write(nameLines, issuerX, nameY, align)
+      const addressY = nameY + nameLines.length * 6 + 2
+      doc.setFont(baseFont, "normal")
+      doc.setFontSize(8.5)
+      doc.setTextColor(...headerMuted)
+      const address = addressLines(doc, entity?.billingAddress || entity?.premisesAddress || "", issuerWidth)
+      write(address, issuerX, addressY, align)
+      let metaY = addressY + address.length * 4
+      const meta = [entity?.gstin ? `GSTIN: ${entity.gstin}` : "", entity?.pan ? `PAN: ${entity.pan}` : ""].filter(Boolean)
+      if (centered && meta.length) { write(meta.join("   |   "), issuerX, metaY, "center"); metaY += 4 }
+      else meta.forEach((line) => { write(line, issuerX, metaY); metaY += 4 })
+      bottom = Math.max(bottom, metaY + 4)
+    }
+    if (element("invoiceTitle").visible) {
+      doc.setTextColor(...titleColour)
+      doc.setFont(baseFont, "bold")
+      doc.setFontSize(titleSize)
+      if (centered) {
+        const titleY = bottom + 6 + titleShift.y
+        write(displayedTitle, pageWidth / 2 + titleShift.x, titleY, "center")
+        doc.setTextColor(...headerMuted)
+        doc.setFontSize(9)
+        doc.setFont(baseFont, "normal")
+        write(`${invoiceNumber}   |   ${invoice.date}`, pageWidth / 2 + titleShift.x, titleY + 6, "center")
+        bottom = Math.max(bottom, titleY + 10)
+      } else {
+        const titleTop = (logoRight && logoAvailable ? logoBottom + 6 : headerY + 6) + titleShift.y
+        const titleLines = doc.splitTextToSize(displayedTitle, 62) as string[]
+        write(titleLines, pageWidth - margin + titleShift.x, titleTop, "right")
+        const titleMetaY = titleTop + titleLines.length * 7
+        doc.setTextColor(...headerMuted)
+        doc.setFontSize(9)
+        doc.setFont(baseFont, "normal")
+        write(invoiceNumber, pageWidth - margin + titleShift.x, titleMetaY, "right")
+        write(invoice.date, pageWidth - margin + titleShift.x, titleMetaY + 5, "right")
+        bottom = Math.max(bottom, titleMetaY + 10)
+      }
+    }
+    return bottom
   }
 
-  if (element("invoiceTitle").visible) {
-    const titleShift = shift("invoiceTitle")
-    doc.setTextColor(...accent)
-    doc.setFont(baseFont, "bold")
-    doc.setFontSize(template.preset === "minimal" ? 17 : 20)
-    const titleLines = doc.splitTextToSize(displayedTitle, 62) as string[]
-    doc.text(titleLines, pageWidth - margin + titleShift.x, headerY + 6 + titleShift.y, { align: "right" })
-    const titleMetaY = headerY + 6 + titleShift.y + titleLines.length * 7
-    doc.setTextColor(...muted)
-    doc.setFontSize(9)
-    doc.setFont(baseFont, "normal")
-    doc.text(invoiceNumber, pageWidth - margin + titleShift.x, titleMetaY, { align: "right" })
-    doc.text(invoice.date, pageWidth - margin + titleShift.x, titleMetaY + 5, { align: "right" })
-    headerBottom = Math.max(headerBottom, titleMetaY + 10)
-  }
-
+  let headerBottom = header(false)
   const dividerY = Math.max(56 + compactOffset, headerBottom + 5)
-  doc.setDrawColor(template.preset === "minimal" ? 210 : accent[0], template.preset === "minimal" ? 214 : accent[1], template.preset === "minimal" ? 220 : accent[2])
-  doc.setLineWidth(template.preset === "minimal" ? 0.25 : 0.45)
-  doc.line(margin, dividerY, pageWidth - margin, dividerY)
+  if (onBand) {
+    doc.setFillColor(...accent)
+    doc.rect(0, 0, pageWidth, dividerY, "F")
+  }
+  headerBottom = header(true)
+  doc.setTextColor(...ink)
+  if (!onBand) {
+    if (style.quietHeader) doc.setDrawColor(210, 214, 220)
+    else doc.setDrawColor(...accent)
+    doc.setLineWidth(style.quietHeader ? 0.25 : 0.45)
+    doc.line(margin, dividerY, pageWidth - margin, dividerY)
+  }
 
   if (isQuotation) {
     doc.setFillColor(255, 247, 214)
@@ -312,15 +367,28 @@ export async function createInvoicePdf({
     doc.text(lines, x + (leftAligned ? 1.5 : column.width - 1.5), y, { align: leftAligned ? "left" : "right" })
     return lines.length
   }
+  const tableX = margin + itemsShift.x
+  const tableWidth = pageWidth - margin * 2
+  /** Vertical column rules for the boxed table style. */
+  const columnRules = (top: number, bottom: number) => {
+    let x = tableX
+    tableColumns.slice(0, -1).forEach((column) => { x += column.width; doc.line(x, top, x, bottom) })
+  }
   const drawTableHeader = (y: number) => {
-    if (template.preset === "breeze") {
-      doc.setFillColor(...accent)
-      doc.setTextColor(255, 255, 255)
+    if (style.tableHeadFilled) {
+      doc.setFillColor(...tableHead)
+      doc.setTextColor(...white)
     } else {
       doc.setFillColor(...soft)
       doc.setTextColor(...ink)
     }
-    doc.rect(margin + itemsShift.x, y, pageWidth - margin * 2, 10, "F")
+    if (style.rounded && style.tableStyle !== "boxed") doc.roundedRect(tableX, y, tableWidth, 10, 1.5, 1.5, "F")
+    else doc.rect(tableX, y, tableWidth, 10, "F")
+    if (style.tableStyle === "boxed") {
+      doc.setDrawColor(203, 213, 225)
+      doc.setLineWidth(0.25)
+      doc.rect(tableX, y, tableWidth, 10, "S")
+    }
     tableColumns.forEach((column, index) => drawCell(column.label, index, y + 6, true))
   }
 
@@ -343,15 +411,26 @@ export async function createInvoicePdf({
       rowY = 36
     }
     const taxAmount = item.cgstAmount + item.sgstAmount + item.igstAmount
+    if (style.tableStyle === "striped" && index % 2 === 1) {
+      doc.setFillColor(...stripe)
+      doc.rect(tableX, rowY, tableWidth, rowHeight, "F")
+    }
     doc.setTextColor(...ink)
     doc.setFont(baseFont, "normal")
     doc.setFontSize(isGstInvoice ? 6.5 : 8)
     doc.text(descriptionLines, margin + 1.5 + itemsShift.x, rowY + 5)
     const cells = [item.hsnSac || customer?.hsnSac || "-", String(item.quantity ?? 1), tableNumber(item.unitPrice ?? item.taxableAmount), tableNumber(item.taxableAmount), ...(isGstInvoice ? [tableNumber(item.cgstAmount), tableNumber(item.sgstAmount), tableNumber(item.igstAmount)] : []), tableNumber(item.taxableAmount + taxAmount)]
     cells.forEach((value, index) => drawCell(value, index + 1, rowY + 5, index === cells.length - 1))
-    doc.setDrawColor(220, 224, 230)
+    doc.setDrawColor(style.tableStyle === "boxed" ? 203 : 220, style.tableStyle === "boxed" ? 213 : 224, style.tableStyle === "boxed" ? 225 : 230)
     doc.setLineWidth(0.25)
-    doc.line(margin + itemsShift.x, rowY + rowHeight, pageWidth - margin + itemsShift.x, rowY + rowHeight)
+    if (style.tableStyle === "boxed") {
+      doc.rect(tableX, rowY, tableWidth, rowHeight, "S")
+      columnRules(rowY, rowY + rowHeight)
+    } else if (style.tableStyle === "lines" || (style.tableStyle !== "striped" && index === lineItems.length - 1)) {
+      doc.line(tableX, rowY + rowHeight, tableX + tableWidth, rowY + rowHeight)
+    } else if (style.tableStyle === "striped" && index === lineItems.length - 1) {
+      doc.line(tableX, rowY + rowHeight, tableX + tableWidth, rowY + rowHeight)
+    }
     rowY += rowHeight
     if (index === lineItems.length - 1) rowY += 2
   })
@@ -378,10 +457,10 @@ export async function createInvoicePdf({
         ["TAXABLE VALUE", totals.taxableAmount],
         ...(isGstInvoice ? [["CGST", totals.cgstAmount], ["SGST", totals.sgstAmount], ["IGST", totals.igstAmount]] as [string, number][] : []),
       ]
-      if (template.preset === "classic") doc.setDrawColor(...accent)
+      if (style.totalsStyle === "outline") doc.setDrawColor(...accent)
       else doc.setDrawColor(220, 224, 230)
       doc.setLineWidth(0.3)
-      if (template.preset === "breeze") doc.roundedRect(summaryX, summaryY, summaryWidth, 31, 2, 2, "S")
+      if (style.rounded) doc.roundedRect(summaryX, summaryY, summaryWidth, 31, 2, 2, "S")
       else doc.rect(summaryX, summaryY, summaryWidth, 31, "S")
       summaryItems.forEach(([label, value], index) => {
         const itemX = summaryX + index * columnWidth
@@ -394,20 +473,24 @@ export async function createInvoicePdf({
         doc.setTextColor(...ink)
         doc.text(money(value), itemX + 3, summaryY + 11.5)
       })
-      if (template.preset === "breeze") doc.setFillColor(...accent)
-      else if (template.preset === "minimal") doc.setFillColor(...soft)
+      if (style.totalsStyle === "filled") doc.setFillColor(...accent)
+      else if (style.totalsStyle === "soft") doc.setFillColor(...soft)
       else doc.setFillColor(255, 255, 255)
-      doc.rect(summaryX, summaryY + 15, summaryWidth, 16, "F")
-      doc.setDrawColor(...(template.preset === "classic" ? accent : [220, 224, 230] as [number, number, number]))
+      if (style.rounded && style.totalsStyle === "filled") {
+        // Rounded bottom corners only: draw a rounded box and square off its top edge.
+        doc.roundedRect(summaryX, summaryY + 15, summaryWidth, 16, 2, 2, "F")
+        doc.rect(summaryX, summaryY + 15, summaryWidth, 4, "F")
+      } else doc.rect(summaryX, summaryY + 15, summaryWidth, 16, "F")
+      doc.setDrawColor(...(style.totalsStyle === "outline" ? accent : [220, 224, 230] as [number, number, number]))
       doc.line(summaryX, summaryY + 15, summaryX + summaryWidth, summaryY + 15)
-      if (template.preset === "breeze") doc.setTextColor(225, 235, 255)
+      if (style.totalsStyle === "filled") doc.setTextColor(225, 235, 255)
       else doc.setTextColor(...muted)
       doc.setFont(baseFont, "bold")
       doc.setFontSize(6.7)
       doc.text(isQuotation ? "QUOTATION TOTAL" : "INVOICE TOTAL", summaryX + 4, summaryY + 21)
       doc.text(isQuotation ? "ESTIMATED AMOUNT" : "NET RECEIVABLE", summaryX + summaryWidth - 4, summaryY + 21, { align: "right" })
-      if (template.preset === "breeze") doc.setTextColor(255, 255, 255)
-      else if (template.preset === "classic") doc.setTextColor(...accent)
+      if (style.totalsStyle === "filled") doc.setTextColor(...white)
+      else if (style.totalsStyle === "outline") doc.setTextColor(...accent)
       else doc.setTextColor(...ink)
       doc.setFontSize(11.5)
       doc.text(money(totals.amount), summaryX + 4, summaryY + 28)

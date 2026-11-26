@@ -8,6 +8,8 @@ import ts from "typescript"
 const require = createRequire(import.meta.url)
 const jsPdfUrl = pathToFileURL(require.resolve("jspdf")).href
 let source = await readFile(new URL("../src/lib/letterhead.ts", import.meta.url), "utf8")
+const fontsSource = ts.transpileModule(await readFile(new URL("../src/lib/document-fonts.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
+source = source.replace('"@/lib/document-fonts"', JSON.stringify(`data:text/javascript;base64,${Buffer.from(fontsSource).toString("base64")}`))
 source = source.replace('import("jspdf")', `import(${JSON.stringify(jsPdfUrl)})`)
 source = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
 const { createLetterheadPdf, normalizeLetterhead, letterheadContactLine, letterheadRegistrationLine } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)
@@ -29,7 +31,7 @@ test("contact and registration lines skip empty values", () => {
   assert.equal(letterheadRegistrationLine({ ...letterhead, showGstin: false, registration: "" }, entity), "")
 })
 
-for (const style of ["classic", "centered", "banner", "image"]) {
+for (const style of ["classic", "centered", "banner", "split", "image"]) {
   test(`${style} letterhead prints the company details on one page`, async () => {
     const doc = await createLetterheadPdf({ entity, template, letterhead: normalizeLetterhead({ style, email: "hr@axifleetx.com", footerText: "Registered office: Hyderabad" }) })
     assert.equal(doc.getNumberOfPages(), 1)

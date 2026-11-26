@@ -180,6 +180,8 @@ export function LoginPage() {
     if (error) show(customerErrorMessage(error), true)
   }
 
+  // Arrived from the free tools after using the free download (or their "sign up" links).
+  const fromFreeTools = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("from") === "free-tools"
   const heading = step === "recovery" ? "Choose a new password"
     : step === "email" ? (isSignUp ? "Create your account" : "Enter your password")
     : step === "phone-code" ? "Enter the WhatsApp code"
@@ -216,6 +218,7 @@ export function LoginPage() {
       <section className="flex items-center justify-center bg-white p-5 text-[#171717] sm:p-10">
         <div className="w-full max-w-md">
           <BrandMark tone="brand" className="mb-8 lg:hidden" />
+          {fromFreeTools ? <div role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><p className="font-semibold">Sign up free to get 15 credits</p><p className="mt-1">You've used your free download. Create your account to download more invoices, quotations and payslips; your company and design come with you.</p></div> : null}
           <Card>
             <CardHeader>
               {step === "email" || step === "phone-code" ? (

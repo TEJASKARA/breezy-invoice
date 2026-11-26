@@ -1,0 +1,4 @@
+Fonts in this folder come from Google Fonts (https://github.com/google/fonts) and are
+used under their open licences: SIL Open Font License 1.1 (most families) or Apache
+License 2.0 (Roboto, Roboto Mono). They were trimmed to Latin characters (plus the
+rupee sign) and, for variable fonts, fixed to weights 400 (regular) and 700 (bold).

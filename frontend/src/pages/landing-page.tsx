@@ -29,10 +29,7 @@ const freeToolIcons: Record<FreeToolInfo["id"], typeof ReceiptText> = {
   quotation: FilePlus2,
   letterhead: Stamp,
   "offer-letter": FileSignature,
-  payslip: WalletCards,
-  attendance: CalendarCheck2,
   "invoice-design": Palette,
-  customers: Users,
 }
 
 const salesFlow = [
@@ -186,12 +183,12 @@ export function LandingPage() {
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0b3f77]/50">Free tools · no sign-up</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Make your first document free, right now.</h2>
-              <p className="mt-4 text-[#0b3f77]/60">Design invoices, quotations, letterheads, offer letters with CTC, payslips and attendance sheets in your browser. Your first download is free; sign up free for 15 more documents, and everything you've made moves to your account.</p>
+              <p className="mt-4 text-[#0b3f77]/60">Make invoices, quotations, letterheads and offer letters with CTC, and design your invoice template, right in your browser. Your first download is free; sign up free for 15 more documents, and everything you've made moves to your account.</p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-sm"><Gift className="size-4 text-[#13aeda]" />15 free documents on sign-up</span>
           </div>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {freeToolList.filter((tool) => !tool.helper).map((tool) => {
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {freeToolList.map((tool) => {
               const Icon = freeToolIcons[tool.id]
               return <Link key={tool.id} to={`/free/${tool.id}`} className="group rounded-2xl border border-[#0b3f77]/15 bg-white p-5 shadow-[0_8px_24px_rgba(11,63,119,.05)] transition-transform hover:-translate-y-0.5">
                 <div className="grid size-10 place-items-center rounded-xl bg-[#13aeda]/10 text-[#0b83ae]"><Icon className="size-5" /></div>
