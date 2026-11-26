@@ -37,6 +37,10 @@ export type LetterheadSettings = {
   watermarkOpacity: number
   /** Full-page background, e.g. a scanned pre-printed letterpad. */
   backgroundImageDataUrl: string | null
+  /** Letterhead's own logo; null uses the logo from Templates. */
+  logoDataUrl: string | null
+  /** Hide the logo on the letterhead. */
+  hideLogo: boolean
 }
 
 export const letterheadStyles: { id: LetterheadStyle; name: string; description: string }[] = [
@@ -50,7 +54,7 @@ export const letterheadStyles: { id: LetterheadStyle; name: string; description:
 export function defaultLetterhead(): LetterheadSettings {
   return {
     style: "classic", headerImageDataUrl: null, footerImageDataUrl: null, phone: "", email: "", website: "", registration: "", showGstin: true, footerText: "",
-    fontFamily: "", accentColor: null, textColor: "#141414", logoSize: 18, nameSize: 17, logoPosition: "left", pageColor: null, pageBorder: "none", watermarkText: "", watermarkOpacity: 0.08, backgroundImageDataUrl: null,
+    fontFamily: "", accentColor: null, textColor: "#141414", logoSize: 18, nameSize: 17, logoPosition: "left", pageColor: null, pageBorder: "none", watermarkText: "", watermarkOpacity: 0.08, backgroundImageDataUrl: null, logoDataUrl: null, hideLogo: false,
   }
 }
 
@@ -84,7 +88,15 @@ export function normalizeLetterhead(value: Partial<LetterheadSettings> | null | 
     watermarkText: String(value.watermarkText || "").slice(0, 48),
     watermarkOpacity: clamp(value.watermarkOpacity, 0.04, 0.3, base.watermarkOpacity),
     backgroundImageDataUrl: typeof value.backgroundImageDataUrl === "string" ? value.backgroundImageDataUrl : null,
+    logoDataUrl: typeof value.logoDataUrl === "string" ? value.logoDataUrl : null,
+    hideLogo: value.hideLogo === true,
   }
+}
+
+/** Logo printed on the letterhead: its own, else the one from Templates. */
+export function letterheadLogo(template: TemplateSettings, letterhead: LetterheadSettings) {
+  if (letterhead.hideLogo) return null
+  return letterhead.logoDataUrl || template.logoDataUrl || null
 }
 
 /** Contact line: phone · email · website. */
@@ -183,6 +195,7 @@ export function paintLetterheadPage(doc: JsPdfDocument, { template, letterhead, 
  * y position (mm) where the letter content can start.
  */
 export function drawLetterhead(doc: JsPdfDocument, { entity, template, letterhead, font = "helvetica" }: LetterheadDrawOptions) {
+  const logo = letterheadLogo(template, letterhead)
   const accent = rgb(letterheadAccent(template, letterhead))
   const ink = rgb(letterhead.textColor)
   const name = entity?.companyName || "Your Company Name"
@@ -201,7 +214,7 @@ export function drawLetterhead(doc: JsPdfDocument, { entity, template, letterhea
     const bandHeight = Math.max(34, logoSize + 16)
     doc.setFillColor(...accent)
     doc.rect(0, 0, PAGE_WIDTH, bandHeight, "F")
-    const logoWidth = drawLogo(doc, template.logoDataUrl, right ? PAGE_WIDTH - MARGIN : MARGIN, (bandHeight - logoSize) / 2, logoSize, right)
+    const logoWidth = drawLogo(doc, logo, right ? PAGE_WIDTH - MARGIN : MARGIN, (bandHeight - logoSize) / 2, logoSize, right)
     const x = !right && logoWidth ? MARGIN + logoWidth + 6 : MARGIN
     const textWidth = PAGE_WIDTH - MARGIN * 2 - (logoWidth ? logoWidth + 6 : 0)
     doc.setTextColor(255, 255, 255); doc.setFont(font, "bold"); doc.setFontSize(nameSize)
@@ -213,11 +226,11 @@ export function drawLetterhead(doc: JsPdfDocument, { entity, template, letterhea
   } else if (letterhead.style === "centered") {
     let y = 14
     try {
-      if (template.logoDataUrl) {
-        const properties = doc.getImageProperties(template.logoDataUrl)
+      if (logo) {
+        const properties = doc.getImageProperties(logo)
         const ratio = properties.width / properties.height
         const width = Math.min(logoSize * ratio, 70)
-        doc.addImage(template.logoDataUrl, imageFormat(template.logoDataUrl), (PAGE_WIDTH - width) / 2, y, width, width / ratio)
+        doc.addImage(logo, imageFormat(logo), (PAGE_WIDTH - width) / 2, y, width, width / ratio)
         y += width / ratio + 6
       }
     } catch { /* keep the letterhead usable if the logo can't be decoded */ }
@@ -235,7 +248,7 @@ export function drawLetterhead(doc: JsPdfDocument, { entity, template, letterhea
     top = y + 10
   } else if (letterhead.style === "split") {
     // Logo and name on one side, address and contact on the other.
-    const logoWidth = drawLogo(doc, template.logoDataUrl, right ? PAGE_WIDTH - MARGIN : MARGIN, 14, logoSize, right)
+    const logoWidth = drawLogo(doc, logo, right ? PAGE_WIDTH - MARGIN : MARGIN, 14, logoSize, right)
     const nameX = right ? PAGE_WIDTH - MARGIN - (logoWidth ? logoWidth + 5 : 0) : MARGIN + (logoWidth ? logoWidth + 5 : 0)
     doc.setTextColor(...ink); doc.setFont(font, "bold"); doc.setFontSize(nameSize)
     const nameLines = (doc.splitTextToSize(name, 95 - (logoWidth ? logoWidth + 5 : 0)) as string[]).slice(0, 2)
@@ -252,7 +265,7 @@ export function drawLetterhead(doc: JsPdfDocument, { entity, template, letterhea
     top = y + 10
   } else {
     // Classic (also used for "image" until a header image is uploaded).
-    const logoWidth = drawLogo(doc, template.logoDataUrl, right ? PAGE_WIDTH - MARGIN : MARGIN, 14, logoSize, right)
+    const logoWidth = drawLogo(doc, logo, right ? PAGE_WIDTH - MARGIN : MARGIN, 14, logoSize, right)
     const x = right ? PAGE_WIDTH - MARGIN - (logoWidth ? logoWidth + 6 : 0) : logoWidth ? MARGIN + logoWidth + 6 : MARGIN
     const align = right ? "right" : "left"
     const width = PAGE_WIDTH - MARGIN * 2 - (logoWidth ? logoWidth + 6 : 0)

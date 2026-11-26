@@ -12,7 +12,7 @@ const fontsSource = ts.transpileModule(await readFile(new URL("../src/lib/docume
 source = source.replace('"@/lib/document-fonts"', JSON.stringify(`data:text/javascript;base64,${Buffer.from(fontsSource).toString("base64")}`))
 source = source.replace('import("jspdf")', `import(${JSON.stringify(jsPdfUrl)})`)
 source = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
-const { createLetterheadPdf, normalizeLetterhead, letterheadContactLine, letterheadRegistrationLine } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)
+const { createLetterheadPdf, normalizeLetterhead, letterheadContactLine, letterheadRegistrationLine, letterheadLogo } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)
 
 const template = { accentColor: "#2563EB", pageColor: "#FFFFFF", logoDataUrl: null, showChanaxBranding: true }
 const entity = { companyName: "Axifleetx Private Limited", billingAddress: "Hitech City, Hyderabad", gstin: "36ABCDE1234F1Z5" }
@@ -41,3 +41,11 @@ for (const style of ["classic", "centered", "banner", "split", "image"]) {
     assert(rendered.includes("Registered office: Hyderabad"))
   })
 }
+
+test("letterhead logo overrides the Templates logo, falls back to it, and can be hidden", () => {
+  const withTemplateLogo = { ...template, logoDataUrl: "data:image/png;base64,TEMPLATE" }
+  assert.equal(letterheadLogo(withTemplateLogo, normalizeLetterhead({})), "data:image/png;base64,TEMPLATE")
+  assert.equal(letterheadLogo(withTemplateLogo, normalizeLetterhead({ logoDataUrl: "data:image/png;base64,OWN" })), "data:image/png;base64,OWN")
+  assert.equal(letterheadLogo(withTemplateLogo, normalizeLetterhead({ logoDataUrl: "data:image/png;base64,OWN", hideLogo: true })), null)
+  assert.equal(normalizeLetterhead({ logoDataUrl: 5 }).logoDataUrl, null)
+})

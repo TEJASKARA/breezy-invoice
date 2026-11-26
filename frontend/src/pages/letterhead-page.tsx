@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Download, ImagePlus, LoaderCircle, RotateCcw, Save, Trash2 } from "lucide-react"
+import { Download, ImagePlus, LoaderCircle, RotateCcw, Save, Trash2, Upload } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { PageHeader } from "@/components/page-header"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useEntitySelection } from "@/lib/entity-selection"
-import { createLetterheadPdf, defaultLetterhead, letterheadAccent, letterheadFileName, letterheadStyles, type LetterheadBorder, type LetterheadSettings } from "@/lib/letterhead"
+import { createLetterheadPdf, defaultLetterhead, letterheadAccent, letterheadLogo, letterheadFileName, letterheadStyles, type LetterheadBorder, type LetterheadSettings } from "@/lib/letterhead"
 import { useMvpStore } from "@/lib/mvp-store"
 import { canRemoveChanaxBranding } from "@/lib/subscription-entitlements"
 import { trackAction } from "@/lib/usage-tracking"
@@ -41,6 +41,7 @@ export function LetterheadPage() {
   const [busy, setBusy] = useState(false)
   const headerInput = useRef<HTMLInputElement>(null)
   const footerInput = useRef<HTMLInputElement>(null)
+  const logoInput = useRef<HTMLInputElement>(null)
   const brandingCanBeRemoved = canRemoveChanaxBranding(subscription)
 
   useEffect(() => { setDraft(null) }, [entity?.id])
@@ -63,14 +64,14 @@ export function LetterheadPage() {
 
   const change = (changes: Partial<LetterheadSettings>) => { if (canManage) { setDraft({ ...letterhead, ...changes }); setMessage(null) } }
 
-  const readImage = (file: File | undefined, field: "headerImageDataUrl" | "footerImageDataUrl") => {
+  const readImage = (file: File | undefined, field: "headerImageDataUrl" | "footerImageDataUrl" | "logoDataUrl") => {
     if (!file) return
     if (!/^image\/(png|jpe?g)$/.test(file.type)) return setMessage({ text: "Upload a PNG or JPG image.", error: true })
     if (file.size > MAX_IMAGE_BYTES) return setMessage({ text: "The image must be smaller than 1.5 MB.", error: true })
     const reader = new FileReader()
     reader.onload = () => {
       if (!isPngOrJpegDataUrl(String(reader.result))) return setMessage({ text: "That file is not a real PNG or JPG image.", error: true })
-      change({ [field]: String(reader.result), style: "image" })
+      change(field === "logoDataUrl" ? { logoDataUrl: String(reader.result), hideLogo: false } : { [field]: String(reader.result), style: "image" })
     }
     reader.readAsDataURL(file)
   }
@@ -127,7 +128,7 @@ export function LetterheadPage() {
     {!entity ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add a company first; the letterhead uses its name and address.</p> : null}
     <div className="grid gap-6 xl:grid-cols-[minmax(320px,440px)_1fr]">
       <Card className={cn("h-fit", !canManage && "opacity-80")}>
-        <CardHeader><CardTitle>Design</CardTitle><CardDescription>The logo comes from <Link to={appPath("/settings/templates")} className="underline">Templates</Link>; everything else can be set here.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Design</CardTitle><CardDescription>Layout, logo, style and page for your letterhead.</CardDescription></CardHeader>
         <CardContent className="space-y-5">
           <section className="space-y-2">
             <Label>Layout</Label>
@@ -145,6 +146,31 @@ export function LetterheadPage() {
             <input ref={headerInput} type="file" accept="image/png,image/jpeg" className="hidden" onChange={(event) => { readImage(event.target.files?.[0], "headerImageDataUrl"); event.target.value = "" }} />
             <input ref={footerInput} type="file" accept="image/png,image/jpeg" className="hidden" onChange={(event) => { readImage(event.target.files?.[0], "footerImageDataUrl"); event.target.value = "" }} />
           </div> : null}
+
+          {letterhead.style !== "image" ? <>
+            <Separator />
+            <section className="space-y-3">
+              <div><Label>Company logo</Label><p className="mt-1 text-xs text-muted-foreground">PNG or JPG, up to 1.5 MB.</p></div>
+              <input ref={logoInput} id="letterhead-logo-upload" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" className="sr-only" onChange={(event) => { readImage(event.target.files?.[0], "logoDataUrl"); event.target.value = "" }} />
+              {letterhead.logoDataUrl ? <>
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <img src={letterhead.logoDataUrl} alt="Uploaded letterhead logo" className="size-14 rounded-md object-contain" />
+                  <div className="min-w-0 flex-1"><p className="text-sm font-medium">Custom logo</p><p className="text-xs text-muted-foreground">Used on the letterhead and employment letters</p></div>
+                  <Button variant="ghost" size="icon" disabled={!canManage} onClick={() => change({ logoDataUrl: null })} aria-label="Remove logo"><Trash2 /></Button>
+                </div>
+                <Button variant="outline" className="w-full" disabled={!canManage} onClick={() => logoInput.current?.click()}><Upload />Replace logo</Button>
+              </> : <>
+                {template.logoDataUrl ? <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <img src={template.logoDataUrl} alt="Logo from Templates" className="size-14 rounded-md object-contain" />
+                  <div className="min-w-0 flex-1"><p className="text-sm font-medium">Logo from <Link to={appPath("/settings/templates")} className="underline">Templates</Link></p><p className="text-xs text-muted-foreground">Upload one below to use a different logo here</p></div>
+                </div> : null}
+                <Button asChild variant="outline" className="h-auto w-full justify-start gap-3 border-dashed p-4" disabled={!canManage}>
+                  <label htmlFor="letterhead-logo-upload" className={cn("cursor-pointer", !canManage && "pointer-events-none opacity-50")}><ImagePlus /><span className="text-left"><span className="block">{template.logoDataUrl ? "Upload a different logo" : "Upload your logo"}</span><span className="block text-xs font-normal text-muted-foreground">Choose a PNG or JPG</span></span></label>
+                </Button>
+              </>}
+              {letterheadLogo(template, { ...letterhead, hideLogo: false }) ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!letterhead.hideLogo} disabled={!canManage} onChange={(event) => change({ hideLogo: !event.target.checked })} />Show logo on the letterhead</label> : null}
+            </section>
+          </> : null}
 
           <Separator />
           <section className="space-y-4">
